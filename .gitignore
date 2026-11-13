@@ -27,3 +27,6 @@ crash.log
 **/*.auto.tfvars
 .terraformrc
 terraform.rc
+
+# Contract deployment rehearsals on an anvil fork (packages/contracts/deploy/records.ts REHEARSAL_DIR)
+deploy/rehearsal/

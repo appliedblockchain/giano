@@ -4,7 +4,7 @@
 	"name": "Ethereum Sepolia",
 	"rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
 	"rpcUrlEnv": "ETHEREUM_SEPOLIA_RPC_URL",
-	"release": "v2",
+	"release": "v3",
 	"roleAdmin": null,
 	"minDeployerBalanceEth": "0.05",
 	"paymaster": {

@@ -1,8 +1,9 @@
 /** Guided profile-driven deployment. No secret is read from a prompt or written to disk. */
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
 	createPublicClient,
@@ -13,7 +14,12 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { releaseOf } from "../release-code";
-import { CONTRACT_OF, classDeployer, ENTRY_POINT_V09 } from "./config";
+import {
+	activateRehearsal,
+	CONTRACT_OF,
+	classDeployer,
+	ENTRY_POINT_V09,
+} from "./config";
 import { deployCore } from "./deploy";
 import {
 	CORE_KEYS,
@@ -22,6 +28,7 @@ import {
 	fixedAddresses,
 	type Plan,
 	planCore,
+	reconcileRecord,
 } from "./plan";
 import {
 	inspectDeployment,
@@ -36,7 +43,12 @@ import {
 	REPO_ROOT,
 	savePublicChoices,
 } from "./profiles";
-import { readRecord, recordDeviations, writeRecord } from "./records";
+import {
+	REHEARSAL_DIR,
+	readRecord,
+	recordDeviations,
+	writeRecord,
+} from "./records";
 import { loadRelease } from "./release";
 
 class GuidanceError extends Error {}
@@ -154,6 +166,35 @@ async function main() {
 				"Release not found or unreadable. Use --release v1 or another committed release under packages/contracts/releases/.",
 			);
 		}
+		const transport = http(rpc, { timeout: 15000, retryCount: 1 });
+		const chain = defineChain({
+			id: profile.chainId,
+			name: profile.name,
+			nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+			rpcUrls: { default: { http: [rpc] } },
+		});
+		const client = createPublicClient({ chain, transport });
+		// Before the deployer is chosen: a rehearsal's stand-in is accepted only on an anvil fork.
+		let rehearsal: Awaited<ReturnType<typeof activateRehearsal>>;
+		try {
+			rehearsal = await activateRehearsal(client);
+		} catch (error) {
+			throw new GuidanceError(
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+		if (rehearsal)
+			console.log(
+				`\nREHEARSAL on an anvil fork. Stand-in deployer ${rehearsal}. Confirmations are answered automatically; the record and address file go to ${REHEARSAL_DIR}, and the registry is not regenerated.`,
+			);
+		/** A typed confirmation: asked in a terminal, answered by itself only in a verified rehearsal. */
+		const confirm = async (label: string, phrase: string) => {
+			if (rehearsal) {
+				console.log(`${label}: ${phrase} (rehearsal)`);
+				return true;
+			}
+			return (await ask(label)) === phrase;
+		};
 		const deployer = classDeployer(profile.network);
 		console.log(
 			`\n${profile.name} (${profile.chainId}, ${profile.network}) / release ${version}\nCanonical ${profile.network} deployer: ${deployer ?? "NOT CONFIGURED"}\nPaymaster ROLE_ADMIN: ${admin}\nFee: ${profile.paymaster.defaultFeeWei} wei; post-op allowance: ${profile.paymaster.postOpGasAllowance} gas; penalty: ${profile.paymaster.penaltyBps} bps.\nNo test ERC-20 or permissive paymaster will be deployed (R-29).`,
@@ -170,14 +211,6 @@ async function main() {
 				"Saved public configuration. Runtime RPC overrides and keys were not persisted.",
 			);
 		}
-		const transport = http(rpc, { timeout: 15000, retryCount: 1 });
-		const chain = defineChain({
-			id: profile.chainId,
-			name: profile.name,
-			nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-			rpcUrls: { default: { http: [rpc] } },
-		});
-		const client = createPublicClient({ chain, transport });
 		const blockers: string[] = [];
 		let account: ReturnType<typeof privateKeyToAccount> | undefined;
 		const key = process.env.CANONICAL_DEPLOYER_PRIVATE_KEY;
@@ -225,7 +258,7 @@ async function main() {
 			for (const line of deviationWarning(plan, profile.name))
 				console.log(line);
 		// Only a run that goes on to sign confirms; a read-only plan shows the warning above and stops.
-		const signs = Boolean(rl && !values.plan);
+		const signs = Boolean((rl || rehearsal) && !values.plan);
 		const gate = deviationGate(plan, selected.id, {
 			interactive: signs,
 			signs,
@@ -238,7 +271,7 @@ async function main() {
 		console.log(
 			"\nRequirements passed. This is a new address family: existing wallets, balances, tenant funding and sponsorship policies do not migrate automatically. See deploy/contracts/README.md for cutover and recovery.",
 		);
-		if (!rl || values.plan) {
+		if (!signs) {
 			console.log(
 				"Read-only plan complete. Rerun in a terminal without --plan to deploy.",
 			);
@@ -250,18 +283,20 @@ async function main() {
 			);
 		if (
 			gate.kind === "confirm" &&
-			(await ask(
+			!(await confirm(
 				`This deployment deviates on a mainnet. Type '${gate.phrase}' to accept the deviations above (anything else cancels)`,
-			)) !== gate.phrase
+				gate.phrase,
+			))
 		) {
 			console.log("Cancelled. No transactions sent.");
 			return;
 		}
 		const confirmation = `deploy ${profile.chainId} ${version}`;
 		if (
-			(await ask(
+			!(await confirm(
 				`Type '${confirmation}' to send transactions (anything else cancels)`,
-			)) !== confirmation
+				confirmation,
+			))
 		) {
 			console.log("Cancelled. No transactions sent.");
 			return;
@@ -286,6 +321,12 @@ async function main() {
 		// Before the first transaction: deployCore checkpoints the record after every contract, so an
 		// interrupted run still keeps the deviations the operator confirmed, with their reasons.
 		recordDeviations(record, plan.deviations, gate.kind === "confirm");
+		// An upgrade the chain executed (through the timelock, a Safe, or directly) that the record
+		// does not show yet: record it before deployCore verifies what is in place.
+		if (reconcileRecord(record, fresh.plan))
+			console.log(
+				"Recorded the paymaster implementation the proxy was upgraded to.",
+			);
 		writeRecord(record);
 		await deployCore(
 			{
@@ -326,17 +367,29 @@ async function main() {
 			admin,
 			profileCoreConfig(profile),
 			after,
+			{ timelock: profile.timelock?.address },
 		))
 			console.warn(`⚠ ${warning}`);
 		writeRecord(record);
-		const addressEnv = new URL(
-			`../../../deploy/contracts/${chain.id}.addresses.env`,
-			import.meta.url,
-		);
+		const addressEnv = rehearsal
+			? join(REHEARSAL_DIR, `${chain.id}.addresses.env`)
+			: fileURLToPath(
+					new URL(
+						`../../../deploy/contracts/${chain.id}.addresses.env`,
+						import.meta.url,
+					),
+				);
+		mkdirSync(dirname(addressEnv), { recursive: true });
 		writeFileSync(
 			addressEnv,
 			`# Public addresses only; source after the environment configuration.\nCHAIN_ID=${chain.id}\nCHAIN_NAME=${JSON.stringify(profile.name)}\nDEPLOY_CHAIN_ID=${chain.id}\nFACTORY_ADDRESS=${record.contracts.factory?.address}\nSPONSORSHIP_PAYMASTER_ADDRESS=${record.contracts.paymasterProxy?.address}\nTEST_PAYMASTER_ADDRESS=\nTEST_ERC20_ADDRESS=\n`,
 		);
+		if (rehearsal) {
+			console.log(
+				`\nRehearsal core deployment verified. Record: ${REHEARSAL_DIR}/records/${chain.id}.json. Addresses: ${addressEnv}. Nothing committed or published was changed.`,
+			);
+			return;
+		}
 		execFileSync(
 			process.execPath,
 			["--import", "tsx", "scripts/generate-addresses.ts"],

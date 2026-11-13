@@ -1,0 +1,23 @@
+# Override for docker-compose.chain.yml that points the platform at the rehearsal fork
+# (docker-compose.fork.yml) instead of a public chain. The rest of the stack is the external-chain
+# demo unchanged, so the rehearsal exercises the file a real testnet demo uses.
+#
+#   docker compose -p giano-rehearsal \
+#     --env-file deploy/rehearsal/operator.env --env-file deploy/rehearsal/<chainId>.addresses.env \
+#     -f deploy/docker-compose.chain.yml -f deploy/docker-compose.rehearsal.yml up --build -d --wait
+#
+# pnpm contracts:rehearse --platform runs exactly that. The operator file sets
+# RPC_URL=http://host.docker.internal:<fork port>.
+services:
+  bundler:
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+  wallet-api:
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      # anvil suggests a fixed 1 gwei priority fee whatever the forked chain charges (Base Sepolia:
+      # ~0.001 gwei), so every operation's maximum charge is ~1000x the real one, and a passkey
+      # wallet's first operation exceeds the platform's 0.002 ETH wallet-management cap. Raised as
+      # in docker-compose.e2e.yml, for the same reason: fees that only a local chain inflates.
+      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: '100000000000000000'

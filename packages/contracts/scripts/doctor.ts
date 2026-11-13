@@ -48,8 +48,8 @@
  *
  * Exits non-zero if any CRITICAL check fails, so it doubles as a CI / pre-flight gate.
  *
- * Uses ethers (already a dependency of this package) — no build step required, mirrors
- * scripts/p256_deploy.ts and deploy/contracts/print-funding.sh.
+ * Uses ethers (already a dependency of this package), no build step required; the chain prerequisites
+ * come from deploy/preflight.ts, the check the deploy tooling runs before signing.
  */
 import {
 	Contract,
@@ -61,18 +61,23 @@ import {
 	keccak256,
 	toBeHex,
 } from "ethers";
+import { createPublicClient, http, type PublicClient } from "viem";
 import {
 	ENTRYPOINT_V09_ADDRESS,
 	type GianoDeployment,
 	getGianoDeployment,
 } from "../addresses";
 import {
-	DEPLOYERS,
+	activateRehearsal,
+	classDeployer,
 	isMainnetChain,
 	isProductionChain,
 	type NetworkClass,
+	redactRpcUrl,
 } from "../deploy/config";
+import { p256Report } from "../deploy/p256";
 import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
+import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
@@ -117,9 +122,6 @@ const MIN_STAKE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
 /** Tenants per `getTenants` page — the roster is read in pages so a large one cannot blow the call. */
 const TENANT_PAGE_SIZE = 50;
 
-/** Arachnid deterministic-deployment proxy (CREATE2 factory). */
-const CREATE2_FACTORY = "0x4e59b44847b379578588920ca78fbf26c0b4956c";
-
 /** First valid Wycheproof P-256 vector (from lib/p256-verifier/test/P256Verifier.t.sol). */
 const P256_VECTOR = {
 	hash: "0xbb5a52f42f9c9261ed4361f59422a1e30036e7c32b270c8807a419feca605023",
@@ -139,9 +141,14 @@ const ICON: Record<Level, string> = {
 };
 let hadFailure = false;
 
+/** The RPC in use, so no line ever prints more of it than its origin (a provider key hides in it). */
+let rpcInUse: string | undefined;
+
 function report(level: Level, label: string, detail?: string) {
 	if (level === "fail") hadFailure = true;
-	const line = `${ICON[level]} ${label}${detail ? `: ${detail}` : ""}`;
+	let line = `${ICON[level]} ${label}${detail ? `: ${detail}` : ""}`;
+	// Provider errors can quote the request URL.
+	if (rpcInUse) line = line.replaceAll(rpcInUse, redactRpcUrl(rpcInUse));
 	console.log(line);
 }
 
@@ -795,11 +802,12 @@ async function checkTimelock(
 		const proposerRole: string = await tl.PROPOSER_ROLE();
 		for (const proposer of proposers) {
 			const isProposer: boolean = await tl.hasRole(proposerRole, proposer);
-			const isContract = await hasCode(provider, proposer);
+			// A key, not a Safe, when it has no code or only an EIP-7702 delegation designator.
+			const isContract = isContractAccount(await provider.getCode(proposer));
 			report(
 				!isProposer ? "fail" : isContract ? "ok" : "warn",
 				"timelock proposer",
-				`${getAddress(proposer)}${!isProposer ? " does not hold PROPOSER_ROLE" : isContract ? " (contract account, e.g. a Safe)" : " is a key, not a Safe — one key can queue anything"}`,
+				`${getAddress(proposer)}${!isProposer ? " does not hold PROPOSER_ROLE" : isContract ? " (contract account, e.g. a Safe)" : " is a key (no code, or only an EIP-7702 delegation), not a Safe — one key can queue anything"}`,
 			);
 		}
 		// Upstream grants DEFAULT_ADMIN_ROLE to the timelock itself; GianoTimelock passes no other admin.
@@ -942,7 +950,7 @@ function reportPlacement(
 		: ["mainnet", "testnet", "local"];
 	const record = readRecord(chainId);
 	for (const network of classes) {
-		const deployer = DEPLOYERS[network];
+		const deployer = classDeployer(network);
 		if (!deployer) {
 			report(
 				"info",
@@ -1022,7 +1030,8 @@ async function connect(
 		throw new Error("--chain-id <id> is required (or set CHAIN_ID)");
 
 	const provider = new JsonRpcProvider(rpc);
-	section(`Giano doctor — ${rpc}`);
+	rpcInUse = rpc;
+	section(`Giano doctor — ${redactRpcUrl(rpc)}`);
 	let onChainId: number;
 	try {
 		onChainId = Number((await provider.getNetwork()).chainId);
@@ -1040,6 +1049,17 @@ async function connect(
 			`RPC reports ${onChainId}, expected ${expectedChainId}`,
 		);
 	}
+	// A rehearsal's stand-in deployer is the class deployer only on an anvil fork.
+	const rehearsal = await activateRehearsal({
+		request: ({ method, params }: { method: string; params?: unknown }) =>
+			provider.send(method, (params as unknown[] | undefined) ?? []),
+	});
+	if (rehearsal)
+		report(
+			"info",
+			"rehearsal",
+			`anvil fork; stand-in deployer ${rehearsal} answers for the canonical deployer`,
+		);
 	return { provider, chainId: expectedChainId };
 }
 
@@ -1249,38 +1269,22 @@ async function doctorChain(flags: Record<string, string>) {
 	}
 
 	section("Passkey (P-256) verification support");
-	const p256 = await checkP256(provider);
-	if (p256 === "precompile") {
-		report(
-			"ok",
-			"P-256 via RIP-7212 precompile",
-			"cheap on-chain verification (0x100)",
-		);
-	} else if (p256 === "verifier") {
-		report(
-			"ok",
-			"P-256 via FreshCryptoLib verifier",
-			`${P256_VERIFIER} (works, higher gas than a precompile)`,
-		);
-	} else {
-		report(
-			"fail",
-			"P-256 verification unavailable",
-			"no RIP-7212 precompile and no deployed verifier",
-		);
-		report(
-			"info",
-			"fix",
-			"deploy the verifier with scripts/p256_deploy.ts before passkey wallets can validate",
-		);
-	}
-	// MC-25: the deterministic-deployment mechanism must be present BEFORE contracts are
-	// deployed — without it at this exact address, nothing deploys to the canonical addresses.
-	report(
-		(await hasCode(provider, CREATE2_FACTORY)) ? "ok" : "fail",
-		"Arachnid CREATE2 factory (deterministic-deployment proxy)",
-		`${CREATE2_FACTORY} — required before any Giano contract is deployed (adoption checklist step 1)`,
-	);
+	const p256 = p256Report(await checkP256(provider));
+	report(p256.level, p256.name, p256.detail);
+	// The chain prerequisites, checked exactly as the deploy tooling checks them before signing:
+	// CreateX places every CREATE3 address, and the contracts need Cancun's opcodes.
+	section("Chain prerequisites");
+	const rpc = flags.rpc ?? process.env.RPC_URL;
+	if (rpc)
+		for (const p of await chainPrerequisites(
+			createPublicClient({ transport: http(rpc) }) as PublicClient,
+			chainId,
+		))
+			report(
+				p.ok ? "ok" : "fail",
+				p.name,
+				`${p.detail} (adoption checklist step 1)`,
+			);
 }
 
 async function doctorWallet(flags: Record<string, string>) {

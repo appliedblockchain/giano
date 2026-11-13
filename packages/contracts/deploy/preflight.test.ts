@@ -6,7 +6,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { type Address, type Hex, type PublicClient, zeroAddress } from "viem";
+import {
+	type Address,
+	getAddress,
+	type Hex,
+	type PublicClient,
+	zeroAddress,
+} from "viem";
 import { DEPLOYERS, LABELS } from "./config";
 import { create3Address } from "./create3";
 import { planCore } from "./plan";
@@ -265,12 +271,33 @@ test("an existing paymaster is checked against the run's configuration, and no d
 			{ ...config, entryPoint: CANONICAL_DEPLOYER },
 			await planFor(ok),
 		),
-		/admin or EntryPoint differs/,
+		/EntryPoint differs/,
 	);
 	const held = chain([admin, CANONICAL_DEPLOYER]);
 	await assert.rejects(
 		verifyCoreState(held, admin, config, await planFor(held)),
 		/A deployer must hold no role/,
+	);
+	// After the hand-off the timelock holds ROLE_ADMIN and the bootstrap key does not (N2): the chain
+	// verifies once the profile names its timelock, and is refused while it does not.
+	const timelock = getAddress("0x00000000000000000000000000000000000071e1");
+	const handedOff = chain([timelock]);
+	await assert.rejects(
+		verifyCoreState(handedOff, admin, config, await planFor(handedOff)),
+		/does not hold ROLE_ADMIN.*set the profile's timelock.address/,
+	);
+	assert.deepEqual(
+		await verifyCoreState(handedOff, admin, config, await planFor(handedOff), {
+			timelock,
+		}),
+		[],
+	);
+	const nobody = chain([]);
+	await assert.rejects(
+		verifyCoreState(nobody, admin, config, await planFor(nobody), {
+			timelock,
+		}),
+		/Neither the profile's ROLE_ADMIN .* nor its timelock/,
 	);
 });
 
@@ -337,7 +364,13 @@ async function guidedPlan(
 	}
 }
 
-const READ_METHODS = ["eth_chainId", "eth_getCode", "eth_getBalance"];
+/** eth_call simulates without sending: the chain prerequisites probe Cancun's opcodes with one. */
+const READ_METHODS = [
+	"eth_chainId",
+	"eth_getCode",
+	"eth_getBalance",
+	"eth_call",
+];
 
 test("deploy:cli --network cannot move a chain out of its committed profile's class", async () => {
 	const { code, stdout, stderr } = await guidedPlan(

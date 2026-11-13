@@ -509,8 +509,8 @@ The sponsorship service's default for an omitted limit is the same 100,000.
 
 ### 4.1 Toolchain
 
-Unchanged from the rest of the stack: Foundry, solc 0.8.28, optimizer 200, `viaIR`, EVM `paris`
-(`packages/contracts/foundry.toml`). The paymaster is deployed from a committed release
+Unchanged from the rest of the stack: Foundry, solc 0.8.28, optimizer 200, `viaIR`, EVM `cancun`
+(`packages/contracts/foundry.toml`; the paymaster's in-flight reservation uses transient storage). The paymaster is deployed from a committed release
 (`releases/<vN>`) by the contracts package's deploy CLI (`deploy/cli.ts`, `core` command), with
 CREATE3 through CreateX; the testing contracts go through a separate `testing` command that refuses
 production chain ids.

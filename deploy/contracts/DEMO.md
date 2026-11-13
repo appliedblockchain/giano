@@ -22,16 +22,23 @@ The profile fixes chain identity, the released code and paymaster parameters. It
 environment variable; a keyed URL never needs to be copied into a tracked file. Operator files are
 dotenv data, not shell scripts. Existing exported variables take precedence over their contents.
 
-Provisioning requires the EOA operator to be ROLE_ADMIN. It grants that operator all development
-roles, registers the sponsorship signer and the **explicit** `PAYMASTER_TENANTS` UUIDs, stakes the
-paymaster and funds each balance. It asks for interactive confirmation and warns that reruns add
-funding again. Production role separation/timelock execution needs its own admin transaction flow.
+Provisioning requires the EOA operator to be ROLE_ADMIN. It registers the sponsorship signer (by
+`SPONSORSHIP_SIGNER_ADDRESS`) and the **explicit** `PAYMASTER_TENANTS` UUIDs, stakes the paymaster,
+funds each balance and gives the roles out: one holder per immediate role (`ROLE_HOLDER_*`), or, for
+this demo, `PAYMASTER_GRANT_ALL_TO=<operator address>` to put every role on one address. It asks for
+interactive confirmation and warns that reruns add funding again. Hand the timelocked roles to the
+timelock afterwards with `contracts:timelock` and `contracts:handoff`
+([runbook](../../docs/PAYMASTER-TIMELOCK-RUNBOOK.md)). To try all of this without spending testnet
+ETH, run `pnpm contracts:rehearse --chain base-sepolia --platform` first ([README](README.md#rehearsal)).
 Neither supported testnet deploys a test ERC-20 or a permissive paymaster.
 
 ## Run the local stack
 
 Set `RPC_URL` in your ignored local environment file for the serving backend; use the same network
-as the deployment profile. `BUNDLER_NODE_RPC_URL` can override the bundler endpoint. Neither URL is
+as the deployment profile. It must serve `eth_getLogs` over 9,000 blocks, or the wallet-api's
+paymaster watcher never learns the tenant's balance and refuses every sponsorship. On Base Sepolia,
+`https://sepolia.base.org` serves only 200; `https://base-sepolia-rpc.publicnode.com` or a keyed
+endpoint works (an open decision, see TESTNET-ROLLOUT.md). `BUNDLER_NODE_RPC_URL` can override the bundler endpoint. Neither URL is
 exposed to browsers. The generic Compose file requires explicit chain settings; it has no hidden
 Ethereum Sepolia fallback. The generated public fragment supplies chain ID/name and the addresses:
 
@@ -58,8 +65,10 @@ pnpm contracts:sponsorship --chain base-sepolia --env-file deploy/contracts/base
 ```
 
 That calls the real admin API using `ADMIN_API_KEY`. Funding makes money available; sponsorship
-rules determine whether it can be spent. With no test ERC-20, the demo allowlist is empty and wallet
-management/self-calls follow platform policy. Missing policies refuse sponsorship.
+rules determine whether it can be spent. A public chain has no test ERC-20, so set `SPONSOR_ALLOWLIST`
+to the contracts the tenant's dApp calls: the wallet-api sponsors nothing, wallet management included,
+for a tenant with an empty allowlist, and `contracts:sponsorship` refuses to install one. Wallet
+management and self-calls then follow platform policy. Missing policies refuse sponsorship.
 
 Wallet UI: http://wallet.localhost:8081. Bundler: http://localhost:4337. The API is available through
 the wallet's `/api` proxy. Start the sample dApp using the matching `CHAIN_ID` and RPC URL rather

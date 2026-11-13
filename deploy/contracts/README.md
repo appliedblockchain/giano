@@ -39,8 +39,8 @@ configuration. A testnet run takes the testnet deployer's key, never the mainnet
 For a read-only preflight, no deployment key is required:
 
 ```sh
-pnpm contracts:deploy --plan --chain base-sepolia --release v2 --role-admin "$PAYMASTER_ROLE_ADMIN"
-pnpm contracts:deploy --plan --chain ethereum-sepolia --release v2 --role-admin "$PAYMASTER_ROLE_ADMIN"
+pnpm contracts:deploy --plan --chain base-sepolia --release v3 --role-admin "$PAYMASTER_ROLE_ADMIN"
+pnpm contracts:deploy --plan --chain ethereum-sepolia --release v3 --role-admin "$PAYMASTER_ROLE_ADMIN"
 ```
 
 Set `PAYMASTER_ROLE_ADMIN` to the intended operator address first. Use `DEPLOY_RPC_URL` for a keyed
@@ -125,6 +125,8 @@ admin) to the profile's `GianoTimelock` (G9; see [the timelock runbook](../../do
 The profile's `timelock` section publishes the proposer Safe and one delay per timelocked function;
 `contracts:doctor` then asserts both. Provisioning reruns add tenant funding again. `contracts:sponsorship` installs the demo
 policy for the configured tenant through the real API; use the admin console/API for other policies.
+On a chain without the demo ERC-20 it needs `SPONSOR_ALLOWLIST`, the tenant's contract addresses: the
+wallet-api sponsors nothing, wallet management included, for a tenant with an empty allowlist.
 The same chain-adoption/code gates apply to an added chain. A new profile is not proof of readiness.
 
 ## 1. Set the canonical deployers once
@@ -144,9 +146,11 @@ the devnet state, `e2e/devnet/addresses.json` and CI stay as they are. `pnpm -F
 and the Determinism workflow checks them for every configured class.
 
 The current signing adapter accepts an environment key, not a direct KMS/HSM signer. Freeze a git
-commit and pin **contract release `v2`** in both testnet profiles (already set). This release
-identifier is separate from the npm version. Do not recut or edit a release; changed Solidity
-requires a new committed release.
+commit and pin the **newest contract release** (`v3` today) in both testnet profiles (already set).
+CI keeps every undeployed profile on the newest release, and keeps a deployed one on the release its
+record holds: the factory's wallet implementation is immutable, so the first release deployed on a
+chain is what every new wallet there starts on. This release identifier is separate from the npm
+version. Do not recut or edit a release; changed Solidity requires a new committed release.
 
 ## 2. Prepare each network
 
@@ -210,8 +214,8 @@ protected list despite being testnets. Every chain whose profile declares `mainn
 ## 3. Deploy and verify core contracts
 
 ```sh
-pnpm contracts:deploy --chain base-sepolia --release v2
-# After Base is validated, use --chain ethereum-sepolia --release v2.
+pnpm contracts:deploy --chain base-sepolia --release v3
+# After Base is validated, use --chain ethereum-sepolia --release v3.
 ```
 
 The four core addresses are wallet implementation, factory, paymaster implementation and paymaster
@@ -244,9 +248,14 @@ Core deployment is not permission to serve traffic. For each chain, the operator
 4. Run doctor with explicit new addresses, expected admin, signer and executor; require all critical
    checks green, including P-256 verification, stake, deposit, tenant balances and role topology.
 
-For an EOA-admin testnet, use the existing provisioning command after exporting the **operator's**
-`DEPLOYER_PRIVATE_KEY` and the selected network's `RPC_URL` (not just DEPLOY_RPC_URL). Provide the
-sponsorship signer's **public** address and real tenant IDs/withdrawal destinations:
+`pnpm contracts:provision` takes the sponsorship signer's **address** (`SPONSORSHIP_SIGNER_ADDRESS`;
+a production signer's key never leaves its HSM) and one holder per immediate role (`ROLE_HOLDER_*`
+in the operator file). The bootstrap key holds only the roles it needs while it runs, then hands each
+to its holder and gives it up. `PAYMASTER_GRANT_ALL_TO=<address>` puts every role on one address
+instead: a testnet shortcut, which a mainnet refuses, as it refuses a defaulted tenant withdrawal
+address. The low-level equivalent, after exporting the **operator's** `DEPLOYER_PRIVATE_KEY` and
+the selected network's `RPC_URL` (not just DEPLOY_RPC_URL), with real tenant IDs and withdrawal
+destinations:
 
 ```sh
 set -a
@@ -259,7 +268,9 @@ pnpm -F @appliedblockchain/giano-contracts provision:paymaster -- \
   --stake-eth 0.1 --unstake-delay 86400 \
   --tenant "$TENANT_ID:$TENANT_WITHDRAW_ADDRESS:$TENANT_SLUG:0.05"
 # Repeat --tenant for every tenant that will sponsor here.
-# --grant-all-to is the explicit development topology; use separate role holders otherwise.
+# --grant-all-to is the explicit development topology. Production names a holder per role instead:
+#   --role-holder-signer-admin 0x… --role-holder-param-admin 0x… --role-holder-pauser 0x…
+#   --role-holder-stake-admin 0x… --role-holder-tenant-admin 0x… --role-holder-fee-collector 0x…
 pnpm -F @appliedblockchain/giano-contracts doctor -- chain \
   --rpc "$RPC_URL" --chain-id "$CHAIN_ID" \
   --factory "$FACTORY_ADDRESS" \
@@ -277,6 +288,41 @@ Provisioning runs while the operator EOA still holds ROLE_ADMIN. Hand the timelo
 timelock afterwards (`pnpm contracts:timelock`, then `pnpm contracts:handoff`); from then on fee,
 withdrawal-address, role and upgrade changes are timelock proposals signed by the Safe
 ([runbook](../../docs/PAYMASTER-TIMELOCK-RUNBOOK.md)).
+
+## Rehearsal
+
+Before the first real run on a chain, and after any change to the deploy tooling, walk the whole
+path on an anvil fork of it. Nothing is sent to the chain and no real key is used:
+
+```sh
+pnpm contracts:rehearse --chain base-sepolia             # contracts only
+pnpm contracts:rehearse --chain base-sepolia --platform  # then the platform and a browser smoke test
+```
+
+It forks the chain's latest block (`--fork-block` pins one on an archive RPC, `--fork-url` takes a
+keyed endpoint) and runs the operator commands a real adoption runs, unchanged: the wizard,
+provision with one holder per role, timelock, hand-off, a paymaster upgrade proposed to and executed
+through the timelock, then a plan, the keyless verify the Helm Job runs, the provisioning refusal
+after the hand-off, and the doctor. `--platform` then starts `docker-compose.chain.yml` against the
+fork, installs the tenant's sponsorship rules and runs `e2e/rehearsal/smoke.spec.ts`: a new passkey
+wallet sends a sponsored transaction and the tenant's balance pays for it. Stop the e2e stack first;
+the two share host ports.
+
+The only difference from a real run is the deployer. `GIANO_REHEARSAL_DEPLOYER` stands in for the
+class's canonical deployer, and the tooling accepts it only when the RPC reports an anvil fork. Every
+record, profile copy, address file and log goes to `deploy/rehearsal/` (ignored); `deployments/`,
+`addresses.ts` and `deploy/chains/` are never written. The keys are throwaway, derived from fixed
+labels and funded on the fork, not anvil's public accounts, which carry strangers' state (EIP-7702
+delegations included) on public testnets.
+
+## Upgrades executed through the timelock
+
+`deploy:cli upgrade --timelock` deploys the upgrade target and records it among the record's upgrade
+targets, but the upgrade itself is executed later by the timelock, from the Safe or by anyone. The
+tooling reads the proxy's implementation slot: when it points at a recorded upgrade target holding
+release code, the plan uses it (and says so), and the next run that saves the record writes it as the
+paymaster implementation. A proxy pointing at anything else still blocks. After the hand-off, a
+profile with `timelock.address` verifies with the timelock as ROLE_ADMIN.
 
 ## 5. Cut over services and clients together
 
@@ -356,5 +402,5 @@ Recheck after the real deployer is configured; those will be different target ad
 | Live migration and readiness not demonstrated | Custody, funding, actual deployments, configuration rollout and sponsored smoke tests require the real operator inputs; no public-chain transactions are sent by this development PR. |
 
 Regression tests: `pnpm -F @appliedblockchain/giano-contracts test:deploy` (mock RPC, no credentials)
-and `test:deploy:integration` (real v2 transactions on a throwaway local anvil, interrupted checkpoint
+and `test:deploy:integration` (real v2 and v3 transactions on a throwaway local anvil, interrupted checkpoint
 recovery, idempotent rerun, and a deployment with overridden contracts). CI runs both in their appropriate jobs.
