@@ -17,6 +17,7 @@ import {
 	decodeInnerCalls,
 	type EvaluationInput,
 	evaluateSponsorship,
+	OWNER_MANAGEMENT_SELECTORS,
 } from "../src/services/sponsorship-rules.js";
 
 const WALLET = "0x1111111111111111111111111111111111111234" as Address;
@@ -25,23 +26,30 @@ const OTHER = "0x4444444444444444444444444444444444444444" as Address;
 
 const TRANSFER = "0xa9059cbb" as Hex; // transfer(address,uint256)
 const APPROVE = "0x095ea7b3" as Hex; // approve(address,uint256)
+const ADD_OWNER = encodeFunctionData({
+	abi: gianoSmartWalletAbi,
+	functionName: "addOwnerAddress",
+	args: [OTHER],
+});
 
-function execute(target: Address, data: Hex = "0x"): Hex {
+function execute(target: Address, data: Hex = "0x", value = 0n): Hex {
 	return encodeFunctionData({
 		abi: gianoSmartWalletAbi,
 		functionName: "execute",
-		args: [target, 0n, data],
+		args: [target, value, data],
 	});
 }
 
-function executeBatch(calls: Array<{ target: Address; data: Hex }>): Hex {
+function executeBatch(
+	calls: Array<{ target: Address; data: Hex; value?: bigint }>,
+): Hex {
 	return encodeFunctionData({
 		abi: gianoSmartWalletAbi,
 		functionName: "executeBatch",
 		args: [
 			calls.map((call) => ({
 				target: call.target,
-				value: 0n,
+				value: call.value ?? 0n,
 				data: call.data,
 			})),
 		],
@@ -120,7 +128,7 @@ describe("cost arithmetic", () => {
 describe("call decoding", () => {
 	it("decodes a single execute", () => {
 		expect(decodeInnerCalls(execute(TOKEN, TRANSFER))).toEqual([
-			{ target: TOKEN, selector: TRANSFER },
+			{ target: TOKEN, value: 0n, selector: TRANSFER, empty: false },
 		]);
 	});
 
@@ -128,18 +136,18 @@ describe("call decoding", () => {
 		const calls = decodeInnerCalls(
 			executeBatch([
 				{ target: TOKEN, data: TRANSFER },
-				{ target: OTHER, data: APPROVE },
+				{ target: OTHER, data: APPROVE, value: 7n },
 			]),
 		);
 		expect(calls).toEqual([
-			{ target: TOKEN, selector: TRANSFER },
-			{ target: OTHER, selector: APPROVE },
+			{ target: TOKEN, value: 0n, selector: TRANSFER, empty: false },
+			{ target: OTHER, value: 7n, selector: APPROVE, empty: false },
 		]);
 	});
 
 	it("reports a bare value transfer as having no selector rather than inventing one", () => {
-		expect(decodeInnerCalls(execute(TOKEN, "0x"))).toEqual([
-			{ target: TOKEN, selector: null },
+		expect(decodeInnerCalls(execute(TOKEN, "0x", 5n))).toEqual([
+			{ target: TOKEN, value: 5n, selector: null, empty: true },
 		]);
 	});
 
@@ -262,7 +270,7 @@ describe("allowlists", () => {
 });
 
 describe("wallet management", () => {
-	const selfCall = execute(WALLET, "0x0f0f3f95"); // addOwnerAddress-shaped
+	const selfCall = execute(WALLET, ADD_OWNER);
 
 	// The requirement this file exists to pin down: a user acquiring a second device holds no
 	// native token and no way to obtain one, so recovery has to be sponsored — and it must not
@@ -287,6 +295,23 @@ describe("wallet management", () => {
 				candidate: { ...candidate, callData: selfCall },
 			}).allowed,
 		).toBe(true);
+	});
+
+	// The reference demo's default send, and a call wallet-kit allows a dApp to make. Calldata of
+	// exactly 0x reaches only the wallet's empty receive(), so it runs no payload.
+	it.each([
+		["execute(self, 0x)", execute(WALLET, "0x")],
+		[
+			"executeBatch([self, 0x])",
+			executeBatch([{ target: WALLET, data: "0x" }]),
+		],
+		// receive() is payable, so a transfer of real value to self succeeds.
+		["execute(self, 0x, value 1)", execute(WALLET, "0x", 1n)],
+	])("sponsors a plain value transfer to self: %s", (_label, callData) => {
+		const decision = evaluate({ candidate: { ...candidate, callData } });
+		expect(decision.allowed).toBe(true);
+		expect(decision.isWalletManagement).toBe(true);
+		expect(decision.capSource).toBe("platform");
 	});
 
 	it("refuses only on an explicit opt-out", () => {
@@ -337,15 +362,37 @@ describe("wallet management", () => {
 		expect(decision.capSource).toBe("platform");
 	});
 
-	// Detected by shape, not by a selector list. That cuts both ways, which is why it is the right
-	// test: a self-administration function added later can neither become sponsorable by omission
-	// nor become *un*sponsorable by omission.
-	it("detects wallet management structurally, whatever the selector", () => {
-		const decision = evaluate({
-			candidate: { ...candidate, callData: execute(WALLET, "0xffffffff") },
-		});
-		expect(decision.isWalletManagement).toBe(true);
-		expect(decision.allowed).toBe(true);
+	it.each([
+		["addOwnerAddress", ADD_OWNER],
+		[
+			"addOwnerPublicKey",
+			encodeFunctionData({
+				abi: gianoSmartWalletAbi,
+				functionName: "addOwnerPublicKey",
+				args: [`0x${"11".repeat(32)}`, `0x${"22".repeat(32)}`],
+			}),
+		],
+		[
+			"removeOwnerAtIndex",
+			encodeFunctionData({
+				abi: gianoSmartWalletAbi,
+				functionName: "removeOwnerAtIndex",
+				args: [1n, "0x"],
+			}),
+		],
+	] as Array<[string, Hex]>)(
+		"sponsors %s as wallet management",
+		(_name, data) => {
+			const decision = evaluate({
+				candidate: { ...candidate, callData: execute(WALLET, data) },
+			});
+			expect(decision.isWalletManagement).toBe(true);
+			expect(decision.allowed).toBe(true);
+		},
+	);
+
+	it("allows exactly the three owner-management functions the product sends", () => {
+		expect(OWNER_MANAGEMENT_SELECTORS.size).toBe(3);
 	});
 
 	it("does not require a tenant to allow-list its own users wallet addresses", () => {
@@ -360,7 +407,7 @@ describe("wallet management", () => {
 	// One charge, and the chain cannot split it, so the tighter of the two caps governs.
 	it("applies the tighter cap to a batch that mixes a self-call with an application call", () => {
 		const mixed = executeBatch([
-			{ target: WALLET, data: "0x0f0f3f95" },
+			{ target: WALLET, data: ADD_OWNER },
 			{ target: TOKEN, data: TRANSFER },
 		]);
 		const decision = evaluate({
@@ -374,10 +421,130 @@ describe("wallet management", () => {
 
 	it("still checks the allowlist for the application half of a mixed batch", () => {
 		const mixed = executeBatch([
-			{ target: WALLET, data: "0x0f0f3f95" },
+			{ target: WALLET, data: ADD_OWNER },
 			{ target: OTHER, data: TRANSFER },
 		]);
 		const decision = evaluate({ candidate: { ...candidate, callData: mixed } });
+		expect(decision.reason).toBe("contract-not-allowed");
+	});
+});
+
+function upgradeToAndCall(implementation: Address, data: Hex = "0x"): Hex {
+	return encodeFunctionData({
+		abi: gianoSmartWalletAbi,
+		functionName: "upgradeToAndCall",
+		args: [implementation, data],
+	});
+}
+
+// Only owner management is sponsored as a self-call. Several other wallet functions run calls or
+// code they carry as a payload, which the allowlist never sees. Treating those as wallet
+// management would sponsor any call while skipping the allowlist.
+describe("other self-calls", () => {
+	const otherSelfCalls: Array<[string, Hex]> = [
+		[
+			"execute(self, execute(other))",
+			execute(WALLET, execute(OTHER, TRANSFER)),
+		],
+		[
+			"execute(self, executeBatch([other]))",
+			execute(WALLET, executeBatch([{ target: OTHER, data: TRANSFER }])),
+		],
+		[
+			"executeBatch([self → execute(other)])",
+			executeBatch([{ target: WALLET, data: execute(OTHER, TRANSFER) }]),
+		],
+		[
+			"execute(self, executeWithoutChainIdValidation([…]))",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "executeWithoutChainIdValidation",
+					args: [[execute(OTHER, TRANSFER)]],
+				}),
+			),
+		],
+		// Even an inner call the tenant allows is refused: nothing needs nesting, and the inner
+		// calls are not decoded, so they cannot be checked.
+		[
+			"execute(self, execute(allowed))",
+			execute(WALLET, execute(TOKEN, TRANSFER)),
+		],
+		// The payload is delegatecalled as the wallet, so its inner execute passes the owner check.
+		[
+			"execute(self, upgradeToAndCall(impl, execute(other)))",
+			execute(WALLET, upgradeToAndCall(OTHER, execute(OTHER, TRANSFER))),
+		],
+		// Even with no payload: the new implementation can run any code, now or later.
+		[
+			"execute(self, upgradeToAndCall(impl, 0x))",
+			execute(WALLET, upgradeToAndCall(OTHER)),
+		],
+		// Static, so no state changes, but the target can still use the gas the tenant pays for.
+		[
+			"execute(self, signedStaticCall(other))",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "signedStaticCall",
+					args: [
+						{ target: OTHER, data: TRANSFER, signedAt: 0n, signature: "0x" },
+					],
+				}),
+			),
+		],
+		// Any function the list does not name is refused by default, including the fallback.
+		["execute(self, unknown selector)", execute(WALLET, "0xffffffff")],
+		// 1 to 3 bytes: no selector, but not empty either, so the call reaches the fallback.
+		["execute(self, 1 byte)", execute(WALLET, "0x00")],
+		["execute(self, 3 bytes)", execute(WALLET, "0xabcdef")],
+		// Leaves the wallet with no owner. The product never sends it (WM-28).
+		[
+			"execute(self, removeLastOwner)",
+			execute(
+				WALLET,
+				encodeFunctionData({
+					abi: gianoSmartWalletAbi,
+					functionName: "removeLastOwner",
+					args: [0n, "0x"],
+				}),
+			),
+		],
+		// The owner functions are not payable, so this always reverts and the tenant pays for nothing.
+		["execute(self, 1 wei, addOwnerAddress)", execute(WALLET, ADD_OWNER, 1n)],
+		[
+			"executeBatch([self, 1 wei, addOwnerAddress])",
+			executeBatch([{ target: WALLET, data: ADD_OWNER, value: 1n }]),
+		],
+	];
+
+	it.each(otherSelfCalls)("refuses %s", (_label, callData) => {
+		const decision = evaluate({ candidate: { ...candidate, callData } });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
+		expect(decision.isWalletManagement).toBe(false);
+		// The calls decoded fine. The refusal is recorded under its own rule, so the decision
+		// table says why.
+		expect(
+			decision.results.find((r) => r.rule === "decodable-calls")?.passed,
+		).toBe(true);
+		expect(decision.results.find((r) => r.rule === "self-calls")?.passed).toBe(
+			false,
+		);
+		expect(
+			decision.results.find((r) => r.rule === "contract-allowlist")?.passed,
+		).toBe(false);
+	});
+
+	it("refuses a nested execute mixed into an otherwise sponsorable batch", () => {
+		const mixed = executeBatch([
+			{ target: WALLET, data: ADD_OWNER },
+			{ target: WALLET, data: execute(OTHER, TRANSFER) },
+		]);
+		const decision = evaluate({ candidate: { ...candidate, callData: mixed } });
+		expect(decision.allowed).toBe(false);
 		expect(decision.reason).toBe("contract-not-allowed");
 	});
 });
@@ -458,6 +625,7 @@ describe("audit trail", () => {
 			"sponsorship-enabled",
 			"sender-binding",
 			"decodable-calls",
+			"self-calls",
 			"wallet-management",
 			"contract-allowlist",
 			"function-allowlist",

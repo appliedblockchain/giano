@@ -818,7 +818,8 @@ Rules, in order — first failure decides, but every rule is still recorded:
 | `sponsorship-enabled` | Tenant switch on, config parses |
 | `sender-binding` | `userOp.sender` is the session's wallet |
 | `decodable-calls` | `callData` decodes as `execute` / `executeBatch`; anything else is refused, not guessed |
-| `wallet-management` | Any call whose target is the sender itself is wallet management: sponsored under the platform cap (or the tenant's lower one) unless the tenant has explicitly opted out |
+| `self-calls` | Every call whose target is the sender itself must be wallet management (below); any other self-call is refused with `contract-not-allowed` |
+| `wallet-management` | A self-call to `addOwnerAddress`, `addOwnerPublicKey` or `removeOwnerAtIndex` with no value, or a plain value transfer to self (calldata `0x`), is wallet management: sponsored under the platform cap (or the tenant's lower one) unless the tenant has explicitly opted out |
 | `contract-allowlist` | Every inner call's target is listed |
 | `function-allowlist` | Every inner call's selector is permitted for its target |
 | `max-cost` | `maxCost + fee + overheadBound ≤ maxCostPerTxWei` |
@@ -826,16 +827,28 @@ Rules, in order — first failure decides, but every rule is still recorded:
 
 Two details worth naming. **Batches are all-or-nothing**: one disallowed call in an
 `executeBatch` refuses the whole operation, because partial sponsorship is not a thing the chain can
-express. And **wallet management is detected structurally** — a call from the wallet to itself is
-`addOwner`, `removeOwner` or `upgradeToAndCall` — rather than by selector list. That structural test
-now cuts both ways, which is why it is the right one: a self-administration function added to the
-wallet later can neither become sponsorable by omission (the original reason) nor become
-*unsponsorable* by omission, which is what R-05 needs once these transactions must be sponsored.
+express. And **wallet management is detected by a list of allowed functions**, not structurally.
+The wallet's `onlyOwner` accepts a call from the wallet to itself, and several wallet functions run
+calls or code they carry as a payload: `execute`, `executeBatch` and
+`executeWithoutChainIdValidation` run the calls they wrap, `upgradeToAndCall` delegatecalls its
+payload and can switch the implementation, and `signedStaticCall` calls any target. A structural
+test ("any call from the wallet to itself") would sponsor all of them and skip the allowlist, so any
+signed-in user could make the tenant pay for any call. The list holds only the owner functions the
+product sends. `removeLastOwner` is left out because it locks the wallet for good and the product
+never builds it (WM-28). An owner function called with value is refused, because the owner functions
+are not payable and the call would always revert. The cost of a list is that a self-administration
+function added to the wallet later is not sponsored until it is added. That failure is safe: the
+user is asked to pay gas, and the tenant's balance is not at risk.
 
-A self-call bypasses `contract-allowlist` and `function-allowlist` entirely rather than needing an
+These rules assume the sender runs the canonical wallet implementation. A wallet an owner has
+upgraded to their own implementation can redefine any function, so no calldata rule holds for it.
+Checking the implementation needs the paymaster contract to do it during validation; ticket G40
+tracks that.
+
+A wallet-management self-call bypasses `contract-allowlist` and `function-allowlist` entirely rather than needing an
 entry in them. That is R-65: the tenant does not own this rule, so its list is not consulted for it.
 A mixed batch that touches both the wallet itself and an application contract is evaluated under
-both rules — the application calls against the allowlist, the self-calls against the platform
+both rules — the application calls against the allowlist, the wallet-management calls against the platform
 policy — and the tighter of the two caps applies, because the operation is one charge and the chain
 cannot split it.
 
