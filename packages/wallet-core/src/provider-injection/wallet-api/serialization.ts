@@ -18,7 +18,11 @@ export function toBase64Url(data: ArrayBuffer | Uint8Array): string {
 		typeof btoa === "function"
 			? btoa(binary)
 			: Buffer.from(bytes).toString("base64");
-	return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+	// Base64 ends with at most two "=". The bound also keeps the regex linear (CodeQL js/polynomial-redos).
+	return base64
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/={1,2}$/, "");
 }
 
 export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {

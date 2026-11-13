@@ -118,15 +118,38 @@ export function shortAddress(address: string): string {
 	return `${full.slice(0, 6)}…${full.slice(-4)}`;
 }
 
-/** Scales an integer amount by `decimals`, trimming trailing zeros: 10500000 / 6 → "10.5". */
+/** True for an ERC-20 `decimals` value: an integer from 0 to 255 (a `uint8`). */
+export function isTokenDecimals(decimals: unknown): decimals is number {
+	return (
+		Number.isInteger(decimals) &&
+		(decimals as number) >= 0 &&
+		(decimals as number) <= 255
+	);
+}
+
+/**
+ * Scales an integer amount by `decimals`, trimming trailing zeros: 10500000 / 6 → "10.5".
+ * Throws unless `decimals` is an integer from 0 to 255, so a negative, fractional or huge value
+ * cannot give a wrong result or a huge string.
+ */
 export function formatUnits(amount: bigint, decimals: number): string {
+	if (!isTokenDecimals(decimals)) {
+		throw new Error(`decimals must be an integer from 0 to 255: ${decimals}`);
+	}
 	const negative = amount < 0n;
 	const abs = negative ? -amount : amount;
 	const s = abs.toString().padStart(decimals + 1, "0");
 	const whole = s.slice(0, s.length - decimals) || "0";
 	const fraction =
-		decimals === 0 ? "" : s.slice(s.length - decimals).replace(/0+$/, "");
+		decimals === 0 ? "" : trimTrailingZeros(s.slice(s.length - decimals));
 	return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
+}
+
+/** Drops trailing "0" characters. A loop, not `/0+$/`, which backtracks quadratically on a long run of zeros. */
+function trimTrailingZeros(digits: string): string {
+	let end = digits.length;
+	while (end > 0 && digits[end - 1] === "0") end--;
+	return digits.slice(0, end);
 }
 
 /** Parses a bigint-ish value: bigint, number, decimal string or 0x-hex string. Throws otherwise. */

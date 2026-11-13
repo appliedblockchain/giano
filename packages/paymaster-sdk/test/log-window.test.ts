@@ -31,6 +31,10 @@ describe("isBlockRangeError", () => {
 		"query returned more than 10000 results",
 		"Log response size exceeded. You can make eth_getLogs requests with up to a 2K block range",
 		"exceed maximum block range: 5000",
+		// A long gap between "limited to a" and "range" in one sentence
+		"eth_getLogs is limited to a maximum of 10000 blocks per request for this API key tier, please reduce the range",
+		// An earlier sentence has "limited to a" but no "range"
+		"rate limited to a few calls. eth_getLogs is limited to a 10,000 range",
 		"requested too many blocks from 0 to 47000000, maximum is set to 1024",
 		// wallet-api's platform read relay, which the hosted console reads through
 		"eth_getLogs must name a blockHash, or hex fromBlock and toBlock spanning at most 10000 blocks",
@@ -38,8 +42,20 @@ describe("isBlockRangeError", () => {
 		expect(isBlockRangeError(new Error(message))).toBe(true);
 	});
 
+	it("answers quickly on a long message that repeats the start of a pattern", () => {
+		// CodeQL js/polynomial-redos: an unbounded gap took quadratic time on this input.
+		// The old regex took about 7 s here, past the 5 s test timeout, so a regression fails this test.
+		const message = "limited to a ".repeat(20_000);
+		expect(isBlockRangeError(new Error(message))).toBe(false);
+	});
+
 	it("does not swallow unrelated failures", () => {
 		expect(isBlockRangeError(new Error("execution reverted"))).toBe(false);
+		expect(
+			isBlockRangeError(
+				new Error("rate limited to a few calls. range unknown"),
+			),
+		).toBe(false);
 		expect(isBlockRangeError(new Error("fetch failed"))).toBe(false);
 		expect(isBlockRangeError(undefined)).toBe(false);
 	});

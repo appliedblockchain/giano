@@ -146,7 +146,7 @@ export async function findStaleExclusions(
 
 async function registryJson(name) {
 	const res = await fetch(
-		`https://registry.npmjs.org/${name.replace("/", "%2F")}`,
+		`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`,
 	);
 	return res.ok ? res.json() : null;
 }

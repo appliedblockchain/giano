@@ -163,7 +163,19 @@ describe("helpers", () => {
 		expect(formatUnits(0n, 18)).toBe("0");
 		expect(formatUnits(1n, 18)).toBe("0.000000000000000001");
 		expect(formatUnits(12345n, 0)).toBe("12345");
+		expect(formatUnits(1_000_000n, 6)).toBe("1");
+		expect(formatUnits(-1_200_000n, 6)).toBe("-1.2");
+		expect(formatUnits(1n, 255)).toBe(`0.${"0".repeat(254)}1`);
 	});
+
+	it.each([-2, 1.5, 256, 1e9, Number.NaN])(
+		"rejects %s decimals",
+		(decimals) => {
+			expect(() => formatUnits(100n, decimals)).toThrow(
+				"decimals must be an integer from 0 to 255",
+			);
+		},
+	);
 
 	it("reads deployments and coverage", () => {
 		expect(deploymentsOf(usdcMapping())).toEqual([

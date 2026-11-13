@@ -57,7 +57,7 @@ export function isBlockRangeError(error: unknown): boolean {
 	const message = flatten(error).toLowerCase();
 	if (!message) return false;
 	return (
-		/limited to a[^.]*range/.test(message) ||
+		isLimitedToARange(message) ||
 		/block range/.test(message) ||
 		/range is too large|range too large|too wide|too many blocks|exceeds? the maximum|max(imum)? (block )?range/.test(
 			message,
@@ -68,6 +68,19 @@ export function isBlockRangeError(error: unknown): boolean {
 		// wallet-api's platform read relay: "… fromBlock and toBlock spanning at most 10000 blocks"
 		/spanning at most \d+ blocks/.test(message)
 	);
+}
+
+/**
+ * "limited to a 10,000 range": "range" after "limited to a" in the same sentence, in any sentence.
+ * The same result as `/limited to a[^.]*range/`, which backtracks quadratically on a long message
+ * (CodeQL js/polynomial-redos). Each sentence is searched once, so the time stays linear.
+ */
+function isLimitedToARange(message: string): boolean {
+	const phrase = "limited to a";
+	return message.split(".").some((sentence) => {
+		const at = sentence.indexOf(phrase);
+		return at >= 0 && sentence.includes("range", at + phrase.length);
+	});
 }
 
 /** Every message in the error's cause chain, so a viem-wrapped RPC error still matches. */

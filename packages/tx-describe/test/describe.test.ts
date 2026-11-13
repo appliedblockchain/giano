@@ -68,6 +68,31 @@ describe("caller-supplied mappings", () => {
 		expect(r.warnings).toEqual([]);
 	});
 
+	it.each([-2, 1.5, 256, 1e9])(
+		"treats a token with %s decimals as unresolved",
+		async (decimals) => {
+			const tx = {
+				chainId: CHAIN,
+				to: USDC,
+				data: transferData(RECIPIENT, 10_500_000n),
+			};
+			const invalid = described(
+				await describeTransaction(tx, {
+					mappings: [usdcMapping()],
+					resolveToken: async () => ({ symbol: "USDC", decimals }),
+				}),
+			);
+			const unresolved = described(
+				await describeTransaction(tx, {
+					mappings: [usdcMapping()],
+					resolveToken: async () => null,
+				}),
+			);
+			expect(invalid).toEqual(unresolved);
+			expect(invalid.warnings.map((w) => w.code)).toContain("token-unresolved");
+		},
+	);
+
 	it("covers every call of the same kind with one mapping", async () => {
 		const opts = { mappings: [usdcMapping()], resolveToken: resolveUsdc };
 		const a = described(
@@ -283,6 +308,31 @@ describe("built-in generic mappings", () => {
 });
 
 describe("native transfers", () => {
+	it.each([
+		["a native transfer", "0x"],
+		["a mapped call with value", transferData(RECIPIENT, 1n)],
+	])(
+		"returns decode-failed for %s with invalid native decimals",
+		async (_, data) => {
+			for (const decimals of [-2, 1.5, 256, 1e9]) {
+				const r = unknown(
+					await describeTransaction(
+						{ chainId: CHAIN, to: USDC, data, value: "0x1" },
+						{
+							mappings: [usdcMapping()],
+							resolveToken: resolveUsdc,
+							nativeCurrency: { symbol: "ETH", decimals },
+						},
+					),
+				);
+				expect(r.reason).toBe("decode-failed");
+				expect(r.warnings[0]?.message).toContain(
+					"nativeCurrency.decimals must be an integer from 0 to 255",
+				);
+			}
+		},
+	);
+
 	it("describes a plain value transfer in the supplied currency", async () => {
 		const r = described(
 			await describeTransaction(

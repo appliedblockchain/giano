@@ -224,7 +224,8 @@ test("a container or service image on a tag, without a digest or from an express
 			"jobs.build.services.db.image",
 		],
 		["    services:\n      db: postgres:17\n", "jobs.build.services.db"],
-		[`    container: \${{ matrix.image }}\n`, "jobs.build.container"],
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a template
+		["    container: ${{ matrix.image }}\n", "jobs.build.container"],
 	]) {
 		const errors = checkActionPins(job(body), "x.yml");
 		assert.equal(errors.length, 1, body);
