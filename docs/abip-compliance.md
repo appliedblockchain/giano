@@ -29,11 +29,11 @@ in OpenSpec.
 | Template section | Disposition |
 |------------------|-------------|
 | Team | Applied Blockchain team only; there is no client contact to list |
-| GitHub | Present. Default permission, with one recorded exception: force-updating the branches of a stack you own after `gh stack rebase` (never `main` or `production`) |
+| GitHub | Present. Default permission, with two recorded exceptions: force-updating the branches of a stack you own after `gh stack rebase` (never `main` or `production`), and adding the `agent:review` label to a PR when the user asks for it on that PR, one review per request |
 | Jira | Omitted: Giano has no Jira project yet |
 | Notion | Present. Giano has no teamspace yet, so the in-scope resources are the `Giano` coordination page and its tickets database (read + write) and the ABIPs register (read only). PM dashboard and Decision Log: none yet |
 | Slack | `#giano-dev` only, read only; a PR announcement may be posted only when the user asks |
-| Pull requests | Present: trunk-based on `main`, `gh stack` for stacked work, `pnpm lint` before committing, `gh pr checks` before merging, merge commits, Conventional Commits, no AI attribution |
+| Pull requests | Present: trunk-based on `main`, `gh stack` for stacked work, `pnpm lint` before committing, `gh pr checks` before merging, the `agent:review` label for a Claude code and security review, merge commits, Conventional Commits, no AI attribution. Added: a "Review focus" subsection listing known false positives for `/code-review` and `/security-review` |
 
 Keep `AGENTS.md` current: a change to the team, the external systems or the PR conventions updates it in the same PR.
 When Giano gets a teamspace or a Jira board, add them there.
