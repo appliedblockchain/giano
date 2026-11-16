@@ -30,7 +30,10 @@
 //   RELEASE                    optional; the latest release by default
 //   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111),
 //                              and the private test token (fixtures/private-test-erc20.json) on a
-//                              local chain, or when CHAIN_PROFILE_JSON sets "privateTestErc20": true
+//                              local chain, or when CHAIN_PROFILE_JSON sets "privateTestErc20": true.
+//                              The registry JSON lists the test fixtures only with DEPLOY_TESTING=true:
+//                              only then does the run check their code on chain and refuse a
+//                              production chain (R-29), with or without a key.
 //   PAYMASTER_FUND_ETH         the test paymaster's initial EntryPoint deposit (default 0)
 //   OUT_DIR                    where the record and the registry JSON go (default /out)
 
@@ -127,7 +130,8 @@ cli([
 	...common,
 ]);
 
-if (env.DEPLOY_TESTING === "true") {
+const testing = env.DEPLOY_TESTING === "true";
+if (testing) {
 	cli([
 		"testing",
 		"--holder",
@@ -148,6 +152,9 @@ if (record.chainId !== chainId) {
 	);
 }
 const c = record.contracts;
+// The test fixtures only when `testing` ran: a seeded record may list them, but `core` checks only the
+// core contracts, so an address from the record alone is unchecked.
+const fixtures = testing ? c : {};
 const entry = {
 	chainId,
 	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
@@ -155,10 +162,12 @@ const entry = {
 	implementation: c.walletImplementation.address,
 	sponsorshipPaymaster: c.paymasterProxy.address,
 	sponsorshipPaymasterImplementation: c.paymasterImplementation.address,
-	...(c.testPaymaster ? { testPaymaster: c.testPaymaster.address } : {}),
-	...(c.testErc20 ? { testErc20: c.testErc20.address } : {}),
-	...(c.privateTestErc20
-		? { privateTestErc20: c.privateTestErc20.address }
+	...(fixtures.testPaymaster
+		? { testPaymaster: fixtures.testPaymaster.address }
+		: {}),
+	...(fixtures.testErc20 ? { testErc20: fixtures.testErc20.address } : {}),
+	...(fixtures.privateTestErc20
+		? { privateTestErc20: fixtures.privateTestErc20.address }
 		: {}),
 };
 const path = `${outDir}/giano-addresses.${chainId}.json`;
