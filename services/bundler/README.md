@@ -25,10 +25,10 @@ endpoint per chain: `POST /<chainId>`.
 | Method | Behaviour |
 | --- | --- |
 | `eth_chainId`, `eth_supportedEntryPoints` | From configuration and the chain. |
-| `eth_estimateUserOperationGas` `[op, entryPoint]` | Simulation-based (below). Always returns all five gas fields as hex. State overrides are refused. |
+| `eth_estimateUserOperationGas` `[op, entryPoint]` | Simulation-based (below), or fixed limits on a chain with `stateOverride: false`. Always returns all five gas fields as hex. State overrides in the request are refused. A `maxFeePerGas` of 0 is refused unless the latest block's base fee is 0 or absent. |
 | `eth_sendUserOperation` `[op, entryPoint]` | Checks, simulates against the real EntryPoint, broadcasts, then returns the hash. |
 | `eth_getUserOperationReceipt` `[hash]` | Alto's receipt shape. `null` while pending. |
-| `eth_getUserOperationByHash` `[hash]` | Alto's shape, decoded from the `handleOps` input. `null` while pending. |
+| `eth_getUserOperationByHash` `[hash]` | Alto's shape, decoded from the `handleOps` input. `null` while pending, and `null` when the RPC hides the transaction's calldata (input `0x`). |
 | `giano_executors` | Not ERC-4337: for wallet-api's chain status (`GET /v1/platform/chains`). The chain's gas price and, for each executor key, its address, balance (read when asked), whether its lane holds a transaction (`busySince`, and `heldSeconds` counted by the bundler's own clock), and its latest and pending nonces, all as hex. Addresses only; a key never leaves the bundler. |
 
 Receipts come from the chain: an operation this process submitted is found by its transaction,
@@ -66,6 +66,32 @@ is overridden too, with its immutable caller bound to the canonical v0.9 address
 - A final `simulateValidation` at the real price catches an account that cannot pay its prefund
   (AA21) or a paymaster deposit that cannot cover it (AA31).
 
+**Chains that refuse state overrides** (`bundler.stateOverride: false`, for example Silent Data)
+cannot simulate. The bundler then sends no `eth_call` with a state override and returns fixed limits:
+
+| Field | Fixed limit | A value the caller sends |
+| --- | --- | --- |
+| `verificationGasLimit` | 1,000,000 (a passkey validation plus wallet deployment) | kept when higher |
+| `callGasLimit` | 300,000; 0 for empty call data | always kept |
+| `paymasterVerificationGasLimit` | 200,000, with a paymaster | kept when higher |
+| `paymasterPostOpGasLimit` | 50,000, with a paymaster | kept |
+
+`preVerificationGas` is computed as below, on both paths. Nothing checks during estimation that
+the operation would succeed, so a call that needs more than its limit reverts on chain.
+
+The cost depends on the chain's base fee:
+- On a chain that charges no gas (base fee 0), the larger limits cost nothing.
+- On a chain that charges gas, the account or paymaster prefund, and wallet-api's maximum charge,
+  cover every limit at `maxFeePerGas`: about 1.5 million gas plus `preVerificationGas`. That is
+  about 4 times a simulated ETH transfer. EntryPoint v0.9 charges no unused verification gas.
+  When more than 40,000 call gas goes unused, it charges 10% of the unused call gas: a call that
+  uses 50,000 of 300,000 costs 25,000 more gas. A wallet that knows its call gas should send it.
+  Size the paymaster deposit, the tenant balances and `maxCostPerTxWei` for the fixed limits.
+
+Leave `stateOverride` at its default (`true`) on every chain whose RPC accepts state overrides.
+An explicit setting keeps a real simulation fault visible as an error: the bundler never falls
+back to fixed limits on its own.
+
 **preVerificationGas** is the calldata-and-overhead formula Alto used (21 000 + 18 300 per
 operation + calldata), plus 10%. During estimation it sizes the signature and paymaster data
 generously, as Alto did, because a real WebAuthn signature is longer than the stub. On an
@@ -102,7 +128,7 @@ Alto did. A resubmission of an operation it already has returns the same hash.
 - **No ERC-7562 validation tracing** (Alto's `--safe-mode`). That tracing protects a shared
   mempool from operations that pass simulation and fail on chain. Here each operation is simulated
   against the real EntryPoint immediately before its own transaction, so the RPC needs
-  `eth_call` state overrides but never `debug_traceCall`. One consequence: nothing in Giano's own
+  `eth_call` state overrides (unless the chain sets `stateOverride: false`) but never `debug_traceCall`. One consequence: nothing in Giano's own
   stack checks that account and paymaster validation stays ERC-7562-compliant, which is what a
   public bundler would require.
 - **No stake or reputation checks**, and no bundling of several operations into one transaction.
@@ -132,7 +158,8 @@ service validates its own section strictly and accepts the others' as-is.
       "enabled": true,                     // false: this bundler skips the chain
       "rpcUrl": "https://…",               // optional override for submission and simulation
       "chainType": "auto",                 // auto | default | op-stack
-      "maxBlockRange": 2000                // receipt lookback
+      "maxBlockRange": 2000,               // receipt lookback
+      "stateOverride": true                // false: the RPC refuses eth_call state overrides; fixed limits
     },
     "paymasterAdmin": { "walletRpcUrl": "…", "refreshSeconds": 15 }
   }
@@ -144,7 +171,7 @@ hold the keys that fund submission.
 
 | Variable | Default | |
 | --- | --- | --- |
-| `GIANO_CHAINS` | — | Required. Every RPC must support `eth_call` state overrides. |
+| `GIANO_CHAINS` | — | Required. Every RPC must support `eth_call` state overrides, unless its chain sets `bundler.stateOverride: false`. |
 | `BUNDLER_EXECUTOR_PRIVATE_KEYS` | — | Required. Comma-separated; one lane per key on every chain (nonces are per chain). Fund each key on each chain. |
 | `BUNDLER_PORT` / `BUNDLER_HOST` | `4337` / `0.0.0.0` | |
 | `BUNDLER_RESUBMIT_TIMEOUT_SECONDS` | `30` | |

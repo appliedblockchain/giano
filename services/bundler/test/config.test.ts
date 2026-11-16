@@ -116,6 +116,7 @@ describe("loadConfig", () => {
 				entryPoint: DEFAULT_ENTRYPOINT,
 				chainType: "auto",
 				maxBlockRange: 2000n,
+				stateOverride: true,
 			},
 		]);
 	});

@@ -130,6 +130,7 @@ type BundlerChainSectionShape = {
 		z.ZodEnum<{ auto: "auto"; default: "default"; "op-stack": "op-stack" }>
 	>;
 	maxBlockRange: z.ZodDefault<z.ZodNumber>;
+	stateOverride: z.ZodDefault<z.ZodBoolean>;
 };
 
 export const bundlerChainSectionSchema: z.ZodObject<
@@ -145,6 +146,18 @@ export const bundlerChainSectionSchema: z.ZodObject<
 		chainType: z.enum(["auto", "default", "op-stack"]).default("auto"),
 		/** Receipt lookback, in blocks, for operations this process did not submit. */
 		maxBlockRange: z.number().int().positive().default(2000),
+		/**
+		 * Set `false` only when the RPC refuses `eth_call` state overrides (Silent Data), so gas
+		 * estimation cannot simulate. The bundler then returns fixed limits: verification gas
+		 * 1,000,000, call gas 300,000 (0 for empty call data), and paymaster verification gas 200,000.
+		 * It keeps the caller's call gas, and a higher verification or paymaster verification gas.
+		 *
+		 * On a chain with base fee 0 the fixed limits cost nothing. On a chain that charges gas, the
+		 * prefund and wallet-api's maximum charge cover about 1.5 million gas plus pre-verification
+		 * gas, so size the paymaster deposit, tenant balances and `maxCostPerTxWei` for that. The
+		 * bundler never falls back to fixed limits by itself, so a simulation fault stays an error.
+		 */
+		stateOverride: z.boolean().default(true),
 	})
 	.strict();
 

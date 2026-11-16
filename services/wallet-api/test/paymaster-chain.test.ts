@@ -11,15 +11,17 @@ import {
 	type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
 import { and, eq } from "drizzle-orm";
-import type { Address, Hex, PublicClient } from "viem";
+import type { Address, Hex, PublicClient, TransactionReceipt } from "viem";
 import {
 	createPublicClient,
 	createWalletClient,
+	decodeEventLog,
 	encodeAbiParameters,
 	encodeFunctionData,
 	http,
 	parseEther,
 } from "viem";
+import { entryPoint09Abi } from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -28,6 +30,7 @@ import {
 	credentials,
 	paymasterTenants,
 	sessions,
+	sponsorshipReservations,
 	sponsorshipSettlements,
 	tenantSponsorship,
 	tenants,
@@ -46,6 +49,11 @@ import {
 	createLedgerService,
 	type LedgerService,
 } from "../src/services/sponsorship-ledger.js";
+import {
+	type CandidateOperation,
+	computeMaxCost,
+	computeOverheadBound,
+} from "../src/services/sponsorship-rules.js";
 import {
 	createSponsorshipService,
 	packUints,
@@ -127,6 +135,40 @@ const BUNDLER_KEY =
 /** The wallet owner. Anvil account 5, unused by anything else in the baked state. */
 const OWNER_KEY =
 	"0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba" as Hex;
+
+type GasLimits = {
+	callGasLimit: bigint;
+	verificationGasLimit: bigint;
+	preVerificationGas: bigint;
+	maxPriorityFeePerGas: bigint;
+	maxFeePerGas: bigint;
+	paymasterVerificationGasLimit: bigint;
+	paymasterPostOpGasLimit: bigint;
+};
+
+/** Limits of the size a simulating bundler returns. */
+const SIMULATED_LIMITS: GasLimits = {
+	callGasLimit: 300_000n,
+	verificationGasLimit: 600_000n,
+	preVerificationGas: 60_000n,
+	maxPriorityFeePerGas: 1_000_000_000n,
+	maxFeePerGas: 2_000_000_000n,
+	paymasterVerificationGasLimit: 200_000n,
+	paymasterPostOpGasLimit: 150_000n,
+};
+
+/**
+ * What giano-bundler returns on a chain with `bundler.stateOverride: false`, where it cannot
+ * simulate: verification 1,000,000, call 300,000 and paymaster verification 200,000. The post-op
+ * limit is the stub's 100,000, which the bundler keeps.
+ */
+const FIXED_LIMITS: GasLimits = {
+	...SIMULATED_LIMITS,
+	verificationGasLimit: 1_000_000n,
+	callGasLimit: 300_000n,
+	paymasterVerificationGasLimit: 200_000n,
+	paymasterPostOpGasLimit: 100_000n,
+};
 
 const ENTRY_POINT_ABI = [
 	{
@@ -437,7 +479,13 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 	 */
 	async function sendSponsoredOp(
 		callData: Hex,
-	): Promise<{ userOpHash: Hex; feeWei: bigint; serviceHash?: Hex }> {
+		limits: GasLimits = SIMULATED_LIMITS,
+	): Promise<{
+		userOpHash: Hex;
+		feeWei: bigint;
+		serviceHash?: Hex;
+		receipt: TransactionReceipt;
+	}> {
 		const nonce = (await client.readContract({
 			address: ENTRY_POINT,
 			abi: ENTRY_POINT_ABI,
@@ -445,13 +493,15 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 			args: [walletAddress, 0n],
 		})) as bigint;
 
-		const callGasLimit = 300_000n;
-		const verificationGasLimit = 600_000n;
-		const preVerificationGas = 60_000n;
-		const maxPriorityFeePerGas = 1_000_000_000n;
-		const maxFeePerGas = 2_000_000_000n;
-		const paymasterVerificationGasLimit = 200_000n;
-		const paymasterPostOpGasLimit = 150_000n;
+		const {
+			callGasLimit,
+			verificationGasLimit,
+			preVerificationGas,
+			maxPriorityFeePerGas,
+			maxFeePerGas,
+			paymasterVerificationGasLimit,
+			paymasterPostOpGasLimit,
+		} = limits;
 
 		const outcome = await service.decide({
 			method: "data",
@@ -539,6 +589,80 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 			userOpHash,
 			feeWei: outcome.feeWei,
 			serviceHash: outcome.useropHash,
+			receipt,
+		};
+	}
+
+	const candidateOf = (
+		callData: Hex,
+		limits: GasLimits,
+	): CandidateOperation => ({
+		sender: walletAddress,
+		callData,
+		callGasLimit: limits.callGasLimit,
+		verificationGasLimit: limits.verificationGasLimit,
+		preVerificationGas: limits.preVerificationGas,
+		maxFeePerGas: limits.maxFeePerGas,
+		paymasterVerificationGasLimit: limits.paymasterVerificationGasLimit,
+		paymasterPostOpGasLimit: limits.paymasterPostOpGasLimit,
+	});
+
+	const tenantKey = () => `0x${tenantId.replace(/-/g, "")}` as Hex;
+
+	/** The UserOperationEvent's actual gas cost, as the EntryPoint charged it. */
+	const userOperationEventCost = (receipt: TransactionReceipt): bigint => {
+		for (const log of receipt.logs) {
+			if (log.address.toLowerCase() !== ENTRY_POINT.toLowerCase()) continue;
+			try {
+				const event = decodeEventLog({
+					abi: entryPoint09Abi,
+					data: log.data,
+					topics: log.topics,
+				});
+				if (event.eventName === "UserOperationEvent")
+					return event.args.actualGasCost;
+			} catch {
+				// another EntryPoint event
+			}
+		}
+		throw new Error("no UserOperationEvent in the receipt");
+	};
+
+	/** Sends the operation, lets the watcher settle it, and returns its reservation and settlement. */
+	async function sendAndSettle(limits: GasLimits) {
+		// See the settlement test above: a stale cached head would make the watcher miss the event.
+		await client.getBlockNumber();
+		const balanceBefore = (await paymaster.tenant(tenantKey())).balanceWei;
+		const sent = await sendSponsoredOp(erc20Transfer(), limits);
+		const reservationOf = async () =>
+			(
+				await db
+					.select()
+					.from(sponsorshipReservations)
+					.where(eq(sponsorshipReservations.useropHash, sent.userOpHash))
+			)[0];
+		const reserved = await reservationOf();
+		if (!reserved)
+			throw new Error("no reservation carries this operation's hash");
+
+		await watcher.pollOnce();
+
+		const [settlement] = await db
+			.select()
+			.from(sponsorshipSettlements)
+			.where(
+				and(
+					eq(sponsorshipSettlements.chainId, CHAIN_ID),
+					eq(sponsorshipSettlements.useropHash, sent.userOpHash),
+				),
+			);
+		const balanceAfter = (await paymaster.tenant(tenantKey())).balanceWei;
+		return {
+			...sent,
+			reserved,
+			settled: await reservationOf(),
+			settlement,
+			tenantCharge: balanceBefore - balanceAfter,
 		};
 	}
 
@@ -687,4 +811,138 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 			/contract-not-allowed/,
 		);
 	}, 60_000);
+	describe("fixed gas limits from a bundler that cannot simulate (stateOverride: false)", () => {
+		it("reserves the maximum from the fixed limits and charges the actual cost on a chain that charges gas", async () => {
+			const candidate = candidateOf(erc20Transfer(), FIXED_LIMITS);
+			const params = await paymaster.params();
+			const result = await sendAndSettle(FIXED_LIMITS);
+
+			// The reservation is the maximum charge, computed from the fixed limits as from simulated ones.
+			expect(result.reserved.state).toBe("reserved");
+			expect(BigInt(result.reserved.maxCostWei)).toBe(
+				computeMaxCost(candidate),
+			);
+			expect(BigInt(result.reserved.overheadWei)).toBe(
+				computeOverheadBound(candidate, params),
+			);
+			expect(BigInt(result.reserved.totalWei)).toBe(
+				computeMaxCost(candidate) +
+					result.feeWei +
+					computeOverheadBound(candidate, params),
+			);
+
+			// The tenant is charged what the paymaster's Sponsored event records: the actual gas cost
+			// (at most the EntryPoint's, which adds the post-op), the fee and the overhead.
+			const { settlement } = result;
+			expect(
+				settlement,
+				"the watcher did not record this settlement",
+			).toBeDefined();
+			expect(BigInt(settlement.gasCostWei)).toBeGreaterThan(0n);
+			expect(BigInt(settlement.gasCostWei)).toBeLessThanOrEqual(
+				userOperationEventCost(result.receipt),
+			);
+			expect(BigInt(settlement.feeWei)).toBe(result.feeWei);
+			expect(result.tenantCharge).toBe(BigInt(settlement.totalWei));
+
+			// The rest of the reservation is released.
+			expect(BigInt(settlement.totalWei)).toBeLessThan(
+				BigInt(result.reserved.totalWei),
+			);
+			expect(result.settled?.state).toBe("settled");
+			expect(
+				(await ledger.getBalanceView(tenantId, CHAIN_ID)).reservedWei,
+			).toBe(0n);
+		}, 120_000);
+
+		it("refuses with the cap refusal, and reserves nothing, when the fixed limits' maximum charge exceeds maxCostPerTxWei", async () => {
+			const callData = erc20Transfer();
+			const candidate = candidateOf(callData, FIXED_LIMITS);
+			const [params, feeWei] = await Promise.all([
+				paymaster.params(),
+				paymaster.feeFor(tenantKey()),
+			]);
+			const maxChargeWei =
+				computeMaxCost(candidate) +
+				feeWei +
+				computeOverheadBound(candidate, params);
+			const capWei = maxChargeWei - 1n;
+			const nonce = (await client.readContract({
+				address: ENTRY_POINT,
+				abi: ENTRY_POINT_ABI,
+				functionName: "getNonce",
+				args: [walletAddress, 0n],
+			})) as bigint;
+
+			const [stored] = await db
+				.select({ config: tenantSponsorship.config })
+				.from(tenantSponsorship)
+				.where(
+					and(
+						eq(tenantSponsorship.tenantId, tenantId),
+						eq(tenantSponsorship.chainId, CHAIN_ID),
+					),
+				);
+			const setCap = (config: unknown) =>
+				db
+					.update(tenantSponsorship)
+					.set({ config: config as typeof stored.config })
+					.where(
+						and(
+							eq(tenantSponsorship.tenantId, tenantId),
+							eq(tenantSponsorship.chainId, CHAIN_ID),
+						),
+					);
+			const reservationsBefore = await db
+				.select()
+				.from(sponsorshipReservations);
+			await setCap({
+				...(stored.config as object),
+				maxCostPerTxWei: capWei.toString(),
+			});
+			try {
+				const outcome = await service.decide({
+					method: "data",
+					session,
+					nonce,
+					accountGasLimits: packUints(
+						FIXED_LIMITS.verificationGasLimit,
+						FIXED_LIMITS.callGasLimit,
+					),
+					gasFees: packUints(
+						FIXED_LIMITS.maxPriorityFeePerGas,
+						FIXED_LIMITS.maxFeePerGas,
+					),
+					candidate,
+				});
+				expect(outcome.outcome).toBe("refused");
+				if (outcome.outcome !== "refused") return;
+				expect(outcome.reason).toBe("cost-exceeds-cap");
+				expect(outcome.message).toContain(`maximum charge ${maxChargeWei} wei`);
+				expect(outcome.message).toContain(`cap of ${capWei} wei`);
+			} finally {
+				await setCap(stored.config);
+			}
+			expect(await db.select().from(sponsorshipReservations)).toEqual(
+				reservationsBefore,
+			);
+		}, 60_000);
+
+		it("has a gas part of 0 on a gasless chain, so the tenant is charged the fee only", async () => {
+			const gasless: GasLimits = {
+				...FIXED_LIMITS,
+				maxFeePerGas: 0n,
+				maxPriorityFeePerGas: 0n,
+			};
+			const candidate = candidateOf(erc20Transfer(), gasless);
+			expect(computeMaxCost(candidate)).toBe(0n);
+
+			const result = await sendAndSettle(gasless);
+			expect(BigInt(result.reserved.maxCostWei)).toBe(0n);
+			expect(BigInt(result.reserved.totalWei)).toBe(result.feeWei);
+			expect(BigInt(result.settlement.gasCostWei)).toBe(0n);
+			expect(BigInt(result.settlement.overheadWei)).toBe(0n);
+			expect(result.tenantCharge).toBe(result.feeWei);
+		}, 120_000);
+	});
 });

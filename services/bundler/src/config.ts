@@ -48,6 +48,8 @@ export type ChainConfig = {
 	chainType: ChainType | "auto";
 	/** Where to look for an operation's UserOperationEvent when this process did not submit it. */
 	maxBlockRange: bigint;
+	/** False when the RPC refuses eth_call state overrides: estimation returns fixed limits. Absent means true. */
+	stateOverride?: boolean;
 };
 
 export type BundlerConfig = {
@@ -218,6 +220,7 @@ function parseChains(raw: string): ChainConfig[] {
 			),
 			chainType: entry.bundler.chainType,
 			maxBlockRange: BigInt(entry.bundler.maxBlockRange),
+			stateOverride: entry.bundler.stateOverride,
 		}));
 	if (chains.length === 0)
 		throw new ConfigError(

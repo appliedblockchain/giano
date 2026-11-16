@@ -147,12 +147,11 @@ export function createLookup(options: {
 				[transactionHash],
 			);
 			if (!transaction?.blockHash || !transaction.to) return null;
-			const { functionName, args } = decodeFunctionData({
-				abi: entryPoint09Abi,
-				data: transaction.input,
-			});
-			if (functionName !== "handleOps") return null;
-			const op = args[0]
+			// An RPC that hides calldata from an unsigned reader (Silent Data) returns input `0x`.
+			// The answer is then null: the operation is never rebuilt from memory or a signed read.
+			const handleOps = decodeHandleOps(transaction.input);
+			if (!handleOps) return null;
+			const op = handleOps[0]
 				.map(unpack)
 				.find(
 					(candidate) =>
@@ -169,6 +168,19 @@ export function createLookup(options: {
 			};
 		},
 	};
+}
+
+/** The `handleOps` arguments, or null for input that is not a `handleOps` call (including `0x`). */
+function decodeHandleOps(input: Hex) {
+	try {
+		const { functionName, args } = decodeFunctionData({
+			abi: entryPoint09Abi,
+			data: input,
+		});
+		return functionName === "handleOps" ? args : null;
+	} catch {
+		return null;
+	}
 }
 
 function formatLog(log: RpcLog) {

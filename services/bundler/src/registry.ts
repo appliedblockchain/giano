@@ -170,6 +170,7 @@ export function createChainRegistry(options: {
 				chainId: config.chainId,
 				chainType,
 				executor: executors[0].address,
+				stateOverride: config.stateOverride,
 			}),
 			lookup: createLookup({
 				client,
