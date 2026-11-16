@@ -154,10 +154,15 @@ type Step = {
 	name: string;
 	/** Steps that must have passed for this one to run. */
 	needs: string[];
-	run: () => Promise<void> | void;
+	/** Gets its own step, so it can record a detail on success too. */
+	run: (step: Step) => Promise<void> | void;
 	outcome?: Outcome;
 	detail?: string;
 };
+
+/** The platform stack's wallet-api, and the bearer token its `/metrics` takes (operator.env). */
+const WALLET_API_URL = "http://wallet.localhost:8081/api";
+const METRICS_TOKEN = "rehearsal-metrics-token-0001";
 
 let stepNumber = 0;
 /** Runs a repository command as an operator would, from the repository root, logging its output. */
@@ -327,14 +332,14 @@ const steps: Step[] = [
 					// at this address, and the smoke test's self-call never touches it.
 					"SPONSOR_ALLOWLIST=0xcA11bde05977b3631167028862bE2a173976CA11",
 					"WALLET_ORIGIN=http://wallet.localhost:8081",
-					"WALLET_API_URL=http://wallet.localhost:8081/api",
+					`WALLET_API_URL=${WALLET_API_URL}`,
 					"RP_ID=wallet.localhost",
 					'RP_NAME="Giano Rehearsal"',
 					'BRAND_NAME="Giano Rehearsal"',
 					'GIANO_ALLOWED_DAPP_ORIGINS=["http://app.localhost:4400"]',
 					'TENANT_CORS_ORIGINS=["http://app.localhost:4400"]',
 					"OPEN_REGISTRATION=true",
-					"METRICS_BEARER_TOKEN=rehearsal-metrics-token-0001",
+					`METRICS_BEARER_TOKEN=${METRICS_TOKEN}`,
 					"GIANO_ENVIRONMENT=local-sepolia",
 					// The platform containers reach the fork through the host.
 					`RPC_URL=http://host.docker.internal:${values["fork-port"]}`,
@@ -626,8 +631,43 @@ if (values.platform)
 				),
 		},
 		{
-			name: "browser-smoke",
+			// wallet-api authorises against its ledger, which the paymaster watcher fills from the
+			// chain's events. A fresh database starts 5,000 blocks back and reads 200 a pass, so for a
+			// minute or two every tenant reads as unfunded and every sponsorship is refused. A real
+			// rollout waits for the same thing before its smoke test.
+			name: "watcher-caught-up",
 			needs: ["sponsorship-rules"],
+			run: async (step) => {
+				const started = Date.now();
+				let lag: number | undefined;
+				while (Date.now() - started < 10 * 60_000) {
+					const metrics = await fetch(`${WALLET_API_URL}/metrics`, {
+						headers: { authorization: `Bearer ${METRICS_TOKEN}` },
+					})
+						.then((r) => (r.ok ? r.text() : ""))
+						.catch(() => "");
+					const found = metrics.match(
+						new RegExp(
+							`^giano_paymaster_watcher_lag_blocks\\{chain="${profile.chainId}"\\} (\\d+)`,
+							"m",
+						),
+					);
+					lag = found ? Number(found[1]) : undefined;
+					// Within a few blocks of the head: the confirmation depth plus a poll's worth.
+					if (lag !== undefined && lag <= 10) {
+						step.detail = `caught up in ${Math.round((Date.now() - started) / 1000)}s (lag ${lag} blocks)`;
+						return;
+					}
+					await new Promise((resolve) => setTimeout(resolve, 2_000));
+				}
+				throw new Error(
+					`the paymaster watcher is still ${lag ?? "an unknown number of"} blocks behind after 10 minutes`,
+				);
+			},
+		},
+		{
+			name: "browser-smoke",
+			needs: ["watcher-caught-up"],
 			run: () => {
 				const record = readRecord(profile.chainId, undefined, recordsDir);
 				command(
@@ -667,7 +707,7 @@ async function main() {
 			step.detail = `needs ${step.needs.filter((n) => outcome.get(n) !== "pass").join(", ")}`;
 		} else {
 			try {
-				await step.run();
+				await step.run(step);
 				step.outcome = "pass";
 			} catch (error) {
 				step.outcome = "fail";
