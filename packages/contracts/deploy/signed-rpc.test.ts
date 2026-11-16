@@ -205,6 +205,45 @@ test("provision:paymaster --signed-rpc without DEPLOYER_PRIVATE_KEY exits non-ze
 	});
 });
 
+/** Runs `provision:paymaster` against the stub RPC with an explicit paymaster and DEPLOYER_PRIVATE_KEY. */
+function provision(url: string, flags: string[]) {
+	return runScript(
+		[
+			"scripts/provision-paymaster.ts",
+			"--rpc",
+			url,
+			"--paymaster",
+			"0x00000000000000000000000000000000000000dd",
+			...flags,
+		],
+		ROOT_KEY,
+	);
+}
+
+test("provision:paymaster --signed-rpc signs every request after the chain id read with DEPLOYER_PRIVATE_KEY", async () => {
+	await withStubRpc(async (url, received) => {
+		await provision(url, ["--signed-rpc"]);
+		// ethers may read the chain id more than once before it switches to the signed provider.
+		const signed = received.filter(({ method }) => method !== "eth_chainId");
+		assert.ok(signed.length > 0);
+		for (const request of signed) {
+			assert.match(String(request.headers["x-timestamp"]), RFC_3339);
+			assert.equal(await payloadSigner(request), root.address, request.method);
+		}
+	});
+});
+
+test("provision:paymaster without --signed-rpc sends no signature headers", async () => {
+	await withStubRpc(async (url, received) => {
+		await provision(url, []);
+		assert.ok(received.some(({ method }) => method !== "eth_chainId"));
+		for (const { headers, method } of received) {
+			assert.equal(headers["x-timestamp"], undefined, method);
+			assert.equal(headers["x-signature"], undefined, method);
+		}
+	});
+});
+
 test("deploy:cli core --signed-rpc signs every request after the chain id read with DEPLOYER_PRIVATE_KEY", async () => {
 	await withStubRpc(async (url, received) => {
 		await deployCore(url, ["--signed-rpc"], ROOT_KEY);
