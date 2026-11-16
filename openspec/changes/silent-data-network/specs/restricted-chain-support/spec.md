@@ -78,7 +78,7 @@ On a chain that charges gas and sets `stateOverride: false`, wallet-api SHALL co
 - **THEN** the gas part of the maximum charge is 0, and the operation succeeds
 
 ### Requirement: Operator tools sign their RPC requests on request
-`deploy:cli` and `provision:paymaster` SHALL accept `--signed-rpc`. With it, every RPC request SHALL carry `x-timestamp` (RFC 3339) and `x-signature`. The signature is the operator key's EIP-191 signature of the chain id, the exact HTTP body and the timestamp, joined. `--signed-rpc` without an operator key SHALL be refused before any request is sent.
+`deploy:cli` and `provision:paymaster` SHALL accept `--signed-rpc`. With it, every RPC request after the chain id read SHALL carry `x-timestamp` (RFC 3339) and `x-signature`. The chain id read goes unsigned, because the signature covers the chain id. The signature is the operator key's EIP-191 signature of the chain id, the exact HTTP body and the timestamp, joined. `--signed-rpc` without an operator key SHALL be refused before any request is sent.
 
 #### Scenario: Role-gated call through a gateway that rewrites `from`
 - **WHEN** `provision:paymaster --signed-rpc` estimates a call that needs a role the operator holds, through an RPC that replaces `from` on unsigned calls
