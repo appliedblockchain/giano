@@ -1131,6 +1131,13 @@ describe("check-accepted-findings: report details", () => {
 		);
 	});
 
+	it("throws on a report from an unknown tool, including the retired Aderyn", () => {
+		assert.throws(
+			() => evaluateReport("aderyn", "{}", register(), TODAY),
+			/unknown tool 'aderyn'/,
+		);
+	});
+
 	it("fails a Slither entry that matches no finding in the report", () => {
 		const slither = evaluateReport(
 			"slither",
@@ -1155,10 +1162,6 @@ describe("check-accepted-findings: report details", () => {
 		assert.deepEqual(
 			onlySlither.failures.map((f) => f.label),
 			["AF-001 in security/accepted-findings.json"],
-		);
-		assert.throws(
-			() => evaluateReport("aderyn", "{}", register(), TODAY),
-			/unknown tool 'aderyn'/,
 		);
 		// A finding that the entry matches but no longer covers still uses the entry.
 		const raised = evaluateReport(

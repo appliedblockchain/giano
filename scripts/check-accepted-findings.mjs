@@ -1046,8 +1046,9 @@ const matches = (entry, key) =>
 
 // Tools whose findings change only when the contract source or the pinned tool version changes. For
 // these, every entry must match a finding in each report. An entry that matches nothing fails, so the
-// PR that fixes or moves a finding also removes or updates its entry. Otherwise a stale entry would
-// later accept a different finding.
+// PR that fixes or moves a finding also removes or updates its entry, and the register stays in sync
+// with the code. A Slither `id` hashes the whole finding, so a stale entry cannot match a different
+// finding; the reason for this check is that sync, not a collision.
 export const FULL_SCAN_TOOLS = ["slither"];
 
 /**
