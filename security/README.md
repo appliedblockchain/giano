@@ -12,18 +12,17 @@ security check runs it on its own report. The rules are in the `ci-security-gate
 ```json
 {
 	"id": "AF-099",
-	"tool": "aderyn",
+	"tool": "slither",
 	"match": {
-		"detector_name": "yul-return",
-		"contract_path": "src/utils/Example.sol",
-		"line_no": 12
+		"check": "arbitrary-send-eth",
+		"id": "5c0d2f6e9a4b1c3d7e8f0a1b2c3d4e5f60718293a4b5c6d7e8f9012345678901"
 	},
 	"severity": "high",
-	"location": "packages/contracts/src/utils/Example.sol:12 (Example constructor)",
+	"location": "packages/contracts/src/utils/Example.sol#L12-L18 (Example._send)",
 	"accepted": "2026-11-09",
 	"expires": "2027-05-08",
 	"owner": "Rui Sereno",
-	"reason": "By design: the constructor returns a value to an eth_call and the contract is never deployed.",
+	"reason": "False positive: every caller of _send is restricted to the owner.",
 	"followUp": "G22 (independent contract review)."
 }
 ```
@@ -31,7 +30,7 @@ security check runs it on its own report. The rules are in the `ci-security-gate
 | Field | Rule |
 |-------|------|
 | `id` | `AF-` and three digits. Unique. Take the next free number; never reuse a removed one. |
-| `tool` | `slither`, `aderyn`, `pnpm-audit`, `trivy`, `gitleaks` or `codeql`. |
+| `tool` | `slither`, `pnpm-audit`, `trivy`, `gitleaks` or `codeql`. |
 | `match` | The tool's identifier for the finding (next section). It must match exactly. |
 | `severity` | `informational`, `low`, `medium`, `moderate`, `high` or `critical`, as the tool reports it. The entry accepts the finding only up to this severity: if the tool later reports it higher, CI fails until the owner reassesses it. |
 | `location` | Where the finding is, for a reader: file and line, package and lockfile, or image. |
@@ -48,7 +47,6 @@ Each tool's CI job uploads its full report. Download it from the run's artifacts
 | Tool | Gate | `match` | Where to find it |
 |------|------|---------|------------------|
 | `slither` | High | `check`, `id` | `slither.json`: `results.detectors[].check` and the 64-character `id`. The `id` is a SHA3-256 hash of the finding text, which includes the file and line of the flagged code. An edit that moves that line, a rename, or a Slither upgrade that changes the text format changes the `id` and needs the entry updated. |
-| `aderyn` | High | `detector_name`, `contract_path`, `line_no` | `aderyn-report.json`: `high_issues.issues[].detector_name`, and `contract_path` and `line_no` of the instance. Aderyn has no stable finding ID, so an edit above the finding that moves its line needs the entry updated. |
 | `pnpm-audit` | high, critical | `workspace` (`.` or `services/custom-example`), `ghsa` | `pnpm audit --json` in that workspace: `advisories.*.github_advisory_id`. |
 | `trivy` | HIGH, CRITICAL with a fix | `image`, `package`, `vulnerability` | The image name without registry or tag (`giano-wallet-api`), and `PkgName` and `VulnerabilityID` from the Trivy JSON. |
 | `gitleaks` | any | `fingerprint`, or `allowlist` | `Fingerprint` from the gitleaks JSON. An entry for an allowlist in `.gitleaks.toml` uses `{ "allowlist": ".gitleaks.toml" }`, and the allowlist's `description` starts with the entry ID. Each entry accepts one allowlist. |
@@ -63,10 +61,10 @@ When an entry expires, the register check fails on every PR and release until th
 - **Renew.** Reassess the finding, then set a new `accepted` date, an updated `reason` and a new `expires`.
 - **Remove.** If the finding is fixed or no longer reported, delete the entry. Its ID is not reused.
 
-A `slither` or `aderyn` entry that matches no finding in the report fails the job. The PR that fixes or moves a finding
-removes or updates its entry. Otherwise a stale `aderyn` entry, which matches only a detector, a file and a line, would
-later accept a different finding that lands on the same line. The other tools' findings can change without a code
-change, for example when an advisory database changes, so their unused entries do not fail CI.
+A `slither` entry that matches no finding in the report fails the job. The PR that fixes or moves a finding removes or
+updates its entry, so the register stays in sync with the code. A Slither `id` hashes the whole finding, so a stale
+entry cannot match a different finding; the check exists to keep the register in sync. The other tools' findings can change
+without a code change, for example when an advisory database changes, so their unused entries do not fail CI.
 
 The weekly security scan lists entries that expire within 14 days, with their owners, in its tracking issue. To see
 the list locally, run `node scripts/check-accepted-findings.mjs --expiring-within 14`.
@@ -95,13 +93,12 @@ Register entries:
 
 Contract sources and Solidity tool configs:
 - A `slither-disable`, `aderyn-ignore` or `aderyn-fp` comment under `packages/contracts/src`. A source comment changes
-  the contract metadata hash, and so the bytecode and the CREATE2 addresses.
+  the contract metadata hash, and so the bytecode and the CREATE2 addresses. Aderyn no longer runs (Cyfrin retired it),
+  but its comments stay rejected so that dead suppressions do not return.
 - A symlink under `packages/contracts/src`, or `src` or a folder above it as a symlink.
-- A missing `packages/contracts/slither.config.json` or `packages/contracts/aderyn.toml`, or any change to them other
-  than the reasons. They set the scope only: `packages/contracts/src` without `src/testing`. The script compares each
-  file with a fixed copy, so a scope change is a change to `scripts/check-accepted-findings.mjs`. The reasons are the
-  `//` member of `slither.config.json` and the whole-line `#` comments of `aderyn.toml`. A trailing comment on a
-  setting line of `aderyn.toml` fails the check.
+- A missing `packages/contracts/slither.config.json`, or any change to it other than the reasons. It sets the scope
+  only: `packages/contracts/src` without `src/testing`. The script compares the file with a fixed copy, so a scope
+  change is a change to `scripts/check-accepted-findings.mjs`. The reasons are the `//` member of the file.
 
 gitleaks:
 - A `.gitleaks.toml` that does not keep every default rule. It must have `[extend]` with `useDefault = true`, and may

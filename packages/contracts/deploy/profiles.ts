@@ -9,7 +9,7 @@ import {
 import { basename, resolve } from "node:path";
 import { getAddress, parseEther, zeroAddress } from "viem";
 import { z } from "zod";
-import { OVERRIDE_KEYS, PROFILE_NETWORKS } from "./config";
+import { assertNetworkClass, OVERRIDE_KEYS, PROFILE_NETWORKS } from "./config";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 export const PROFILES_DIR = resolve(REPO_ROOT, "deploy/chains");
@@ -159,18 +159,18 @@ export function loadProfile(options: {
 	const file = options.config
 		? resolve(REPO_ROOT, options.config)
 		: resolve(PROFILES_DIR, `${options.chain}.json`);
+	let profile: ChainProfile;
 	try {
-		return {
-			file,
-			id: basename(file, ".json"),
-			profile: profileSchema.parse(JSON.parse(readFileSync(file, "utf8"))),
-		};
+		profile = profileSchema.parse(JSON.parse(readFileSync(file, "utf8")));
 	} catch {
 		// Do not print parser errors: an operator may accidentally paste a credential into a field.
 		throw new Error(
 			`Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, network (${PROFILE_NETWORKS.join(" or ")}), name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance, paymaster parameters, and optionally the timelock and address overrides (${OVERRIDE_KEYS.join(", ")}). Unknown/secret fields are refused.`,
 		);
 	}
+	// Outside the parse's catch: this refusal names the chain, never a field's content.
+	assertNetworkClass(profile.chainId, profile.network);
+	return { file, id: basename(file, ".json"), profile };
 }
 
 /** Only public choices are persisted; a runtime --rpc or environment override is never copied. */

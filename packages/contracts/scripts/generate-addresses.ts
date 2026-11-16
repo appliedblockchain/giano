@@ -21,7 +21,10 @@ import {
 	LOCAL_CHAIN_IDS,
 	type NetworkClass,
 } from "../deploy/config";
-import { DEPLOYMENTS_DIR, type DeploymentRecord } from "../deploy/records";
+import {
+	COMMITTED_DEPLOYMENTS_DIR,
+	type DeploymentRecord,
+} from "../deploy/records";
 import { RELEASE_FINGERPRINTS, type ReleaseFingerprint } from "../release-code";
 
 const pkgRoot = path.resolve(import.meta.dirname, "..");
@@ -57,7 +60,7 @@ function isAddress(value: unknown): value is string {
 }
 
 export function generateRegistry(
-	dir: string = DEPLOYMENTS_DIR,
+	dir: string = COMMITTED_DEPLOYMENTS_DIR,
 	overrides: Overrides = JSON.parse(fs.readFileSync(overridesPath, "utf8")),
 	fingerprints: readonly ReleaseFingerprint[] = RELEASE_FINGERPRINTS,
 ): { text: string; chains: number } {

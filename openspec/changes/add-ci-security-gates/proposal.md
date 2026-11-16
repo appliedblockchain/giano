@@ -19,10 +19,11 @@ G25 sets four requirements:
   gate reports and the team accepts. Each entry has a reason, an owner and an expiry date. A dependency-free check
   script, with unit tests, validates the register and fails CI on a missing field or an expired entry. Every gate below
   reads the register. A tool-level suppression is allowed only if it names a register entry.
-- **Solidity static analysis.** Add Slither and Aderyn to `ci.yml` for `packages/contracts/src`, with
-  exact versions, a hash-locked pip requirements file for Slither, an Aderyn release binary checked against a
-  recorded sha256, and both reports uploaded as artifacts. The job fails on any High finding that is not in the
-  register. The four High findings from the trial run on 2026-11-09 go into the register with their reasons.
+- **Solidity static analysis.** Add Slither to `ci.yml` for `packages/contracts/src`, with an exact version and a
+  hash-locked pip requirements file, and its reports uploaded as artifacts. The job fails on any High finding that is
+  not in the register. The High finding from the trial run on 2026-11-09 goes into the register with its reason.
+  Aderyn ran in the same job at first. Cyfrin retired it on 2026-11-13 and withdrew its downloads, so it was removed
+  (design D14).
 - **Dependency audit.** Run `pnpm audit` on both pnpm workspaces in `ci.yml`. It fails on a high or critical advisory
   that is not in the register. Extend `.github/dependabot.yml`, which #246 added for GitHub Actions, to npm (both workspaces), with a 7-day
   `cooldown` to match ABIP-6.
@@ -54,7 +55,7 @@ G25 sets four requirements:
   on every pull request and in the CI run that `release.yml` calls, so they also gate npm publishing. `docker.yml` gains an image scan before the push. New workflows: `codeql.yml` and `security-scan.yml`.
   Changed file: `.github/dependabot.yml`.
 - **New files.** `security/accepted-findings.json`, `scripts/check-accepted-findings.mjs` and its test,
-  `packages/contracts/slither.config.json`, `packages/contracts/aderyn.toml`,
+  `packages/contracts/slither.config.json` (`packages/contracts/aderyn.toml` was added, then removed in D14),
   `packages/contracts/requirements-ci.in` and `requirements-ci.txt`, and `.gitleaks.toml`.
 - **Contracts.** No contract source change. A Solidity comment would change the metadata hash in the bytecode and move
   the canonical CREATE2 addresses, so in-source suppressions are not used.

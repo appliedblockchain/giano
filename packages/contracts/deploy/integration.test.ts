@@ -36,10 +36,18 @@ import {
 	type DeployContext,
 	deployCore,
 	deployTimelock,
+	deployUpgradeTarget,
+	paymasterUpgradeProposal,
 	planHandOff,
 } from "./deploy";
 import { impersonate, installCreateX, installEntryPoint } from "./local";
-import { inspectDeployment } from "./preflight";
+import { planCore, reconcileRecord } from "./plan";
+import {
+	handOffProblems,
+	inspectDeployment,
+	profileCoreConfig,
+	verifyCoreState,
+} from "./preflight";
 import { loadProfile, paymasterParams } from "./profiles";
 import { readRecord, writeRecord } from "./records";
 import { loadRelease } from "./release";
@@ -226,6 +234,136 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 				}),
 				BigInt(Math.max(delays.minDelay, delays[name])),
 			);
+		// The hand-off pre-flight (handOffProblems): checked before anything irreversible is sent.
+		assert.ok(timelock.transactionHash);
+		const deployedIn = (
+			await client.getTransactionReceipt({ hash: timelock.transactionHash })
+		).blockNumber;
+		const published = {
+			proposers: [proposer],
+			executors: [],
+			delays,
+			fromBlock: deployedIn,
+		};
+		const preflight = (
+			overrides: Partial<Parameters<typeof handOffProblems>[1]>,
+		) =>
+			handOffProblems(client, {
+				network: "local",
+				proxy,
+				timelock: timelock.address,
+				published,
+				...overrides,
+			});
+		assert.deepEqual(await preflight({}), []);
+		const stranger = getAddress("0x0000000000000000000000000000000000057a9e");
+		assert.match(
+			(
+				await preflight({ published: { ...published, proposers: [stranger] } })
+			).join("; "),
+			/does not hold PROPOSER_ROLE.*0x00000000000000000000000000000000000Ca5e0 holds PROPOSER_ROLE but is not published for it/i,
+		);
+		// The grant history decides whether anyone else holds a timelock role, so a history that
+		// cannot be read fails the hand-off (B3), on an RPC that refuses wide log ranges as on one
+		// that refuses them all.
+		assert.match(
+			(
+				await preflight({
+					published: { ...published, fromBlock: undefined },
+				})
+			).join("; "),
+			/deployment block is unknown/,
+		);
+		const noLogs = new Proxy(client, {
+			get: (target, property, receiver) =>
+				property === "getLogs"
+					? () => Promise.reject(new Error("block range too large"))
+					: Reflect.get(target, property, receiver),
+		});
+		assert.match(
+			(
+				await handOffProblems(noLogs, {
+					network: "local",
+					proxy,
+					timelock: timelock.address,
+					published,
+				})
+			).join("; "),
+			/could not list the timelock's role grants .*block range too large/,
+		);
+		// Extra cancellers and executors are found the same way as extra proposers, and a grant
+		// revoked since does not count.
+		await impersonate(testClient, timelock.address);
+		await testClient.setBalance({
+			address: timelock.address,
+			value: 10n ** 18n,
+		});
+		const asTimelock = createWalletClient({
+			chain,
+			transport,
+			account: timelock.address,
+		});
+		const timelockRole = async (
+			functionName: "grantRole" | "revokeRole",
+			role: "CANCELLER_ROLE" | "EXECUTOR_ROLE",
+		) => {
+			const id = await client.readContract({
+				address: timelock.address,
+				abi: gianoTimelockAbi,
+				functionName: role,
+			});
+			await client.waitForTransactionReceipt({
+				hash: await asTimelock.writeContract({
+					address: timelock.address,
+					abi: gianoTimelockAbi,
+					functionName,
+					args: [id, stranger],
+				}),
+			});
+		};
+		await timelockRole("grantRole", "CANCELLER_ROLE");
+		await timelockRole("grantRole", "EXECUTOR_ROLE");
+		assert.match(
+			(await preflight({})).join("; "),
+			/0x0000000000000000000000000000000000057a9e holds CANCELLER_ROLE but is not published for it.*0x0000000000000000000000000000000000057a9e holds EXECUTOR_ROLE but is not published for it/i,
+		);
+		await timelockRole("revokeRole", "CANCELLER_ROLE");
+		await timelockRole("revokeRole", "EXECUTOR_ROLE");
+		await testClient.stopImpersonatingAccount({ address: timelock.address });
+		assert.deepEqual(await preflight({}), []);
+		assert.match(
+			(await preflight({ network: "mainnet" })).join("; "),
+			/proposer .* is a key/,
+		);
+		// An EOA with an EIP-7702 delegation has code, and is still one key.
+		await testClient.setCode({
+			address: proposer,
+			bytecode: `0xef0100${proxy.slice(2)}`,
+		});
+		assert.match(
+			(await preflight({ network: "mainnet" })).join("; "),
+			/proposer .* is a key \(no code, or only an EIP-7702 delegation\)/,
+		);
+		await testClient.setCode({ address: proposer, bytecode: "0x" });
+		assert.match(
+			(
+				await preflight({
+					published: {
+						...published,
+						delays: {
+							...delays,
+							upgradeToAndCall: delays.upgradeToAndCall * 2,
+						},
+					},
+				})
+			).join("; "),
+			/upgradeToAndCall waits .*less than the published/,
+		);
+		assert.match(
+			(await preflight({ timelock: proxy })).join("; "),
+			/matches no release's GianoTimelock/,
+		);
+
 		const handOff = await planHandOff(
 			client,
 			proxy,
@@ -294,6 +432,97 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			to: timelock.address,
 			data: onTime.schedule,
 		});
+
+		// An upgrade executed through the timelock, which the record is never told about: the plan reads
+		// it from the proxy (D2), and the handed-off chain verifies against its timelock (N2).
+		const original = structuredClone(
+			ctx.record.contracts.paymasterImplementation,
+		);
+		const upgradedFrom = original?.address;
+		const target = await deployUpgradeTarget(
+			ctx,
+			loadRelease("v3"),
+			"paymasterImplementation",
+		);
+		const upgrade = await paymasterUpgradeProposal(
+			client,
+			timelock.address,
+			proxy,
+			target.address,
+		);
+		const proposerClient = createWalletClient({
+			chain,
+			transport,
+			account: proposer,
+		});
+		await client.waitForTransactionReceipt({
+			hash: await proposerClient.sendTransaction({
+				to: timelock.address,
+				data: upgrade.schedule,
+			}),
+		});
+		await testClient.increaseTime({ seconds: Number(upgrade.delay) + 1 });
+		await testClient.mine({ blocks: 1 });
+		await client.waitForTransactionReceipt({
+			hash: await adminClient.sendTransaction({
+				to: timelock.address,
+				data: upgrade.execute,
+			}),
+		});
+		assert.equal(
+			ctx.record.contracts.paymasterImplementation?.address,
+			upgradedFrom,
+			"the record is not updated by a timelock execution",
+		);
+		const planInput = {
+			network: "local" as const,
+			signer: null,
+			deployer: CANONICAL_DEPLOYER,
+			verifyOnly: true,
+		};
+		const after = await planCore(client, { ...planInput, record: ctx.record });
+		assert.deepEqual(
+			after.blockers.filter((b) => /points at/.test(b)),
+			[],
+		);
+		assert.deepEqual(after.reconciled, [
+			{
+				key: "paymasterImplementation",
+				from: upgradedFrom ? getAddress(upgradedFrom) : null,
+				to: getAddress(target.address),
+			},
+		]);
+		const config = profileCoreConfig(profile);
+		await assert.rejects(
+			verifyCoreState(client, ROLE_ADMIN, config, after),
+			/does not hold ROLE_ADMIN/,
+		);
+		await verifyCoreState(client, ROLE_ADMIN, config, after, {
+			timelock: timelock.address,
+		});
+		assert.equal(reconcileRecord(ctx.record, after), true);
+		assert.equal(
+			ctx.record.contracts.paymasterImplementation?.address,
+			target.address,
+		);
+		assert.equal(
+			ctx.record.contracts.paymasterImplementation?.label,
+			target.label,
+		);
+		// An implementation the record does not list as an upgrade target still blocks.
+		const unrecorded = await planCore(client, {
+			...planInput,
+			record: {
+				...ctx.record,
+				contracts: {
+					...ctx.record.contracts,
+					paymasterImplementation: original,
+				},
+				upgrades: [],
+			},
+		});
+		assert.equal(unrecorded.reconciled.length, 0);
+		assert.ok(unrecorded.blockers.some((b) => /points at/.test(b)));
 	} finally {
 		anvil.kill();
 		rmSync(dir, { recursive: true, force: true });

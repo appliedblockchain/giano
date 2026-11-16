@@ -43,23 +43,30 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       install-entrypoint` is the local recipe).
 
 3.  RIP-7212 P-256 precompile present?
-      Informational; drives fee tuning. Where absent, deploy the FreshCryptoLib verifier
-      (`pnpm --filter @appliedblockchain/giano-contracts deploy:cli p256 --rpc <url>`) —
-      giano-doctor treats missing P-256 verification as CRITICAL.
+      Informational; drives fee tuning. Where absent, the wallet verifies passkeys with the
+      FreshCryptoLib built into its own code, at a higher gas cost, and giano-doctor reports it
+      as information, not a failure. Deploying the shared FreshCryptoLib verifier
+      (`deploy:cli p256 --rpc <url>`) is an optional optimisation; it sends a pre-EIP-155
+      transaction, so check that the RPC accepts one before funding it.
 
-4.  Deploy the contracts — with the canonical deployer key of the chain's class (the profile's
-      "network"). Both keys are development-team keys kept in 1Password, outside ABIP-8 scope
+4.  Rehearse, then deploy the contracts with the guided wizard and the canonical deployer key of
+      the chain's class (the profile's "network"). First run the whole path on a fork, with a
+      throwaway stand-in deployer, nothing sent to the chain (deploy/contracts/README.md,
+      "Rehearsal"):
+        pnpm contracts:rehearse --chain <profile> --platform
+      Both canonical keys are development-team keys kept in 1Password, outside ABIP-8 scope
       (docs/key-ceremony.md names the items). Load the key for the class from its 1Password item
-      into the deploying shell's environment only (DEPLOYER_PRIVATE_KEY for deploy:cli,
-      CANONICAL_DEPLOYER_PRIVATE_KEY for the wizard) — never into a file in the repository, a dotenv
-      or a client's configuration; a testnet adoption uses the testnet key, never the mainnet one:
-        pnpm --filter @appliedblockchain/giano-contracts \
-          deploy:cli core --rpc <url> --chain <profile> --role-admin <timelock>
-      On a mainnet profile any deviation (an override, another signing key, a contract recorded
-      away from its deterministic address) is always refused: the command has no prompt, and only
-      the guided wizard (pnpm contracts:deploy), which requires typing `deviate <profile>`, can
-      confirm one. Testnet deviations are shown and recorded. --role-admin must not be a deployer
-      key (the signer or a class deployer).
+      into the deploying shell's environment only (CANONICAL_DEPLOYER_PRIVATE_KEY) — never into a
+      file in the repository, a dotenv or a client's configuration; a testnet adoption uses the
+      testnet key, never the mainnet one:
+        pnpm contracts:deploy --chain <profile> --role-admin <bootstrap operator EOA>
+      The paymaster's ROLE_ADMIN starts on the bootstrap operator EOA, which provisions it (step 7)
+      and then hands the timelocked roles to the timelock (step 7a). It must not be a deployer key
+      (the signer or a class deployer). On a mainnet profile any deviation (an override, another
+      signing key, a contract recorded away from its deterministic address) needs `deviate
+      <profile>` typed in the wizard. The low-level `deploy:cli core` runs the same chain
+      prerequisite checks (CreateX codehash, EntryPoint v0.9, Cancun) but has no prompt, so it
+      refuses every mainnet deviation.
       Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
       code and sends nothing.
       From a committed release, never a fresh build (MC-26): the release's creation code is
@@ -81,10 +88,20 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       for every bundle. One key serves every chain (nonces are per chain), so this is the
       same address funded once more, not a new key.
 
-7.  Deploy, stake and fund the paymaster; register tenants on this chain.
-      The proxy comes with step 4; then provision:paymaster. Sponsorship is per chain: every tenant
+7.  Stake and fund the paymaster; register tenants and the role holders on this chain.
+      The proxy comes with step 4; then pnpm contracts:provision, with the sponsorship signer's
+      ADDRESS and one ROLE_HOLDER_* per immediate role (PAYMASTER_GRANT_ALL_TO, every role on one
+      address, is a testnet shortcut a mainnet refuses). Sponsorship is per chain: every tenant
       that sponsors here funds a balance HERE, and configures its rules HERE — nothing is
       inherited from another chain (MC-67).
+
+7a. Hand the timelocked roles to the timelock (G9; docs/PAYMASTER-TIMELOCK-RUNBOOK.md §2).
+      pnpm contracts:timelock, then pnpm contracts:handoff. The hand-off first checks the timelock
+      against the profile (release code, proposers, executors, delays; on a mainnet, proposers
+      that are contracts, not keys or EIP-7702-delegated EOAs) and refuses on any difference,
+      because it renounces the operator's ROLE_ADMIN and cannot be undone. From then on
+      contracts:provision refuses (ROLE_ADMIN is the timelock's); role changes are timelock
+      proposals.
 
 8.  giano-doctor chain --rpc <url> --chain-id <id> …  → must be green.
       The same checks the wallet-api runs at boot: endpoint identity, EntryPoint, factory +

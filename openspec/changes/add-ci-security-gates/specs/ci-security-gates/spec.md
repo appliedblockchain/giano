@@ -60,29 +60,29 @@ tool's scope are not suppressions, but each SHALL carry a reason.
   replaces that rule
 
 #### Scenario: In-source Solidity suppression
-- **WHEN** a file under `packages/contracts/src` contains a `slither-disable` or `aderyn-ignore` comment
+- **WHEN** a file under `packages/contracts/src` contains a `slither-disable`, `aderyn-ignore` or `aderyn-fp` comment
 - **THEN** the register check fails and names the file and line
 
 ### Requirement: Solidity static analysis fails on High findings
-On every pull request, Slither and Aderyn SHALL analyse the production contracts in `packages/contracts/src`, excluding
-`src/testing`, test code and dependencies. The check SHALL fail on any High finding from either tool that is not in the
-register. It SHALL also fail on any register entry of either tool that matches no finding in the report. Both full
-reports SHALL be kept as CI artifacts, also when the check fails.
+On every pull request, Slither SHALL analyse the production contracts in `packages/contracts/src`, excluding
+`src/testing`, test code and dependencies. The check SHALL fail on any High finding that is not in the register. It
+SHALL also fail on any Slither register entry that matches no finding in the report. The full reports SHALL be kept as
+CI artifacts, also when the check fails.
 
 #### Scenario: New High finding
 - **WHEN** a PR adds a contract change that Slither reports as High
 - **THEN** the Solidity analysis check fails and names the detector, file and line
 
 #### Scenario: Medium finding
-- **WHEN** Aderyn or Slither reports only Medium, Low or Informational findings
+- **WHEN** Slither reports only Medium, Low or Informational findings
 - **THEN** the check passes, and the findings appear in the uploaded reports
 
 #### Scenario: Reports kept on failure
 - **WHEN** the check fails
-- **THEN** the Slither and Aderyn reports are still uploaded
+- **THEN** the Slither reports are still uploaded
 
 #### Scenario: Finding fixed but entry kept
-- **WHEN** a PR fixes a finding that has a Slither or Aderyn register entry, and does not remove the entry
+- **WHEN** a PR fixes a finding that has a Slither register entry, and does not remove the entry
 - **THEN** the check fails and names the entry that matches no finding
 
 ### Requirement: Dependency audit fails on high or critical advisories
@@ -194,7 +194,7 @@ installed outside npm SHALL be verified by an integrity hash: pip packages by a 
 release binaries by a sha256 recorded in the workflow. A hash mismatch SHALL fail the job before the tool runs.
 
 #### Scenario: Binary tampered with
-- **WHEN** the downloaded Aderyn, gitleaks or Trivy archive does not match its recorded sha256
+- **WHEN** the downloaded gitleaks or Trivy archive does not match its recorded sha256
 - **THEN** the job fails before the tool runs
 
 #### Scenario: Floating version

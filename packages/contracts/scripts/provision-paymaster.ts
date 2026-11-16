@@ -19,10 +19,15 @@
  *     --stake-eth 1 --unstake-delay 86400 \
  *     --tenant <uuid>:<withdrawAddress>:<slug>:<fundEth> \
  *     [--tenant ...] \
- *     [--role-holder signer-admin=0x..] [--grant-all-to 0x..]
+ *     [--role-holder-signer-admin 0x.. --role-holder-pauser 0x.. …] | [--grant-all-to 0x..]
  *
- * `--grant-all-to` grants every role to one address. That is a development convenience and the
- * script says so loudly: it collapses the separation D13 exists to create.
+ * `--role-holder-<role> <address>` gives one role to one holder (signer-admin, param-admin, pauser,
+ * stake-admin, tenant-admin, fee-collector; fee-admin, withdraw-address-admin and upgrader are the
+ * timelock's, granted by the hand-off). This key holds only the roles the run needs while it runs,
+ * then hands them to their holders and gives them up.
+ *
+ * `--grant-all-to` grants every role to one address instead. That is a development convenience and
+ * the script says so loudly: it collapses the separation D13 exists to create.
  */
 import {
 	Contract,
@@ -71,6 +76,21 @@ function parseArgs(argv: string[]): Args {
 		repeated[key].push(value);
 	}
 	return { flags, repeated };
+}
+
+/**
+ * The roles this key takes for a run with one holder per role, to authorise the signer, stake and
+ * register tenants, and gives up at the end of it.
+ */
+const RUN_ROLES = ["signer-admin", "stake-admin", "tenant-admin"] as const;
+
+/** `value` in wei, or an error naming what it was for. */
+function ether(what: string, value: string): bigint {
+	try {
+		return parseEther(value);
+	} catch {
+		throw new Error(`${what} is not an ETH amount: ${value}`);
+	}
 }
 
 function log(message: string): void {
@@ -167,14 +187,50 @@ async function main(): Promise<void> {
 
 	const roleAdminRole: string = await paymaster.ROLE_ADMIN();
 	if (!(await paymaster.hasRole(roleAdminRole, wallet.address))) {
+		// After the hand-off (contracts:handoff) the timelock holds ROLE_ADMIN and this bootstrap
+		// script has nothing left to do: say so rather than reading as a misconfiguration.
+		const timelock = process.env.PAYMASTER_TIMELOCK?.trim();
+		if (timelock && (await paymaster.hasRole(roleAdminRole, timelock)))
+			throw new Error(
+				`ROLE_ADMIN on ${paymasterAddress} is held by the timelock ${getAddress(timelock)}: the roles were handed off, so this bootstrap provisioning no longer applies. ` +
+					"Role changes now go through timelock proposals (docs/PAYMASTER-TIMELOCK-RUNBOOK.md §3); register and fund tenants with the TENANT_ADMIN_ROLE key through the giano-paymaster CLI or the operator console.",
+			);
 		throw new Error(
 			`${wallet.address} does not hold ROLE_ADMIN on ${paymasterAddress}. ` +
 				"In a real deployment role grants go through the timelock, not through this script.",
 		);
 	}
 
-	// --- roles ---------------------------------------------------------------------------------
+	// --- arguments: every one checked before the first transaction --------------------------------
+	// A typo found after the signer, stake or tenants went out has spent ETH, and leaves this key
+	// holding the roles it took for the run.
 	const grantAllTo = flags["grant-all-to"];
+	const namedHolders = Object.keys(ROLE_FLAGS).filter(
+		(flag) => flags[`role-holder-${flag}`],
+	);
+	if (grantAllTo && namedHolders.length)
+		throw new Error(
+			"--grant-all-to and --role-holder-* are alternatives: one address for every role (development), or one holder per role",
+		);
+	if (grantAllTo && !isAddress(grantAllTo))
+		throw new Error(`--grant-all-to is not an address: ${grantAllTo}`);
+	for (const flag of namedHolders) {
+		const holder = flags[`role-holder-${flag}`];
+		if (!isAddress(holder))
+			throw new Error(`role holder for ${flag} is not an address: ${holder}`);
+	}
+	for (const signer of repeated.signer ?? [])
+		if (!isAddress(signer))
+			throw new Error(`--signer is not an address: ${signer}`);
+	const stakeEth = flags["stake-eth"];
+	const stakeWei =
+		stakeEth && stakeEth !== "true"
+			? ether("--stake-eth", stakeEth)
+			: undefined;
+	const tenants = (repeated.tenant ?? []).map(parseTenant);
+	for (const tenant of tenants)
+		ether(`tenant ${tenant.slug}'s funding`, tenant.fundEth);
+
 	if (grantAllTo) {
 		log("");
 		log(
@@ -183,76 +239,150 @@ async function main(): Promise<void> {
 		log("    collapses the role separation the contract exists to enforce.");
 	}
 
-	for (const [flag, roleName] of Object.entries(ROLE_FLAGS)) {
-		const holder = flags[`role-holder-${flag}`] ?? grantAllTo;
-		if (!holder) continue;
-		if (!isAddress(holder))
-			throw new Error(`role holder for ${flag} is not an address: ${holder}`);
-
+	/** Grants `roleName` to `holder` unless it already holds it. */
+	const grant = async (roleName: string, holder: string) => {
 		const role: string = await paymaster[roleName]();
 		if (await paymaster.hasRole(role, holder)) {
 			log(`  • ${roleName} already held by ${getAddress(holder)}`);
-			continue;
+			return;
 		}
 		await (await paymaster.grantRole(role, getAddress(holder))).wait();
 		log(`  ✓ granted ${roleName} to ${getAddress(holder)}`);
-	}
+	};
 
-	// --- signing keys --------------------------------------------------------------------------
-	for (const signer of repeated.signer ?? []) {
-		if (!isAddress(signer))
-			throw new Error(`--signer is not an address: ${signer}`);
-		if (await paymaster.isSigner(signer)) {
-			log(`  • signer already authorised: ${getAddress(signer)}`);
-			continue;
-		}
-		await (await paymaster.addSigner(getAddress(signer))).wait();
-		log(`  ✓ authorised sponsorship signer ${getAddress(signer)}`);
-	}
+	/** This key's named holder for one of the run's roles is itself: it keeps that role. */
+	const keeps = (flag: (typeof RUN_ROLES)[number]) => {
+		const holder = flags[`role-holder-${flag}`];
+		return Boolean(holder) && getAddress(holder) === getAddress(wallet.address);
+	};
 
-	// --- stake ---------------------------------------------------------------------------------
-	const stakeEth = flags["stake-eth"];
-	if (stakeEth && stakeEth !== "true") {
-		const unstakeDelay = Number(flags["unstake-delay"] ?? 86_400);
-		const info = await entryPoint.getDepositInfo(paymasterAddress);
-		if (info.staked && info.stake >= parseEther(stakeEth)) {
-			log(`  • already staked: ${formatEther(info.stake)} ETH`);
-		} else {
-			await (
-				await paymaster.addStake(unstakeDelay, { value: parseEther(stakeEth) })
-			).wait();
-			log(`  ✓ staked ${stakeEth} ETH with a ${unstakeDelay}s unstake delay`);
-		}
-	}
-
-	// --- tenants -------------------------------------------------------------------------------
-	const tenants = (repeated.tenant ?? []).map(parseTenant);
-	for (const tenant of tenants) {
-		const existing = await paymaster.getTenant(tenant.id);
-		if (!existing.registered) {
-			await (
-				await paymaster.registerTenant(
-					tenant.id,
-					tenant.withdrawAddress,
-					tenant.slug,
-				)
-			).wait();
+	/**
+	 * Gives up every role of the run this key still holds, unless it is that role's named holder. The
+	 * end state decides, not what this run granted, so a rerun also clears what a failed run left.
+	 */
+	const releaseRunRoles = async () => {
+		for (const flag of RUN_ROLES) {
+			if (keeps(flag)) continue;
+			const role: string = await paymaster[ROLE_FLAGS[flag]]();
+			if (!(await paymaster.hasRole(role, wallet.address))) continue;
+			await (await paymaster.revokeRole(role, wallet.address)).wait();
+			const holder = flags[`role-holder-${flag}`];
 			log(
-				`  ✓ registered tenant ${tenant.slug} (${tenant.raw}) withdrawing to ${tenant.withdrawAddress}`,
+				`  ✓ gave up ${ROLE_FLAGS[flag]}${holder ? ` (held by ${getAddress(holder)})` : ""}`,
 			);
-		} else {
-			log(`  • tenant ${tenant.slug} already registered`);
+		}
+	};
+
+	try {
+		// --- roles -------------------------------------------------------------------------------
+		if (grantAllTo)
+			for (const roleName of Object.values(ROLE_FLAGS))
+				await grant(roleName, grantAllTo);
+		else {
+			// With one holder per role, this key still has to authorise the signer, stake and register
+			// the tenants below. It takes only the roles those steps need, for as long as they take, and
+			// gives them up afterwards, whether or not the run gets that far (`releaseRunRoles`).
+			const needs = [
+				...(repeated.signer?.length ? (["signer-admin"] as const) : []),
+				...(stakeWei !== undefined ? (["stake-admin"] as const) : []),
+				...(tenants.length ? (["tenant-admin"] as const) : []),
+			];
+			for (const flag of needs) {
+				const roleName = ROLE_FLAGS[flag];
+				const role: string = await paymaster[roleName]();
+				if (await paymaster.hasRole(role, wallet.address)) continue;
+				await (await paymaster.grantRole(role, wallet.address)).wait();
+				log(`  ✓ holds ${roleName} for this provisioning run`);
+			}
 		}
 
-		if (tenant.fundEth !== "0") {
-			await (
-				await paymaster.depositFor(tenant.id, {
-					value: parseEther(tenant.fundEth),
-				})
-			).wait();
-			log(`  ✓ funded ${tenant.slug} with ${tenant.fundEth} ETH`);
+		// --- signing keys ------------------------------------------------------------------------
+		for (const signer of repeated.signer ?? []) {
+			if (await paymaster.isSigner(signer)) {
+				log(`  • signer already authorised: ${getAddress(signer)}`);
+				continue;
+			}
+			await (await paymaster.addSigner(getAddress(signer))).wait();
+			log(`  ✓ authorised sponsorship signer ${getAddress(signer)}`);
 		}
+
+		// --- stake -------------------------------------------------------------------------------
+		if (stakeWei !== undefined) {
+			const unstakeDelay = Number(flags["unstake-delay"] ?? 86_400);
+			const info = await entryPoint.getDepositInfo(paymasterAddress);
+			if (info.staked && info.stake >= stakeWei) {
+				log(`  • already staked: ${formatEther(info.stake)} ETH`);
+			} else {
+				await (
+					await paymaster.addStake(unstakeDelay, { value: stakeWei })
+				).wait();
+				log(`  ✓ staked ${stakeEth} ETH with a ${unstakeDelay}s unstake delay`);
+			}
+		}
+
+		// --- tenants -----------------------------------------------------------------------------
+		for (const tenant of tenants) {
+			const existing = await paymaster.getTenant(tenant.id);
+			if (!existing.registered) {
+				await (
+					await paymaster.registerTenant(
+						tenant.id,
+						tenant.withdrawAddress,
+						tenant.slug,
+					)
+				).wait();
+				log(
+					`  ✓ registered tenant ${tenant.slug} (${tenant.raw}) withdrawing to ${tenant.withdrawAddress}`,
+				);
+			} else {
+				log(`  • tenant ${tenant.slug} already registered`);
+			}
+
+			if (tenant.fundEth !== "0") {
+				await (
+					await paymaster.depositFor(tenant.id, {
+						value: parseEther(tenant.fundEth),
+					})
+				).wait();
+				log(`  ✓ funded ${tenant.slug} with ${tenant.fundEth} ETH`);
+			}
+		}
+
+		// --- hand the roles over -----------------------------------------------------------------
+		if (!grantAllTo) {
+			// The timelocked roles stay with ROLE_ADMIN, this bootstrap key, until contracts:handoff
+			// gives them to the timelock and revokes them from everyone else, unless a holder is named.
+			for (const flag of [
+				"upgrader",
+				"fee-admin",
+				"withdraw-address-admin",
+			] as const)
+				if (!flags[`role-holder-${flag}`])
+					await grant(ROLE_FLAGS[flag], wallet.address);
+			for (const flag of namedHolders)
+				await grant(
+					ROLE_FLAGS[flag as keyof typeof ROLE_FLAGS],
+					flags[`role-holder-${flag}`],
+				);
+		}
+	} catch (error) {
+		if (!grantAllTo) {
+			log("");
+			log(
+				"  ✗ provisioning stopped part-way; giving up the roles this key held for the run.",
+			);
+			log(
+				"    Rerun with the same arguments to resume: completed steps are skipped.",
+			);
+			await releaseRunRoles().catch((releaseError: unknown) =>
+				console.error(
+					`  ✗ could not give up the run's roles either (${(releaseError as Error).message}). This key may still hold ${RUN_ROLES.map((f) => ROLE_FLAGS[f]).join(", ")}: a rerun gives them up.`,
+				),
+			);
+		}
+		throw error;
 	}
+	if (!grantAllTo) await releaseRunRoles();
 
 	// --- verify, and fail loudly if the deployment is not actually usable (R-24, R-60) ----------
 	log("");
@@ -290,6 +420,27 @@ async function main(): Promise<void> {
 		failures.push(
 			"no tenant holds a balance — a deployment is not complete until one does",
 		);
+
+	if (!grantAllTo)
+		for (const flag of namedHolders) {
+			const roleName = ROLE_FLAGS[flag as keyof typeof ROLE_FLAGS];
+			const holder = getAddress(flags[`role-holder-${flag}`]);
+			if (await paymaster.hasRole(await paymaster[roleName](), holder))
+				log(`  ✓ ${roleName}: ${holder}`);
+			else failures.push(`${roleName} is not held by ${holder}`);
+		}
+
+	if (!grantAllTo)
+		for (const flag of RUN_ROLES) {
+			const roleName = ROLE_FLAGS[flag];
+			if (
+				!keeps(flag) &&
+				(await paymaster.hasRole(await paymaster[roleName](), wallet.address))
+			)
+				failures.push(
+					`this bootstrap key still holds ${roleName}, which only its named holder should`,
+				);
+		}
 
 	if (claims > deposit)
 		failures.push(

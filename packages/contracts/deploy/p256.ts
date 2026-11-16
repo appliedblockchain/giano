@@ -1,8 +1,12 @@
 /**
  * The P-256 verifier (daimo's FreshCryptoLib-based verifier) at its well-known address, deployed
- * through the Arachnid CREATE2 proxy with salt 0 — the fallback for chains without the RIP-7212
- * precompile (specs/CHAIN-ADOPTION.md step 3). Unrelated to CreateX: this address is fixed by the
- * verifier's own bytecode, as everyone else who deploys it gets it.
+ * through the Arachnid CREATE2 proxy with salt 0. Optional on a chain without the RIP-7212
+ * precompile (specs/CHAIN-ADOPTION.md step 3): the wallet already falls back to FreshCryptoLib in its
+ * own code, and the shared verifier is only cheaper. Unrelated to CreateX: this address is fixed by
+ * the verifier's own bytecode, as everyone else who deploys it gets it.
+ *
+ * Installing the Arachnid proxy funds its signer and broadcasts a presigned pre-EIP-155 transaction.
+ * Many public RPCs refuse those, and the funding is then stranded on the signer.
  */
 import {
 	type Account,
@@ -71,4 +75,37 @@ export async function deployP256Verifier(
 			`the P-256 verifier did not land at ${P256_VERIFIER_ADDRESS}`,
 		);
 	log(`  + P-256 verifier at ${P256_VERIFIER_ADDRESS}`);
+}
+
+/** How a chain verifies P-256 (passkey) signatures, as the doctor probes it. */
+export type P256Support = "precompile" | "verifier" | "none";
+
+/**
+ * The doctor's line for `support`. Never a failure: with neither a precompile nor the shared
+ * verifier, the wallet still verifies passkeys with the FreshCryptoLib built into its own code
+ * (webauthn-sol WebAuthn.verify), at the highest gas cost.
+ */
+export function p256Report(support: P256Support): {
+	level: "ok" | "info";
+	name: string;
+	detail: string;
+} {
+	if (support === "precompile")
+		return {
+			level: "ok",
+			name: "P-256 via RIP-7212 precompile",
+			detail: "cheap on-chain verification (0x100)",
+		};
+	if (support === "verifier")
+		return {
+			level: "ok",
+			name: "P-256 via the shared FreshCryptoLib verifier",
+			detail: `${P256_VERIFIER_ADDRESS} (works, higher gas than a precompile)`,
+		};
+	return {
+		level: "info",
+		name: "P-256 via the wallet's built-in FreshCryptoLib",
+		detail:
+			"no RIP-7212 precompile and no deployed verifier: passkey checks work, at the highest gas cost. Budget verificationGasLimit and sponsorship fees for it.",
+	};
 }
