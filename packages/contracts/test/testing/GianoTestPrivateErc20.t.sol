@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 
 import {GianoTestPrivateErc20} from "../../src/testing/GianoTestPrivateErc20.sol";
-import {UCEF} from "../../vendor/ucef/UCEF.sol";
-import {PrivateEventEmitter} from "../../vendor/ucef/utils/PrivateEventEmitter.sol";
+import {UCEF} from "../../lib/ucef-contracts/packages/ucef/contracts/UCEF.sol";
+import {PrivateEventEmitter} from "../../lib/ucef-contracts/packages/ucef/contracts/utils/PrivateEventEmitter.sol";
 
 contract GianoTestPrivateErc20Test is Test {
     GianoTestPrivateErc20 token;

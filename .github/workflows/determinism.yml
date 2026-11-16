@@ -13,6 +13,7 @@ on:
       - "packages/contracts/releases/**"
       - "packages/contracts/deploy/**"
       - "packages/contracts/vendor/**"
+      - "packages/contracts/lib/**"
       - "packages/contracts/scripts/check-determinism.ts"
       - "packages/contracts/scripts/release.ts"
       - "packages/contracts/scripts/generate-releases.ts"

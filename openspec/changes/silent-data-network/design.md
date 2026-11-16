@@ -9,7 +9,7 @@ See proposal.md (Why) for the gateway restrictions. Giano adapts to the gateway 
 - **The demo cannot easily take the provider package.** `services/custom-example` is its own pnpm workspace. It routes the whole `@appliedblockchain` scope to GitHub Packages, so it cannot install the public `@appliedblockchain/silentdatarollup-*` packages from npmjs (`packages/connector/README.md`).
 - **The bundler's user operation lookup decodes the bundle transaction.** `services/bundler/src/lookup.ts` `byHash` decodes `handleOps` from `eth_getTransactionByHash`. On Silent Data, an unsigned reader gets `input: 0x` and `to: 0xFF…FF`, so `decodeFunctionData` throws.
 - **Test fixtures deploy through `deploy:cli testing`** under `giano.test.*` labels, with CREATE3 and the class deployer. This applies to local chains and testnets only (R-29).
-- **Solidity dependencies** are Forge libraries pinned in `foundry.lock`, or copies under `packages/contracts/vendor/`. UCEF (`appliedblockchain/ucef-contracts`, MIT, commit `03913b1`) depends on OpenZeppelin, which `packages/contracts` already has.
+- **Solidity dependencies** are Forge libraries pinned in `foundry.lock`, or copies under `packages/contracts/vendor/`. UCEF (`appliedblockchain/ucef-contracts`, public, MIT, commit `03913b1`) depends on OpenZeppelin, which `packages/contracts` already has.
 - **Platform chain reads** (`services/wallet-api/src/services/rpc-read-relay.ts`) forward `eth_getStorageAt` and allow log spans of up to `PLATFORM_RPC_MAX_LOG_BLOCKS` blocks, counted inclusively. That limit defaults to 10,000 and may be set as low as 9,000. The log fallback uses spans of 9,000 blocks, so it passes through the relay at any allowed setting.
 
 ## Goals / Non-Goals
@@ -87,13 +87,14 @@ The private token section builds the gateway headers in a small module in the de
 - *Alternative:* add `@appliedblockchain/silentdatarollup-viem` to the demo through an `.npmrc` scope exception. Rejected for now, because a scope exception for one package is the deviation the connector README warns about.
 - *Risk:* the wallet's `personal_sign` signature must be what the gateway's ERC-1271 check expects for a delegate ticket (see Risks). Task 4.1 proves this against the local gateway before any UI work.
 
-### 7. The private test token is UCEF's `UCEFOwned` model, copied into `vendor/`, with an open mint
+### 7. The private test token is UCEF's `UCEFOwned` model, imported from a Forge library, with an open mint
 
-- `packages/contracts/vendor/ucef/` holds `UCEF.sol`, `UCEFOwned.sol` and the interfaces they import, from commit `03913b1`, with the MIT licence and a README naming the commit.
+- `packages/contracts/lib/ucef-contracts` is a git submodule of `appliedblockchain/ucef-contracts`, pinned to commit `03913b1` in `.gitmodules` and `foundry.lock`, like forge-std and solady.
+- The token imports `UCEFOwned.sol` by its path under `lib/`, with no new remapping. solc records every remapping in the metadata hash of every contract, so a new remapping would change the bytecode of every release contract, not only the token's.
 - A test contract `GianoTestPrivateErc20 is UCEFOwned` allows anyone to mint to themselves.
 - It deploys under the label `giano.test.private-erc20` through `deploy:cli testing`, on chains whose profile enables it (`"privateTestErc20": true`), and on local chains when the release carries it. A mainnet profile cannot enable it.
 - The deploy CLI deploys only from a committed release on a testnet, and v1 to v3 predate the token. Tasks 7.4 and 8.3 therefore need a release that carries it. That release also freezes the wallet, factory and paymaster changes made since v3, so cutting it is a separate decision, outside this change. Until then, the token deploys on local chains with `--release dev`.
-- *Why vendor rather than a Forge library:* `ucef-contracts` is an organisation repository, so a Forge submodule needs repository access in CI. Three files under MIT are easy to review in a copy.
+- *Why a Forge library rather than a copy or the npm package:* `ucef-contracts` is public, so CI fetches the submodule without credentials, and Giano keeps no second copy of the sources. The npm package `@appliedblockchain/ucef-contracts` 0.1.1 (February 2026) is older than commit `03913b1`.
 - *Why opt-in per chain:* on a public chain, the token's privacy is not enforced, because anyone can read storage and the calldata. A demo showing "private" there would mislead.
 
 ### 8. Both Silent Data testnets are adopted, one of each kind

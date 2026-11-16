@@ -156,7 +156,8 @@ the same flag. The flag without the key it needs is refused before any request i
 `testing` deploys the test fixtures: `PrivateERC20` (`giano.test.erc20`) and `PermissivePaymaster`
 (`giano.test.paymaster`). It refuses a production chain (R-29). It also deploys the private test token
 `GianoTestPrivateErc20` (`giano.test.private-erc20`), a UCEF token whose balance only the holder can
-read (`vendor/ucef/`). That needs a release that carries it; v1 to v3 predate it.
+read. It builds on UCEF's `UCEFOwned`, from the `lib/ucef-contracts` git submodule. That needs a
+release that carries it; v1 to v3 predate it.
 
 - On a remote chain, only when the chain's profile sets `"privateTestErc20": true`. Set it only where
   the RPC enforces private reads (Silent Data): on a public chain anyone can read the token's storage,

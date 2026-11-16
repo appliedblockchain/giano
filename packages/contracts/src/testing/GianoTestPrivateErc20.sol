@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {UCEFOwned} from "../../vendor/ucef/UCEFOwned.sol";
+import {UCEFOwned} from "../../lib/ucef-contracts/packages/ucef/contracts/UCEFOwned.sol";
 
 /// @title GianoTestPrivateErc20
 /// @notice Test fixture for chains whose RPC enforces private reads (Silent Data). Only the holder
