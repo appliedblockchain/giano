@@ -44,6 +44,7 @@ const RECORD_TO_FIELD: Record<LabelKey, { field: string; optional: boolean }> =
 		},
 		testPaymaster: { field: "testPaymaster", optional: true },
 		testErc20: { field: "testErc20", optional: true },
+		privateTestErc20: { field: "privateTestErc20", optional: true },
 	};
 
 type Overrides = Record<string, Record<string, string>>;
@@ -146,6 +147,7 @@ export function generateRegistry(
 		"sponsorshipPaymasterImplementation",
 		"testPaymaster",
 		"testErc20",
+		"privateTestErc20",
 	];
 	const chainBlocks = Object.entries(chains)
 		.sort(([a], [b]) => Number(a) - Number(b))
@@ -180,6 +182,13 @@ export function generateRegistry(
 			forbiddenOn: isMainnetChain,
 			where: "a mainnet",
 			message: "The test ERC-20 must never be deployed to a mainnet.",
+		},
+		{
+			field: "privateTestErc20",
+			forbiddenOn: isProductionChain,
+			where: "a production chain",
+			message:
+				"Testing contracts must never be deployed to a production chain.",
 		},
 	];
 	for (const [id, record] of Object.entries(chains)) {
@@ -224,6 +233,11 @@ export type GianoDeployment = {
   testPaymaster?: \`0x\${string}\`;
   /** Testing-only ERC-20 (not deployed on production chains). */
   testErc20?: \`0x\${string}\`;
+  /**
+   * Testing-only private ERC-20 (GianoTestPrivateErc20): only the holder can read its balance. Only
+   * on chains whose RPC enforces private reads (Silent Data), never on production chains.
+   */
+  privateTestErc20?: \`0x\${string}\`;
 };
 
 export const gianoAddresses: Record<number, GianoDeployment> = {

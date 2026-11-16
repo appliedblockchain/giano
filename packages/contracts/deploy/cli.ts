@@ -6,7 +6,7 @@
  *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
  *                            [--signed-rpc]   (sign every request with DEPLOYER_PRIVATE_KEY)
  *                            [--accept-unverified-implementation]
- *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
+ *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>] [--release vN]
  *   pnpm deploy:cli test-token --rpc <url> [--holder <0x…>]      (--holder required to deploy)
  *       The test ERC-20 alone, for the reference dApp: allowed on the served testnets, never on a
  *       mainnet, and only from the class's canonical deployer (R-29 keeps `testing` off both).
@@ -64,6 +64,11 @@
  * ROLE_ADMIN last. Without --execute it prints the calls (with --safe-json it also writes them as
  * a Safe batch, for a ROLE_ADMIN that is itself a Safe); with --execute it sends them from
  * ROLE_ADMIN_PRIVATE_KEY. Only the timelock can undo the hand-off.
+ *
+ * Test fixtures: `testing` deploys PrivateERC20 and PermissivePaymaster, never on a production chain
+ * (R-29). It also deploys the private test token GianoTestPrivateErc20 (`giano.test.private-erc20`)
+ * where the chain's profile sets `privateTestErc20: true`, which only a chain whose RPC enforces
+ * private reads should do, and on a local chain whenever the release carries it.
  *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
  * Commit that file for any chain other than 31337/31338.
@@ -124,6 +129,7 @@ import {
 	paymasterUpgradeCalldata,
 	paymasterUpgradeProposal,
 	planHandOff,
+	privateTestErc20Wanted,
 	type UpgradeOf,
 	upgradeTargetLabel,
 } from "./deploy";
@@ -732,11 +738,23 @@ async function main(): Promise<void> {
 			const ctx = await deployerContext({ verifyOnly: true });
 			const problem = testingProblem(ctx.chainId, ctx.network);
 			if (problem) throw new Error(problem);
-			await deployTesting(ctx, release(ctx.local, ctx.target), {
+			const selected = release(ctx.local, ctx.target);
+			// Refused here, before anything is sent, when the profile opts in and the release predates it.
+			const privateTestErc20 = privateTestErc20Wanted(selected, {
+				local: ctx.local,
+				profileId: ctx.target.profileId,
+				optIn: ctx.target.profile?.privateTestErc20,
+			});
+			if (ctx.local && !privateTestErc20)
+				log(
+					`  release ${selected.version} predates GianoTestPrivateErc20; pass --release dev to deploy the private test token on this chain`,
+				);
+			await deployTesting(ctx, selected, {
 				holder: address("holder"),
 				owner: address("owner"),
 				entryPoint: address("entry-point"),
 				fundWei: parseEther(required("fund-eth")),
+				privateTestErc20,
 			});
 			save(ctx);
 			return;

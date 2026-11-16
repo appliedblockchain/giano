@@ -10,7 +10,8 @@ export type ReleaseContractName =
   | 'GianoTimelock'
   | 'ERC1967Proxy'
   | 'PrivateERC20'
-  | 'PermissivePaymaster';
+  | 'PermissivePaymaster'
+  | 'GianoTestPrivateErc20';
 
 /** One release of one contract: what its runtime code hashes to with the immutables masked. */
 export type ReleaseFingerprint = {

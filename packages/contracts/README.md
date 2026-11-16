@@ -153,6 +153,20 @@ A Silent Data RPC keeps `from` only on a request that `from` signed, so without 
 simulation runs from a random address and role-gated estimates fail. `provision:paymaster` takes
 the same flag. The flag without the key it needs is refused before any request is sent.
 
+`testing` deploys the test fixtures: `PrivateERC20` (`giano.test.erc20`) and `PermissivePaymaster`
+(`giano.test.paymaster`). It refuses a production chain (R-29). It also deploys the private test token
+`GianoTestPrivateErc20` (`giano.test.private-erc20`), a UCEF token whose balance only the holder can
+read (`vendor/ucef/`). That needs a release that carries it; v1 to v3 predate it.
+
+- On a remote chain, only when the chain's profile sets `"privateTestErc20": true`. Set it only where
+  the RPC enforces private reads (Silent Data): on a public chain anyone can read the token's storage,
+  so a "private" token would mislead. A mainnet profile cannot set it. A profile that sets it with a
+  release that predates the token is refused before anything is sent.
+- On a local chain, whenever the release carries it: `--release dev` today.
+
+The registry lists it as `privateTestErc20`, and `gen:addresses` fails on a production chain that
+carries it.
+
 The CLI takes a chain's class and overrides from `--chain <profile>`, else from the committed profile
 with the chain's id, else from `--network mainnet|testnet` (no overrides). `core` deploys `--release`,
 else the profile's `release`, else the latest; without a key it only verifies and accepts any

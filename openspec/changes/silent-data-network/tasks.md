@@ -77,20 +77,20 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 - [ ] 6.3 Add the outsider view: an unsigned balance read (refused), a read for another address (refused), and the latest transfer's bundle transaction read unsigned (placeholders). A returned balance raises a persistent violation banner and a ledger entry. Verify against the local gateway that all three show as refused or redacted.
 - [ ] 6.4 Document the section in the demo README and in `specs/INTEGRATION.md`, as a snippet of the delegate flow. The snippet must match the demo code, per the demo-dapp rule "The demo is the documented integration". Verify that the snippet and the code agree.
 
-## 7. Copper-heron adoption: gasless, not OP Stack (blocked: testnet canonical deployer key, and funding of the presigned senders)
+## 7. Copper-heron adoption: gasless, not OP Stack (blocked: testnet canonical deployer key, funding of the presigned senders, and a release that carries `GianoTestPrivateErc20`)
 
 - [ ] 7.1 After the Arachnid sender (0.01 ETH) and the CreateX sender (0.3 ETH) are funded, confirm that the Arachnid factory is mined and send the CreateX presigned transaction. Verify that `eth_getCode` is non-empty at both addresses on 19877.
 - [ ] 7.2 Deploy EntryPoint v0.9 through Arachnid. Verify that `eth_getCode` at `0x433709009B8330FDa32311DF1C2AFA402eD8D009` matches the canonical runtime code.
 - [ ] 7.3 Run `deploy:cli core --rpc <write URL> --chain <profile> --signed-rpc --role-admin <admin>` with the testnet canonical key, in the shell environment only. Commit `deployments/19877.json`. Verify that `gen:addresses` passes and the record lists no deviation.
-- [ ] 7.4 Run `deploy:cli testing --signed-rpc` to deploy the private test token. Verify that the address equals the one planned for the testnet class.
+- [ ] 7.4 Set `"privateTestErc20": true` in the chain's profile, and run `deploy:cli testing --signed-rpc` to deploy the private test token. This needs a release that carries `GianoTestPrivateErc20`: v1 to v3 predate it, and the CLI refuses the opt-in without one. Cutting that release is outside this change, because it also freezes the wallet, factory and paymaster changes made since v3. Verify that the address equals the one planned for the testnet class.
 - [ ] 7.5 Run `provision:paymaster --signed-rpc` (signer, stake, dev tenant). Verify that `giano-doctor chain --rpc <url> --chain-id 19877` is green.
 - [ ] 7.6 Add the 19877 entry to the dev `chains` secret (`bundler.rpcUrl` = write URL, `bundler.stateOverride: false`), and add `privateToken` to the demo's dev chain list. Fund the bundler executor on 19877. Verify that `GET /v1/version` lists 19877 as `ready`.
 
-## 8. Iron-kestrel adoption: gas-charging, OP Stack (blocked: testnet canonical deployer key)
+## 8. Iron-kestrel adoption: gas-charging, OP Stack (blocked: testnet canonical deployer key, and a release that carries `GianoTestPrivateErc20`)
 
 - [x] 8.1 Confirm the RIP-7212 P-256 precompile on 19874 with an `eth_call` to `0x…0100` using a known valid test vector. Verify that the call returns 1. If it does not, deploy the FreshCryptoLib verifier (checklist step 3). Done on 2026-11-16: a fresh valid signature returned 1, and a tampered one returned `0x`.
 - [ ] 8.2 Deploy EntryPoint v0.9 through the Arachnid factory, which is already on 19874, from any funded key. Verify that `eth_getCode` at `0x433709009B8330FDa32311DF1C2AFA402eD8D009` matches the canonical runtime code.
-- [ ] 8.3 Run `deploy:cli core --signed-rpc` with the testnet canonical key, then `deploy:cli testing --signed-rpc`. Commit `deployments/19874.json`. Verify that `gen:addresses` passes, the record lists no deviation, and every address equals copper-heron's.
+- [ ] 8.3 Run `deploy:cli core --signed-rpc` with the testnet canonical key. Then set `"privateTestErc20": true` in the chain's profile and run `deploy:cli testing --signed-rpc`, from a release that carries `GianoTestPrivateErc20` (as in task 7.4). Commit `deployments/19874.json`. Verify that `gen:addresses` passes, the record lists no deviation, and every address equals copper-heron's.
 - [ ] 8.4 Run `provision:paymaster --signed-rpc`, and fund the paymaster deposit and the dev tenant's balance for the fixed limits at the chain's gas price. Fund the bundler executor on 19874. Verify that `giano-doctor chain --rpc <url> --chain-id 19874` is green.
 - [ ] 8.5 Add the 19874 entry to the dev `chains` secret (`bundler.rpcUrl` = write URL, `bundler.stateOverride: false`; `chainType` stays `auto`, which detects OP Stack), and add `privateToken` to the demo's dev chain list. Verify that `GET /v1/version` lists 19874 as `ready`.
 

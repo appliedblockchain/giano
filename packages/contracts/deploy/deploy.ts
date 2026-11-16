@@ -90,7 +90,38 @@ export type TestingParams = {
 	entryPoint: Address;
 	/** Wei forwarded to PermissivePaymaster's EntryPoint deposit; 0 skips funding. */
 	fundWei: bigint;
+	/** Also deploy GianoTestPrivateErc20 (see privateTestErc20Wanted). */
+	privateTestErc20?: boolean;
 };
+
+/** True when `release` carries `contract`; an older release predates the contracts added after it. */
+export function releaseCarries(
+	release: Release,
+	contract: ReleaseContractName,
+): boolean {
+	return contract in release.contracts;
+}
+
+/**
+ * Whether `testing` deploys GianoTestPrivateErc20 (openspec silent-data-network, design D7). Its
+ * privacy holds only where the RPC enforces private reads, so a remote chain needs its profile to opt
+ * in (`privateTestErc20: true`). A local chain gets it whenever the release carries it (`--release
+ * dev`), for the local Silent Data gateway. A profile that opts in with a release that predates the
+ * token is refused, before anything is sent.
+ */
+export function privateTestErc20Wanted(
+	release: Release,
+	chain: { local: boolean; profileId?: string; optIn?: boolean },
+): boolean {
+	const carried = releaseCarries(release, CONTRACT_OF.privateTestErc20);
+	if (chain.local) return carried;
+	if (!chain.optIn) return false;
+	if (!carried)
+		throw new Error(
+			`profile ${chain.profileId} enables privateTestErc20, but release ${release.version} predates GianoTestPrivateErc20; cut a release that carries it, or pass --release with one`,
+		);
+	return true;
+}
 
 function assertDeployerAccount(ctx: DeployContext): void {
 	// CreateX only honours a permissioned salt from the address in its first 20 bytes. From any
@@ -411,13 +442,24 @@ export async function deployTestToken(
 	);
 }
 
-/** PrivateERC20 and PermissivePaymaster. Never on a production chain (the CLI enforces it). */
+/**
+ * PrivateERC20 and PermissivePaymaster, and GianoTestPrivateErc20 when `params.privateTestErc20`.
+ * Never on a production chain (the CLI enforces it).
+ */
 export async function deployTesting(
 	ctx: DeployContext,
 	release: Release,
 	params: TestingParams,
 ): Promise<void> {
 	const c = release.contracts;
+	// Before anything is sent: a release that predates the token cannot deploy it.
+	if (
+		params.privateTestErc20 &&
+		!releaseCarries(release, CONTRACT_OF.privateTestErc20)
+	)
+		throw new Error(
+			`release ${release.version} predates GianoTestPrivateErc20; deploy it from a release that carries it`,
+		);
 	await deployTestToken(ctx, release, params.holder);
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
@@ -445,6 +487,17 @@ export async function deployTesting(
 			`  + funded the test paymaster's deposit with ${params.fundWei} wei`,
 		);
 	}
+	if (params.privateTestErc20)
+		record(
+			ctx,
+			"privateTestErc20",
+			await deployLabel(ctx, {
+				label: LABELS.privateTestErc20,
+				release: release.version,
+				contract: CONTRACT_OF.privateTestErc20,
+				initCode: c.GianoTestPrivateErc20.creationCode,
+			}),
+		);
 }
 
 export type UpgradeOf = "paymasterImplementation" | "walletImplementation";

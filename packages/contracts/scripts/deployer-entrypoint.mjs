@@ -155,6 +155,9 @@ const entry = {
 	sponsorshipPaymasterImplementation: c.paymasterImplementation.address,
 	...(c.testPaymaster ? { testPaymaster: c.testPaymaster.address } : {}),
 	...(c.testErc20 ? { testErc20: c.testErc20.address } : {}),
+	...(c.privateTestErc20
+		? { privateTestErc20: c.privateTestErc20.address }
+		: {}),
 };
 const path = `${outDir}/giano-addresses.${chainId}.json`;
 writeFileSync(path, JSON.stringify(entry, null, 2));

@@ -219,3 +219,26 @@ test("shipped profiles pin the newest release until deployed, then the release t
 		);
 	}
 });
+
+test("a testnet profile may opt in to the private test token; a mainnet profile may not (R-29)", () => {
+	assert.equal(base.profile.privateTestErc20, undefined);
+	for (const privateTestErc20 of [true, false])
+		assert.equal(
+			profileSchema.safeParse({ ...base.profile, privateTestErc20 }).success,
+			true,
+		);
+	assert.equal(
+		profileSchema.safeParse({ ...base.profile, privateTestErc20: "yes" })
+			.success,
+		false,
+	);
+	const mainnet = { ...base.profile, network: "mainnet" };
+	assert.equal(
+		profileSchema.safeParse({ ...mainnet, privateTestErc20: false }).success,
+		true,
+	);
+	assert.equal(
+		profileSchema.safeParse({ ...mainnet, privateTestErc20: true }).success,
+		false,
+	);
+});

@@ -161,6 +161,11 @@ export const LABELS = {
 	/** Fixtures for local chains and testnets only; never on a production chain. */
 	testErc20: "giano.test.erc20",
 	testPaymaster: "giano.test.paymaster",
+	/**
+	 * Only where the RPC enforces private reads (Silent Data): a profile opts in with
+	 * `privateTestErc20`, and local chains get it for the local gateway.
+	 */
+	privateTestErc20: "giano.test.private-erc20",
 } as const;
 
 export type LabelKey = keyof typeof LABELS;
@@ -254,6 +259,7 @@ export const CONTRACT_OF = {
 	paymasterProxy: "ERC1967Proxy",
 	testErc20: "PrivateERC20",
 	testPaymaster: "PermissivePaymaster",
+	privateTestErc20: "GianoTestPrivateErc20",
 } as const satisfies Record<LabelKey, ReleaseContractName>;
 
 /**

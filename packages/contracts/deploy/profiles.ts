@@ -131,8 +131,18 @@ export const profileSchema = z
 			.strict(),
 		timelock: timelockSchema.optional(),
 		addresses: overridesSchema.optional(),
+		/**
+		 * Opt in to the private test token (GianoTestPrivateErc20) in `deploy:cli testing`. Set it only
+		 * where the RPC enforces private reads (Silent Data): elsewhere anyone can read the token's
+		 * storage, and a "private" token would mislead. Never on a mainnet profile (R-29).
+		 */
+		privateTestErc20: z.boolean().optional(),
 	})
-	.strict();
+	.strict()
+	.refine(
+		(profile) => !(profile.network === "mainnet" && profile.privateTestErc20),
+		{ message: "a mainnet profile cannot enable privateTestErc20 (R-29)" },
+	);
 export type ChainProfile = z.infer<typeof profileSchema>;
 export type ProfileFile = { file: string; id: string; profile: ChainProfile };
 
@@ -165,7 +175,7 @@ export function loadProfile(options: {
 	} catch {
 		// Do not print parser errors: an operator may accidentally paste a credential into a field.
 		throw new Error(
-			`Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, network (${PROFILE_NETWORKS.join(" or ")}), name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance, paymaster parameters, and optionally the timelock and address overrides (${OVERRIDE_KEYS.join(", ")}). Unknown/secret fields are refused.`,
+			`Cannot read chain profile. Provide valid JSON matching deploy/chains/*.json: chainId, network (${PROFILE_NETWORKS.join(" or ")}), name, public rpcUrl, rpcUrlEnv, release, roleAdmin, minimum balance, paymaster parameters, and optionally the timelock, the address overrides (${OVERRIDE_KEYS.join(", ")}) and privateTestErc20 (not on a mainnet). Unknown/secret fields are refused.`,
 		);
 	}
 	// Outside the parse's catch: this refusal names the chain, never a field's content.

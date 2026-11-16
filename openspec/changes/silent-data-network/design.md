@@ -91,7 +91,8 @@ The private token section builds the gateway headers in a small module in the de
 
 - `packages/contracts/vendor/ucef/` holds `UCEF.sol`, `UCEFOwned.sol` and the interfaces they import, from commit `03913b1`, with the MIT licence and a README naming the commit.
 - A test contract `GianoTestPrivateErc20 is UCEFOwned` allows anyone to mint to themselves.
-- It deploys under the label `giano.test.private-erc20` through `deploy:cli testing`, on chains whose profile enables it.
+- It deploys under the label `giano.test.private-erc20` through `deploy:cli testing`, on chains whose profile enables it (`"privateTestErc20": true`), and on local chains when the release carries it. A mainnet profile cannot enable it.
+- The deploy CLI deploys only from a committed release on a testnet, and v1 to v3 predate the token. Tasks 7.4 and 8.3 therefore need a release that carries it. That release also freezes the wallet, factory and paymaster changes made since v3, so cutting it is a separate decision, outside this change. Until then, the token deploys on local chains with `--release dev`.
 - *Why vendor rather than a Forge library:* `ucef-contracts` is an organisation repository, so a Forge submodule needs repository access in CI. Three files under MIT are easy to review in a copy.
 - *Why opt-in per chain:* on a public chain, the token's privacy is not enforced, because anyone can read storage and the calldata. A demo showing "private" there would mislead.
 
