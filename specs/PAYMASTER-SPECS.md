@@ -1164,7 +1164,8 @@ everybody else.
 **A pass is bounded by what the RPC will serve, not by how far behind the cursor is.** "Poll from a
 persisted cursor" above says where a pass starts and says nothing about how wide it may get, and
 the difference is the whole failure mode. Hosted providers cap the span one `eth_getLogs` may cover
-— Base and Ethereum Sepolia at 10,000 blocks — and refuse anything wider outright rather than
+— keyed Base and Ethereum Sepolia endpoints at 10,000 blocks, the public `https://sepolia.base.org`
+at 200 (`toBlock - fromBlock` up to 200) — and refuse anything wider outright rather than
 truncating it. A watcher resuming from a cursor further behind than that asks for the entire gap in
 one query, is refused, and **is refused identically on every poll afterwards**: nothing is ingested,
 so the cursor never advances, so the next pass asks for a gap one poll wider. The backlog is
@@ -1176,7 +1177,9 @@ On a two-second chain the cursor falls that far behind after about six hours, so
 by an ordinary outage rather than by an exotic one.
 
 Each pass is therefore clamped to a span under the cap and advances its cursor by what it actually
-ingested. The same outage then resolves as a catch-up over successive polls instead of a permanent
+ingested. The clamp is 200 blocks, the tightest cap the profiles' RPCs serve, so the same watcher
+runs on a public RPC and a keyed one; at a 4-second poll it still catches up about 100 times faster
+than a two-second chain makes blocks. Following each RPC's own cap is a later optimisation. The same outage then resolves as a catch-up over successive polls instead of a permanent
 stall, at the cost of a lag metric that stays elevated for a few poll intervals — which is exactly
 what `giano_paymaster_watcher_lag_blocks` (§8.5) exists to show. Nothing about idempotency changes:
 a clamped pass is the same pass, narrower.

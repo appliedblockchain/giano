@@ -20,8 +20,14 @@ import type { PaymasterPublicClient } from "./client";
  */
 export const DEFAULT_LOG_WINDOW = 9_000n;
 
-/** Narrowing stops here. A node this restrictive cannot usefully serve a log read at all. */
-const MIN_LOG_WINDOW = 250n;
+/**
+ * Narrowing stops here. A node more restrictive cannot usefully serve a log read at all.
+ *
+ * 200 because `https://sepolia.base.org`, the Base Sepolia profile's public RPC, accepts
+ * `toBlock - fromBlock` up to 200 and refuses anything wider ("eth_getLogs is limited to a 200
+ * range"). A floor above that left every console log read on it refused.
+ */
+const MIN_LOG_WINDOW = 200n;
 
 /** A block range, inclusive at both ends. */
 export type BlockRange = {

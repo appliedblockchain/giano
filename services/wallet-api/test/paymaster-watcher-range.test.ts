@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { pollRange } from "../src/services/paymaster-watcher.js";
 
-/** Base Sepolia's cap. Every window the watcher asks for has to fit under it. */
-const RPC_LOG_RANGE_CAP = 10_000n;
+/**
+ * The tightest cap the watcher must fit: `sepolia.base.org` accepts `toBlock - fromBlock` up to 200
+ * and refuses anything wider ("eth_getLogs is limited to a 200 range").
+ */
+const RPC_LOG_RANGE_CAP = 200n;
 
 const span = ({ from, to }: { from: bigint; to: bigint }) => to - from + 1n;
 
@@ -12,7 +15,7 @@ describe("pollRange", () => {
 			pollRange({ head: 46_979_411n, confirmations: 2, cursor: null }),
 		).toEqual({
 			from: 46_974_409n,
-			to: 46_979_409n,
+			to: 46_974_608n,
 		});
 	});
 
@@ -37,7 +40,8 @@ describe("pollRange", () => {
 		});
 
 		expect(range.from).toBe(46_936_001n);
-		expect(span(range)).toBeLessThan(RPC_LOG_RANGE_CAP);
+		expect(range.to - range.from).toBeLessThanOrEqual(RPC_LOG_RANGE_CAP);
+		expect(span(range)).toBe(200n);
 	});
 
 	it("catches up over successive passes rather than stalling on one refused query", () => {
@@ -45,15 +49,17 @@ describe("pollRange", () => {
 		let cursor = 46_900_000n;
 		let passes = 0;
 
-		for (; passes < 100; passes++) {
+		for (; passes < 1_000; passes++) {
 			const range = pollRange({ head, confirmations: 2, cursor });
-			expect(span(range)).toBeLessThan(RPC_LOG_RANGE_CAP);
+			expect(range.to - range.from).toBeLessThanOrEqual(RPC_LOG_RANGE_CAP);
 			if (range.to <= cursor) break;
 			cursor = range.to;
 		}
 
+		// 79,409 blocks behind, 200 a pass: 398 passes, about 27 minutes at a 4-second poll, while
+		// a two-second chain adds some 800 blocks in that time.
 		expect(cursor).toBe(head - 2n);
-		expect(passes).toBeLessThan(20);
+		expect(passes).toBe(398);
 	});
 
 	it("yields an empty pass once the cursor has reached the confirmed head", () => {
