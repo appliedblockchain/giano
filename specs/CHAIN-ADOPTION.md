@@ -94,7 +94,8 @@ no code change:
         pnpm --filter @appliedblockchain/giano-contracts \
           deploy:cli core --rpc <url> --chain <profile> --role-admin <bootstrap operator EOA> --signed-rpc
       Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
-      code and sends nothing.
+      code and sends nothing. Drop --signed-rpc for that run too: the flag refuses to start without
+      a key, and the verification only reads.
       From a committed release, never a fresh build (MC-26): the release's creation code is
       what every chain gets. Idempotent; commit the record it writes
       (packages/contracts/deployments/<chainId>.json).
