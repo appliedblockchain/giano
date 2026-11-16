@@ -11,13 +11,13 @@
 services:
   bundler:
     extra_hosts:
-      - 'host.docker.internal:host-gateway'
+      - "host.docker.internal:host-gateway"
   wallet-api:
     extra_hosts:
-      - 'host.docker.internal:host-gateway'
+      - "host.docker.internal:host-gateway"
     environment:
       # anvil suggests a fixed 1 gwei priority fee whatever the forked chain charges (Base Sepolia:
       # ~0.001 gwei), so every operation's maximum charge is ~1000x the real one, and a passkey
       # wallet's first operation exceeds the platform's 0.002 ETH wallet-management cap. Raised as
       # in docker-compose.e2e.yml, for the same reason: fees that only a local chain inflates.
-      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: '100000000000000000'
+      SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI: "100000000000000000"

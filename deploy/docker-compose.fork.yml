@@ -22,6 +22,6 @@ services:
       # The rehearsal advances the clock past timelock delays; a fixed block time keeps receipts and
       # the paymaster watcher moving between transactions.
       - --block-time
-      - '2'
+      - "2"
     ports:
-      - '127.0.0.1:${FORK_PORT:-18545}:8545'
+      - "127.0.0.1:${FORK_PORT:-18545}:8545"
