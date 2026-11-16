@@ -12,6 +12,7 @@
  * Nothing here is faked: sign/verify use `crypto.subtle` with actual keypairs,
  * so a signature this mock produces is cryptographically valid.
  */
+import { toBase64Url } from "../../src/provider-injection/wallet-api/serialization";
 import { cborMap, encodeCbor } from "./cbor";
 import { rawSignatureToDer } from "./der";
 
@@ -29,15 +30,8 @@ const asUint8 = (source: BufferSource): Uint8Array =>
 		? source
 		: new Uint8Array(source instanceof ArrayBuffer ? source : source.buffer);
 
-export const toBase64Url = (bytes: Uint8Array): string => {
-	let binary = "";
-	for (const b of bytes) binary += String.fromCharCode(b);
-	return Buffer.from(binary, "binary")
-		.toString("base64")
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "");
-};
+// The library's own encoder, so the mock and the code under test cannot drift apart.
+export { toBase64Url };
 
 const bytesToHex = (bytes: Uint8Array): `0x${string}` =>
 	`0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;

@@ -261,6 +261,7 @@ export async function readForward(
 	let operations: TimelockOperation[] = [];
 	let width = DEFAULT_LOG_WINDOW;
 	for (let start = fromBlock; start <= head; ) {
+		// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 		const end = start + width - 1n < head ? start + width - 1n : head;
 		const pages: (readonly TimelockOperation[])[] = [];
 		for (let to = end; to >= start; ) {

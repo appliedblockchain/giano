@@ -101,7 +101,7 @@ x-secret-inventory: &secret-inventory
   #   datadog-api-key         MIRRORED from the shared DevOps vault, not Giano's own (§7.4)
   # Placeholders are `PLACEHOLDER-DO-NOT-USE`, never an empty string: a service handed an
   # empty RPC URL boots and then fails obscurely on its first chain call.
-  placeholder: 'documentation only'
+  placeholder: "documentation only"
 
 x-chain-prerequisites: &chain-prerequisites
   # §13 — things that must exist ON CHAIN before this stack can work. None is created by
@@ -116,7 +116,7 @@ x-chain-prerequisites: &chain-prerequisites
   #      that "stopped working" for no visible reason — R2, and §16.6 is the fix.
   #   3. EntryPoint v0.9 and the Giano factory/implementation are already canonical on
   #      84532, and wallet-api VERIFIES them at boot and refuses to start otherwise.
-  placeholder: 'documentation only'
+  placeholder: "documentation only"
 
 # ── The security-group graph, as networks (§5.6) ──────────────────────────────────────────
 # In AWS every task shares one `tasks` security group; the isolation that matters is on the
@@ -165,7 +165,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-giano} -d ${POSTGRES_DB:-giano}']
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-giano} -d ${POSTGRES_DB:-giano}",
+        ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -202,8 +206,8 @@ services:
     # concurrency-safe: it takes a Postgres advisory lock, so replicas serialise rather
     # than race — which is why health_check_grace_period_seconds must outlast the slowest
     # migration (120s in dev, R22).
-    command: ['node', 'dist/init.js']
-    restart: 'no'
+    command: ["node", "dist/init.js"]
+    restart: "no"
     networks: [data]
     depends_on:
       postgres:
@@ -247,7 +251,7 @@ services:
     ports:
       # → ALB target group, rule 10, host `api.<apex>`. Also proxied same-origin under each
       # wallet host's /api, which is the path the browser actually uses.
-      - '${API_PORT:-8080}:8080'
+      - "${API_PORT:-8080}:8080"
     environment:
       # ── Deployment class ────────────────────────────────────────────────────────────────
       # [literal] REQUIRED, with no default, on purpose. This is what the deployment IS, as
@@ -262,7 +266,7 @@ services:
 
       # [literal] false: the init container runs them. Both trying is how two containers in
       # one task fight over the same advisory lock (§9.6).
-      RUN_MIGRATIONS: 'false'
+      RUN_MIGRATIONS: "false"
 
       # [literal] the Terraform workspace: dev | stg | prd. services/wallet-api/src/environments.ts
       # maps it to the platform sign-in domain, paymaster.<apex>; changing that is a release.
@@ -284,7 +288,7 @@ services:
       BUNDLER_BASE_URL: http://bundler:4337
 
       # ── Gas sponsorship (§14.2) ─────────────────────────────────────────────────────────
-      SPONSORSHIP_ENABLED: 'true'
+      SPONSORSHIP_ENABLED: "true"
       # [literal] `local` is REFUSED when GIANO_DEPLOYMENT_CLASS=production — the guard is
       # gated on the deployment class, not on NODE_ENV, and it is the point: this key
       # authorises spending against real balances.
@@ -298,7 +302,7 @@ services:
       # Left at their defaults, and worth knowing: SPONSORSHIP_VALIDITY_SECONDS=180 (max
       # 1800), SPONSORSHIP_RESERVATION_TTL_SECONDS=300 — and the loader requires the
       # reservation TTL to be STRICTLY GREATER than the validity window.
-      PAYMASTER_WATCHER_ENABLED: 'true'
+      PAYMASTER_WATCHER_ENABLED: "true"
 
       # ── Observability ───────────────────────────────────────────────────────────────────
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -323,7 +327,13 @@ services:
       #             sponsorship signer. Richer, but an unreachable RPC would then take the
       #             target group down, so the ALB deliberately does not use it.
       # Exec form calling node: the hardened runtime has no shell and no curl (ABIP-2).
-      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:8080/healthz",{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))']
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          'fetch("http://127.0.0.1:8080/healthz",{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))',
+        ]
       interval: 15s
       timeout: 3s
       start_period: 20s
@@ -363,9 +373,9 @@ services:
       # and the EntryPoint is deployed (GET /health reports the same, with the executors). Exec
       # form calling node: the hardened runtime has no shell and no curl (ABIP-2).
       test:
-        - 'CMD'
-        - 'node'
-        - '-e'
+        - "CMD"
+        - "node"
+        - "-e"
         - >-
           fetch('http://127.0.0.1:4337',{method:'POST',headers:{'content-type':'application/json'},
           body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_supportedEntryPoints',params:[]}),
@@ -415,7 +425,7 @@ services:
       # → ALB target group, rule 40, host headers `wallet.<apex>` + every stock-UI tenant
       # wallet host. Placed LAST of the wallet rules so a later broadening of the wallet
       # condition cannot shadow rule 35 (wallet-byo).
-      - '${WALLET_WEB_PORT:-8081}:8080'
+      - "${WALLET_WEB_PORT:-8081}:8080"
     environment:
       # ── Chain, single-chain shorthand ───────────────────────────────────────────────────
       # Mutually exclusive with GIANO_CHAINS, enforced twice: the entrypoint exits 1 if both
@@ -453,7 +463,13 @@ services:
       # Matches the image. The hardened nginx runtime has no HTTP client (ABIP-2), so this is a
       # liveness check from shell built-ins — nginx is up and the config was rendered; the HTTP
       # check on / is the ALB's `health_check_path = "/"`.
-      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']
+      test:
+        [
+          "CMD",
+          "/bin/sh",
+          "-c",
+          "test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json",
+        ]
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -485,7 +501,7 @@ services:
     networks: [tasks]
     ports:
       # → ALB target group, rule 20, host `example.<apex>`.
-      - '${EXAMPLE_DAPP_PORT:-4400}:8080'
+      - "${EXAMPLE_DAPP_PORT:-4400}:8080"
     environment:
       # The chains this dApp can address (src/config.ts). Each rpcUrl is `/rpc/<chainId>`, a
       # same-origin path nginx proxies to the keyed upstream below — the API key never reaches
@@ -514,7 +530,13 @@ services:
       # The other tenant's wallet origin, for the failure lab's disallowed-origin control.
       GIANO_OTHER_WALLET_URL: ${URL_SCHEME:-https}://${BYOUI_WALLET_HOST:-}
     healthcheck:
-      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.js']
+      test:
+        [
+          "CMD",
+          "/bin/sh",
+          "-c",
+          "test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.js",
+        ]
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -542,7 +564,7 @@ services:
     networks: [tasks]
     ports:
       # → ALB target group, rule 25, host `byoui.<apex>`.
-      - '${BYOUI_DAPP_PORT:-4401}:8080'
+      - "${BYOUI_DAPP_PORT:-4401}:8080"
     environment:
       GIANO_CHAINS: |
         [
@@ -560,7 +582,13 @@ services:
       GIANO_OTHER_WALLET_URL: ${URL_SCHEME:-https}://${EXAMPLE_WALLET_HOST:?set EXAMPLE_WALLET_HOST}
       GIANO_APP_LABEL: ${BYOUI_BRAND_NAME:-Giano Example (BYO UI)}
     healthcheck:
-      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.js']
+      test:
+        [
+          "CMD",
+          "/bin/sh",
+          "-c",
+          "test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.js",
+        ]
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -612,9 +640,9 @@ services:
     ports:
       # → ALB target group, rule 35, host `wallet.byoui.<apex>` — its own RP ID, and its own
       # certificate, because it is two labels deep and the wildcard does not cover it.
-      - '${BYOUI_WALLET_PORT:-8082}:8080'
+      - "${BYOUI_WALLET_PORT:-8082}:8080"
     environment:
-      BYO_WALLET_PORT: '8080'
+      BYO_WALLET_PORT: "8080"
       # [literal] Cloud Map in AWS. Proxies /api* and /.well-known/webauthn, forwarding Host
       # and Origin untouched because wallet-api resolves tenants from them. Chain reads and the
       # bundler travel through /api too (wallet-api's /v1/rpc and /v1/bundler relays), so this
@@ -639,7 +667,13 @@ services:
       # The server has no health endpoint of its own; ECS uses `health_check_path = "/"`.
       # CI probes the tenant origin instead, which is the more meaningful check:
       #   curl -fsS -H 'Host: wallet.byoui.<apex>' http://127.0.0.1:8080/.well-known/webauthn
-      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:8080/",{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))']
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          'fetch("http://127.0.0.1:8080/",{signal:AbortSignal.timeout(2500)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))',
+        ]
       interval: 15s
       timeout: 3s
       start_period: 15s
@@ -666,7 +700,7 @@ services:
     networks: [tasks]
     ports:
       # → ALB target group, rule 30, host `paymaster.<apex>`.
-      - '${PAYMASTER_ADMIN_PORT:-8083}:8080'
+      - "${PAYMASTER_ADMIN_PORT:-8083}:8080"
     environment:
       GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID}
       # [ASM] giano-<env>-rpc-url. The keyed endpoint, and it stays server-side: the console
@@ -679,12 +713,18 @@ services:
       # an empty roster that looks exactly like a bug rather than a misconfiguration.
       GIANO_PAYMASTER_ADDRESS: ${PAYMASTER_ADDRESS:?set PAYMASTER_ADDRESS}
       GIANO_ENVIRONMENT_LABEL: ${GIANO_ENVIRONMENT_LABEL:-dev (Base Sepolia)}
-      GIANO_REFRESH_SECONDS: '15'
+      GIANO_REFRESH_SECONDS: "15"
       # [literal] the Platform area: /api/* proxied to wallet-api over Cloud Map, same-origin,
       # with the browser's Origin removed (specs/PLATFORM-ADMIN-SPECS.md §11.1).
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
     healthcheck:
-      test: ['CMD', '/bin/sh', '-c', 'test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json']
+      test:
+        [
+          "CMD",
+          "/bin/sh",
+          "-c",
+          "test -s /run/nginx/nginx.pid && test -s /usr/share/nginx/html/config.json",
+        ]
       interval: 15s
       timeout: 3s
       start_period: 10s
@@ -717,15 +757,15 @@ services:
   # `packages/paymaster-sdk`'s CLI, which already speaks to the same endpoints).
   # ════════════════════════════════════════════════════════════════════════════════════════
   provision-sponsorship:
-    profiles: ['oneshot']
+    profiles: ["oneshot"]
     image: ${GIANO_REGISTRY:-ghcr.io/appliedblockchain}/giano-wallet-api:${GIANO_IMAGE_TAG:-latest}
     build:
       context: ..
       dockerfile: services/wallet-api/Dockerfile
     # The container is named `provision-sponsorship` in the task definition because the
     # runbook's `--overrides` addresses it by name. Do not rename it without changing §18.
-    command: ['node', 'dist/provision-sponsorship.js'] # ⚠ §16.3 — not a build entry yet
-    restart: 'no'
+    command: ["node", "dist/provision-sponsorship.js"] # ⚠ §16.3 — not a build entry yet
+    restart: "no"
     networks: [tasks]
     depends_on:
       wallet-api:

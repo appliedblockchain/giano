@@ -175,10 +175,18 @@ either form works. An invalid rule set is rejected with per-path messages and **
 never interpreted permissively.
 
 **Wallet management is sponsored, and you do not configure it.** Transactions the wallet makes to
-itself — adding or removing a passkey, recovery — are covered under platform policy and a platform
-cost cap, with no entry in your allowlist. They are detected structurally (a call from the wallet to
-itself) rather than by a list of function names, so a self-administration function added to the
-wallet later cannot slip out of that treatment.
+itself to add or remove an owner (a passkey or an address), for example during recovery, are covered
+under platform policy and a platform cost cap, with no entry in your allowlist. A plain value
+transfer from the wallet to itself (no calldata) is covered the same way.
+
+Wallet management is detected by a fixed list of wallet functions: `addOwnerAddress`,
+`addOwnerPublicKey` and `removeOwnerAtIndex`, each called with no value. Every other call from the
+wallet to itself is refused with `contract-not-allowed`, even though the target is the user's own
+wallet. This includes `execute`, `executeBatch`, `upgradeToAndCall`, `signedStaticCall` and
+`removeLastOwner`. Several of these run calls or code they carry as a payload, which your allowlist
+would never see, and `removeLastOwner` locks the wallet for good. Wallet upgrades are therefore not
+sponsored. A self-administration function added to the wallet later is not sponsored until the
+platform adds it to the list; until then, the user pays the gas.
 
 This is deliberate, and it protects your users from your own configuration: adding a passkey on a
 new device is exactly when a user holds no native token and has no way to obtain one, so a recovery
@@ -241,9 +249,9 @@ should key off (never the message, which may be reworded):
 | --- | --- | --- |
 | `sponsorship-disabled` | Off for this tenant | no |
 | `no-sponsorship-config` | No rules configured, or they no longer validate | no |
-| `contract-not-allowed` | The target is not allow-listed | no |
+| `contract-not-allowed` | The target is not allow-listed, or it is a call from the wallet to itself that is not wallet management (§7.1) | no |
 | `function-not-allowed` | The contract is allowed, this function is not | no |
-| `wallet-management-not-sponsored` | A self-call, and you have set `walletManagement.enabled: false` | no |
+| `wallet-management-not-sponsored` | A wallet-management call, and you have set `walletManagement.enabled: false` | no |
 | `cost-exceeds-cap` | Above the per-transaction cap | when fees fall |
 | `insufficient-balance` | The tenant has no available balance | after funding |
 | `tenant-in-deficit` | An overdraw must be settled first | after funding |

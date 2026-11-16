@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Nothing in this workflow writes with the token. No permissions by default; each job grants its own.
+permissions: {}
+
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
@@ -24,14 +27,27 @@ jobs:
   playwright:
     name: E2E (${{ matrix.leg.name }})
     runs-on: ubuntu-26.04
+    # contents: read for the checkout. packages: read for the reference dApp, which installs the
+    # published connector from GitHub Packages.
+    permissions:
+      contents: read
+      packages: read
     strategy:
       # Let every leg finish: one failing shard should not hide the other's failures.
       fail-fast: false
       matrix:
         leg:
-          - { id: main-1, name: 'main 1/2', test: 'pnpm test --fully-parallel --shard=1/2' }
-          - { id: main-2, name: 'main 2/2', test: 'pnpm test --fully-parallel --shard=2/2' }
-          - { id: demo, name: 'reference demo', test: 'pnpm test:demo' }
+          - {
+              id: main-1,
+              name: "main 1/2",
+              test: "pnpm test --fully-parallel --shard=1/2",
+            }
+          - {
+              id: main-2,
+              name: "main 2/2",
+              test: "pnpm test --fully-parallel --shard=2/2",
+            }
+          - { id: demo, name: "reference demo", test: "pnpm test:demo" }
     steps:
       # The stack builds wallet-api, wallet-web, paymaster-admin and the bundler from their
       # Dockerfiles, which build on Docker Hardened Images (ABIP-2), and dhi.io refuses anonymous
@@ -218,6 +234,8 @@ jobs:
     needs: playwright
     if: always()
     runs-on: ubuntu-26.04
+    # Reads only the result of the other job.
+    permissions: {}
     steps:
       - name: Every leg passed
         env:

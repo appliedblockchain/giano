@@ -22,7 +22,7 @@ name: Deploy
 on:
   push:
     branches: [main]
-    paths: ['infra/versions.json']
+    paths: ["infra/versions.json"]
   # Re-roll one environment's current declared tag without changing it: to
   # replace tasks after an out-of-band change, or to recover a service the
   # circuit breaker rolled back. Not needed after a `terraform apply` — that
@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to re-roll onto its currently declared tag'
+        description: "Environment to re-roll onto its currently declared tag"
         required: true
         type: choice
         options: [dev, stg, prd]

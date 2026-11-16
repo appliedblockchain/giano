@@ -36,7 +36,7 @@ services:
       BUNDLER_EXECUTOR_PRIVATE_KEYS: ${BUNDLER_EXECUTOR_PRIVATE_KEYS:?set BUNDLER_EXECUTOR_PRIVATE_KEYS in the selected operator file}
     # Loopback only: unauthenticated RPC with a funded key. wallet-api uses http://bundler:4337.
     ports:
-      - '127.0.0.1:4337:4337'
+      - "127.0.0.1:4337:4337"
 
   postgres:
     image: postgres:17-alpine
@@ -46,7 +46,7 @@ services:
       POSTGRES_USER: giano
       POSTGRES_PASSWORD: giano
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U giano -d giano']
+      test: ["CMD-SHELL", "pg_isready -U giano -d giano"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -62,8 +62,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['node', 'dist/init.js']
-    restart: 'no'
+    command: ["node", "dist/init.js"]
+    restart: "no"
     # the image's healthcheck probes the API, which this container never starts
     healthcheck:
       disable: true
@@ -99,7 +99,7 @@ services:
       DATABASE_URL: postgres://giano:giano@postgres:5432/giano
       GIANO_ENVIRONMENT: ${GIANO_ENVIRONMENT:?set the application environment identity}
       # the init service ran them
-      RUN_MIGRATIONS: 'false'
+      RUN_MIGRATIONS: "false"
       # A testnet: the balances at risk are worthless, so an environment-variable signing key is
       # acceptable here where it would be refused for `production`.
       GIANO_DEPLOYMENT_CLASS: testnet
@@ -118,13 +118,13 @@ services:
       # Both halves are required. provision-paymaster.sh registers and funds the tenant ON CHAIN;
       # provision-sponsorship.sh installs its rules through the admin API. Funding without rules
       # sponsors nothing, and the stack gives no hint that that is why.
-      SPONSORSHIP_ENABLED: 'true'
+      SPONSORSHIP_ENABLED: "true"
       # `local` is refused outright when GIANO_DEPLOYMENT_CLASS is `production`; a testnet key
       # guarding worthless balances is the case the distinction exists to allow.
       SPONSORSHIP_SIGNER_KIND: local
       SPONSORSHIP_SIGNER_KEY_REF: ${SPONSORSHIP_SIGNER_KEY:?set SPONSORSHIP_SIGNER_KEY in the selected operator file}
       # Credits tenant balances from on-chain deposits. Without it a funded tenant stays at zero.
-      PAYMASTER_WATCHER_ENABLED: 'true'
+      PAYMASTER_WATCHER_ENABLED: "true"
 
   wallet-web:
     build:
@@ -134,7 +134,7 @@ services:
     depends_on:
       - wallet-api
     ports:
-      - '8081:8080'
+      - "8081:8080"
     environment:
       GIANO_CHAIN_ID: ${CHAIN_ID:?set CHAIN_ID from the selected profile}
       # No RPC or bundler URL: the wallet reads through wallet-api's /api/v1/rpc/<chainId> and

@@ -95,6 +95,7 @@ export function useTimelockAccess(
 	const longestDelay = config
 		? config.functions.reduce(
 				(longest, entry) =>
+					// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 					entry.effectiveDelay > longest ? entry.effectiveDelay : longest,
 				config.minDelay,
 			)

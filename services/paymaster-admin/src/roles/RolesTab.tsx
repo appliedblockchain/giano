@@ -114,7 +114,9 @@ function roleDelay(
 		.filter((entry) => entry.role === role)
 		.map((entry) => entry.effectiveDelay);
 	if (!delays?.length) return undefined;
+	// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 	const low = delays.reduce((a, b) => (a < b ? a : b));
+	// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 	const high = delays.reduce((a, b) => (a > b ? a : b));
 	return low === high
 		? formatDuration(low)

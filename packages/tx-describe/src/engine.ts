@@ -21,6 +21,7 @@ import {
 	functionSelector,
 	isAddress,
 	isSelector,
+	isTokenDecimals,
 	shortAddress,
 } from "./signature";
 import type {
@@ -103,7 +104,8 @@ export async function formatCall(input: EngineInput): Promise<EngineResult> {
 					if (!input.resolveToken) return null;
 					try {
 						const info = await input.resolveToken(chainId, token);
-						return info
+						// Invalid decimals count as unresolved: the amount is shown unscaled.
+						return info && isTokenDecimals(info.decimals)
 							? {
 									name: info.name ?? info.symbol,
 									symbol: info.symbol,

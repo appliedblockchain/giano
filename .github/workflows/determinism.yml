@@ -3,22 +3,22 @@ name: Determinism
 on:
   pull_request:
     paths:
-      - 'packages/contracts/src/**'
-      - 'packages/contracts/foundry.toml'
+      - "packages/contracts/src/**"
+      - "packages/contracts/foundry.toml"
       # Inputs that reach the bytecode, the fingerprints or the deterministic addresses without
       # touching src/: the remappings, the Solidity dependency versions, the releases, the deploy
       # CLI and the checks themselves.
-      - 'packages/contracts/remappings.txt'
-      - 'packages/contracts/package.json'
-      - 'packages/contracts/releases/**'
-      - 'packages/contracts/deploy/**'
-      - 'packages/contracts/vendor/**'
-      - 'packages/contracts/scripts/check-determinism.ts'
-      - 'packages/contracts/scripts/release.ts'
-      - 'packages/contracts/scripts/generate-releases.ts'
-      - 'packages/contracts/release-fingerprints.ts'
-      - 'packages/contracts/release-code.ts'
-      - '.github/workflows/determinism.yml'
+      - "packages/contracts/remappings.txt"
+      - "packages/contracts/package.json"
+      - "packages/contracts/releases/**"
+      - "packages/contracts/deploy/**"
+      - "packages/contracts/vendor/**"
+      - "packages/contracts/scripts/check-determinism.ts"
+      - "packages/contracts/scripts/release.ts"
+      - "packages/contracts/scripts/generate-releases.ts"
+      - "packages/contracts/release-fingerprints.ts"
+      - "packages/contracts/release-code.ts"
+      - ".github/workflows/determinism.yml"
   # `paths:` lives under `pull_request` only and is ignored by `workflow_call`, so both jobs
   # below run on every release — which is what a gate has to do.
   workflow_call:

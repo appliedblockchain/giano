@@ -32,10 +32,10 @@ jobs:
     needs: [ci, determinism]
     runs-on: ubuntu-26.04
     permissions:
-      contents: write        # push the version PR branch, and the v* tag after a publish
+      contents: write # push the version PR branch, and the v* tag after a publish
       packages: write
-      pull-requests: write   # open and update the version PR
-      actions: write         # dispatch docker.yml for the tag it just pushed
+      pull-requests: write # open and update the version PR
+      actions: write # dispatch docker.yml for the tag it just pushed
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -76,8 +76,8 @@ jobs:
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           publish: pnpm changeset publish
-          title: 'chore: version packages'
-          commit: 'chore: version packages'
+          title: "chore: version packages"
+          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Every package has `prepublishOnly: pnpm build`, and the build runs with `clean: true`.
@@ -88,7 +88,7 @@ jobs:
           # built everything, so the publish must not rebuild. pnpm reads the pnpm_config_ name (pnpm 12
           # also accepts PNPM_CONFIG_); the npm_config_ and NPM_CONFIG_ forms are ignored and
           # `prepublishOnly` still runs.
-          pnpm_config_ignore_scripts: 'true'
+          pnpm_config_ignore_scripts: "true"
 
       - name: Tag the release and build its images
         if: steps.changesets.outputs.published == 'true'

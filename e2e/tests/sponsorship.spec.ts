@@ -9,6 +9,8 @@ import {
 	connectWallet,
 	expectOutContains,
 	openActionPopup,
+	openManagePopup,
+	readOnChainOwners,
 	TENANTS,
 	type Tenant,
 	type VirtualCredential,
@@ -488,11 +490,11 @@ for (const slug of ["stock", "byo"] as const) {
 			});
 		});
 
-		// A user adding a passkey on a new device holds no native token and no way to obtain one, so
-		// this has to work with nothing about the wallet in the tenant's allowlist. `#send` is a
-		// transfer to the wallet's own address — a self-call, which the rules classify structurally as
-		// wallet management rather than by a selector list.
-		test("sponsors wallet management with nothing about the wallet allow-listed", async ({
+		// `#send` is a plain value transfer to the wallet's own address (no calldata). The rules
+		// sponsor it as wallet management, next to the owner functions, with nothing about the wallet
+		// in the tenant's allowlist. The owner change itself is covered under "wallet management"
+		// below, on the stock wallet UI, which has the management view.
+		test("sponsors a plain value transfer to self as wallet management", async ({
 			page,
 		}) => {
 			const { credentials } = await connectWallet(page, tenant);
@@ -542,6 +544,69 @@ for (const slug of ["stock", "byo"] as const) {
 		});
 	});
 }
+
+// ── wallet management ─────────────────────────────────────────────────────────
+
+/** Hashes of every mined operation from `address` that the sponsorship paymaster paid for. */
+async function sponsoredOperationHashes(address: string): Promise<string[]> {
+	const client = createPublicClient({
+		transport: http(process.env.RPC_URL ?? ORIGINS.rpc),
+	});
+	const logs = await client.getLogs({
+		address: ADDRESSES.entryPoint,
+		event: getAbiItem({ abi: entryPoint09Abi, name: "UserOperationEvent" }),
+		args: {
+			sender: address as Address,
+			paymaster: ADDRESSES.sponsorshipPaymaster as Address,
+		},
+		fromBlock: 0n,
+		toBlock: "latest",
+		strict: true,
+	});
+	return logs.map((log) => log.args.userOpHash.toLowerCase());
+}
+
+test.describe("wallet management — stock wallet UI", () => {
+	const tenant = TENANTS.stock;
+
+	// The case wallet management is sponsored for: a user adding a passkey on a new device holds no
+	// native token and no way to obtain one. Nothing about the wallet is in the tenant's allowlist.
+	// The test proves the tenant paid, not only that the owner changed: the operation names the
+	// sponsorship paymaster, and its settlement is on the tenant's books.
+	test("sponsors adding a passkey with nothing about the wallet allow-listed", async ({
+		page,
+	}) => {
+		const { credentials, address } = await connectWallet(page, tenant);
+		await waitForDeploymentSettlement(tenant, address);
+		const sponsoredBefore = await sponsoredOperationHashes(address);
+		expect((await readOnChainOwners(address)).owners).toHaveLength(1);
+
+		const popup = await openManagePopup(page, credentials);
+		await popup.getByTestId("manage-add-passkey").click();
+		await expect(popup.getByTestId("manage-consent-fingerprint")).toBeVisible({
+			timeout: 30_000,
+		});
+		await popup.getByTestId("manage-add-approve").click();
+		await expect(popup.getByTestId("manage-flow-done")).toBeVisible({
+			timeout: 90_000,
+		});
+
+		expect((await readOnChainOwners(address)).owners).toHaveLength(2);
+		const added = (await sponsoredOperationHashes(address)).filter(
+			(hash) => !sponsoredBefore.includes(hash),
+		);
+		expect(
+			added,
+			"the owner change was not paid by the sponsorship paymaster",
+		).toHaveLength(1);
+		const spend = await waitForSettlements(tenant, added);
+		const settlement = spend.settlements.find(
+			(entry) => entry.useropHash.toLowerCase() === added[0],
+		)!;
+		expect(settlement.success).toBe(true);
+		await expectInvariantIntact();
+	});
+});
 
 // ── accounting and operations ─────────────────────────────────────────────────
 

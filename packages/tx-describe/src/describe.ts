@@ -5,6 +5,7 @@ import {
 	formatUnits,
 	HEX_RE,
 	isAddress,
+	isTokenDecimals,
 	shortAddress,
 	toBigInt,
 } from "./signature";
@@ -50,6 +51,14 @@ export async function describeTransaction(
 			{ code: "engine", message: `"to" is not an address: ${String(tx.to)}` },
 		]);
 	const contract = checksumAddress(tx.to);
+	// formatUnits throws on invalid decimals; check once here so no later call can throw.
+	if (!isTokenDecimals(nativeCurrency.decimals))
+		return unknown("decode-failed", null, contract, [
+			{
+				code: "engine",
+				message: `nativeCurrency.decimals must be an integer from 0 to 255: ${nativeCurrency.decimals}`,
+			},
+		]);
 
 	let value: bigint;
 	try {

@@ -14,10 +14,10 @@ name: Terraform check
 # valid JSON, before either reaches main.
 on:
   pull_request:
-    paths: ['infra/**', '.github/workflows/terraform-check.yml']
+    paths: ["infra/**", ".github/workflows/terraform-check.yml"]
   push:
     branches: [main]
-    paths: ['infra/**', '.github/workflows/terraform-check.yml']
+    paths: ["infra/**", ".github/workflows/terraform-check.yml"]
 
 permissions:
   contents: read
