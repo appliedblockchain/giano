@@ -60,7 +60,7 @@ tool's scope are not suppressions, but each SHALL carry a reason.
   replaces that rule
 
 #### Scenario: In-source Solidity suppression
-- **WHEN** a file under `packages/contracts/src` contains a `slither-disable` or `aderyn-ignore` comment
+- **WHEN** a file under `packages/contracts/src` contains a `slither-disable`, `aderyn-ignore` or `aderyn-fp` comment
 - **THEN** the register check fails and names the file and line
 
 ### Requirement: Solidity static analysis fails on High findings

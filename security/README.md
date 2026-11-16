@@ -62,7 +62,8 @@ When an entry expires, the register check fails on every PR and release until th
 - **Remove.** If the finding is fixed or no longer reported, delete the entry. Its ID is not reused.
 
 A `slither` entry that matches no finding in the report fails the job. The PR that fixes or moves a finding removes or
-updates its entry, so a stale entry cannot later accept a different finding. The other tools' findings can change
+updates its entry, so the register stays in sync with the code. A Slither `id` hashes the whole finding, so a stale
+entry cannot match a different finding; the check exists to keep the register in sync. The other tools' findings can change
 without a code change, for example when an advisory database changes, so their unused entries do not fail CI.
 
 The weekly security scan lists entries that expire within 14 days, with their owners, in its tracking issue. To see

@@ -333,8 +333,16 @@ workflow (Cyfrin/aderyn #1096, #1097, #1098), so the install step returned 404 a
 Aderyn steps, `aderyn.toml`, the `aderyn` tool in the register script and AF-002 to AF-005 are removed.
 
 R1 needs CI to check the Solidity contracts. One maintained analyser meets it. No requirement asked for two tools.
-Aderyn's 4 Highs were 3 false positives and 1 deliberate design choice, so no true finding is lost. The forge tests
-and G22 (independent contract review) remain the main protection for the contracts. `aderyn-ignore` and `aderyn-fp`
+Aderyn's 4 Highs were 3 false positives (AF-002 to AF-004) and 1 deliberate design choice (AF-005). Two points that
+these entries tracked now move to G22 (independent contract review), because no CI check covers them any more:
+
+- AF-005 recorded a real defect. `ERC1271InputGenerator` fails for a hash that starts with byte `0xEF` (EIP-3541),
+  about 1 in 256 hashes. G22 decides whether to fix or remove the contract.
+- AF-002 and AF-003 asked us to watch for locked ether. Slither's `locked-ether` is Medium, below the High gate. If
+  `GianoSmartWalletFactory.createAccount` stops forwarding `msg.value`, or `GianoPaymaster` gains a payable path that
+  does not send the value on, CI no longer fails. G22 checks both contracts for this case.
+
+The forge tests and G22 remain the main protection for the contracts. `aderyn-ignore` and `aderyn-fp`
 comments in contract source stay rejected, so dead suppressions do not return.
 
 Alternative considered: build Aderyn from the source tarball that is still published. It would keep CI green, but it
@@ -344,9 +352,10 @@ would run a security tool that gets no new detectors and no fixes.
 
 - [The audit, Trivy database or CodeQL depend on outside services] → Each fails closed. A rerun is the remedy. The
   failure message says the tool could not run, not that a finding exists.
-- [An entry left behind after its finding is fixed would accept a later, different finding] → Report mode fails on
-  a `slither` entry that matches no finding, so the PR that fixes or moves a finding also updates its entry. Contract
-  source changes are rare and reviewed.
+- [An entry left behind after its finding is fixed makes the register disagree with the code] → Report mode fails on
+  a `slither` entry that matches no finding, so the PR that fixes or moves a finding also updates its entry. A Slither
+  `id` hashes the whole finding, so a stale entry cannot match a different finding. Contract source changes are rare
+  and reviewed.
 - [One analyser only (D14)] → A pattern that Slither does not report at High passes the gate. The forge tests and G22
   cover the contracts beyond static analysis. A second, maintained analyser can be added in a change of its own.
 - [A new advisory blocks unrelated PRs] → D13. A short-lived register entry unblocks the team within one PR.
