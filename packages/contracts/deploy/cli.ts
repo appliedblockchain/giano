@@ -96,6 +96,7 @@ import {
 	type OverrideKey,
 	PROFILE_NETWORKS,
 	redactRpcUrl,
+	redactRpcUrls,
 } from "./config";
 import { create3Address } from "./create3";
 import {
@@ -970,10 +971,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-	let message = error instanceof Error ? error.message : String(error);
+	const message = error instanceof Error ? error.message : String(error);
 	// viem quotes the request URL in its errors ("URL: …"), and a provider key can sit in it.
-	if (values.rpc)
-		message = message.replaceAll(values.rpc, redactRpcUrl(values.rpc));
-	console.error(message);
+	console.error(redactRpcUrls(message, [values.rpc]));
 	process.exit(1);
 });

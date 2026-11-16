@@ -41,6 +41,28 @@ test("the sponsorship signer is given by address", () => {
 	assert.match(missing.out, /set SPONSORSHIP_SIGNER_ADDRESS/);
 });
 
+test("the signer's address and key, when both are given, must be the same signer", () => {
+	const other = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+	const drifted = wrapper({
+		SPONSORSHIP_SIGNER_ADDRESS: other,
+		SPONSORSHIP_SIGNER_KEY: KEY,
+	});
+	assert.notEqual(drifted.code, 0);
+	assert.match(
+		drifted.out,
+		new RegExp(
+			`SPONSORSHIP_SIGNER_ADDRESS ${other} is not the address of SPONSORSHIP_SIGNER_KEY \\(${ADDRESS}\\)`,
+		),
+	);
+	// Matching (in any letter case) passes this check and stops at the next one, the role topology.
+	const matching = wrapper({
+		SPONSORSHIP_SIGNER_ADDRESS: ADDRESS.toLowerCase(),
+		SPONSORSHIP_SIGNER_KEY: KEY,
+	});
+	assert.doesNotMatch(matching.out, /is not the address of/);
+	assert.match(matching.out, /name the role holders/);
+});
+
 test("a mainnet refuses the signer's key, every role on one address, and a defaulted withdrawal address", () => {
 	const mainnet = { GIANO_NETWORK: "mainnet" };
 	assert.match(

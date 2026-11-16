@@ -74,6 +74,7 @@ import {
 	isProductionChain,
 	type NetworkClass,
 	redactRpcUrl,
+	redactRpcUrls,
 } from "../deploy/config";
 import { p256Report } from "../deploy/p256";
 import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
@@ -146,10 +147,9 @@ let rpcInUse: string | undefined;
 
 function report(level: Level, label: string, detail?: string) {
 	if (level === "fail") hadFailure = true;
-	let line = `${ICON[level]} ${label}${detail ? `: ${detail}` : ""}`;
+	const line = `${ICON[level]} ${label}${detail ? `: ${detail}` : ""}`;
 	// Provider errors can quote the request URL.
-	if (rpcInUse) line = line.replaceAll(rpcInUse, redactRpcUrl(rpcInUse));
-	console.log(line);
+	console.log(redactRpcUrls(line, [rpcInUse]));
 }
 
 function section(title: string) {
@@ -1275,16 +1275,26 @@ async function doctorChain(flags: Record<string, string>) {
 	// CreateX places every CREATE3 address, and the contracts need Cancun's opcodes.
 	section("Chain prerequisites");
 	const rpc = flags.rpc ?? process.env.RPC_URL;
-	if (rpc)
-		for (const p of await chainPrerequisites(
-			createPublicClient({ transport: http(rpc) }) as PublicClient,
-			chainId,
-		))
+	if (rpc) {
+		try {
+			for (const p of await chainPrerequisites(
+				createPublicClient({ transport: http(rpc) }) as PublicClient,
+				chainId,
+			))
+				report(
+					p.ok ? "ok" : "fail",
+					p.name,
+					`${p.detail} (adoption checklist step 1)`,
+				);
+		} catch (error) {
+			// Through report(), which redacts: viem quotes the request URL, provider key and all.
 			report(
-				p.ok ? "ok" : "fail",
-				p.name,
-				`${p.detail} (adoption checklist step 1)`,
+				"fail",
+				"Chain prerequisites could not be read",
+				(error as Error).message,
 			);
+		}
+	}
 }
 
 async function doctorWallet(flags: Record<string, string>) {
@@ -1411,6 +1421,11 @@ async function main() {
 }
 
 void main().catch((error) => {
-	console.error(`doctor: ${(error as Error).message}`);
+	// The last line of defence: any RPC URL this run could have used, whatever threw.
+	const argv = process.argv;
+	const flagged = argv[argv.indexOf("--rpc") + 1];
+	console.error(
+		`doctor: ${redactRpcUrls((error as Error).message, [rpcInUse, process.env.RPC_URL, argv.includes("--rpc") ? flagged : undefined])}`,
+	);
 	process.exit(1);
 });

@@ -59,8 +59,10 @@ TENANT_FUND_ETH="${TENANT_FUND_ETH:-0.02}"
 STAKE_ETH="${STAKE_ETH:-0.1}"
 UNSTAKE_DELAY="${UNSTAKE_DELAY:-86400}"
 
+# With both the signer's address and its key set, they must agree: provisioning registers the
+# address while wallet-api signs with the key, and a mismatch fails every sponsorship silently.
 DERIVED="$(pnpm --filter @appliedblockchain/giano-contracts exec node -e \
-  "try { const {Wallet,getAddress}=require('ethers');const e=process.env;console.log(new Wallet(e.DEPLOYER_PRIVATE_KEY).address+' '+(e.SPONSORSHIP_SIGNER_ADDRESS?getAddress(e.SPONSORSHIP_SIGNER_ADDRESS):new Wallet(e.SPONSORSHIP_SIGNER_KEY).address)) } catch { console.error('Invalid operator key, sponsorship signer address/key, or missing dependencies.'); process.exit(1) }")"
+  "let a,k,d; try { const {Wallet,getAddress}=require('ethers');const e=process.env;d=new Wallet(e.DEPLOYER_PRIVATE_KEY).address;a=e.SPONSORSHIP_SIGNER_ADDRESS?getAddress(e.SPONSORSHIP_SIGNER_ADDRESS):undefined;k=e.SPONSORSHIP_SIGNER_KEY?new Wallet(e.SPONSORSHIP_SIGNER_KEY).address:undefined } catch { console.error('Invalid operator key, sponsorship signer address/key, or missing dependencies.'); process.exit(1) } if (a&&k&&a!==k) { console.error('ERROR: SPONSORSHIP_SIGNER_ADDRESS '+a+' is not the address of SPONSORSHIP_SIGNER_KEY ('+k+'). wallet-api would sign with a key the paymaster does not accept. Set only the address, or make them match.'); process.exit(1) } console.log(d+' '+(a??k))")"
 DEPLOYER_ADDR="${DERIVED%% *}"
 SIGNER_ADDR="${DERIVED##* }"
 

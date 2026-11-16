@@ -280,3 +280,17 @@ export function redactRpcUrl(url: string): string {
 		return "(unparseable RPC URL)";
 	}
 }
+
+/**
+ * `text` with each of `urls` cut down to its origin. viem and ethers quote the request URL in their
+ * errors, so any error or child output that reaches a terminal or a log file goes through this.
+ */
+export function redactRpcUrls(
+	text: string,
+	urls: readonly (string | undefined)[],
+): string {
+	let redacted = text;
+	for (const url of urls)
+		if (url) redacted = redacted.replaceAll(url, redactRpcUrl(url));
+	return redacted;
+}

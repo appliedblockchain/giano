@@ -141,3 +141,7 @@
       admins as well as proposers, and fails closed when the history cannot be read (B3)
 - [x] 11.4 The hand-off refuses a `--timelock` other than the published one, and reads the deployment block only from
       the matching record or `--from-block` (B4)
+- [x] 11.5 The doctor, the rehearsal and `deploy:cli` cut every RPC URL they may print to its origin, including
+      errors from the chain-prerequisite checks, the top-level error handler and the rehearsal's step logs
+- [x] 11.6 Provisioning refuses when both `SPONSORSHIP_SIGNER_ADDRESS` and `SPONSORSHIP_SIGNER_KEY` are set and the
+      key's address differs

@@ -42,7 +42,11 @@ import {
 	toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { forkUrlOf, REHEARSAL_DEPLOYER_ENV } from "../deploy/config";
+import {
+	forkUrlOf,
+	REHEARSAL_DEPLOYER_ENV,
+	redactRpcUrls,
+} from "../deploy/config";
 import { paymasterUpgradeProposal } from "../deploy/deploy";
 import { loadProfile, REPO_ROOT } from "../deploy/profiles";
 import { REHEARSAL_DIR, readRecord } from "../deploy/records";
@@ -173,7 +177,11 @@ function command(
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
 	});
-	const output = `$ ${args.join(" ")}\n${result.stdout ?? ""}${result.stderr ?? ""}`;
+	// The upstream RPC can carry a provider key, and a child's errors can quote it.
+	const output = redactRpcUrls(
+		`$ ${args.join(" ")}\n${result.stdout ?? ""}${result.stderr ?? ""}`,
+		[forkUrl],
+	);
 	writeFileSync(log, output);
 	if (result.status !== 0) {
 		const tail = output.trim().split("\n").slice(-12).join("\n    ");
@@ -663,7 +671,10 @@ async function main() {
 				step.outcome = "pass";
 			} catch (error) {
 				step.outcome = "fail";
-				step.detail = error instanceof Error ? error.message : String(error);
+				step.detail = redactRpcUrls(
+					error instanceof Error ? error.message : String(error),
+					[forkUrl],
+				);
 			}
 		}
 		outcome.set(step.name, step.outcome);

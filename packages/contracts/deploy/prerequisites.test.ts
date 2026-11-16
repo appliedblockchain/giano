@@ -18,6 +18,7 @@ import {
 	isProductionChain,
 	MAINNET_CHAIN_IDS,
 	redactRpcUrl,
+	redactRpcUrls,
 } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
 import { p256Report } from "./p256";
@@ -138,6 +139,18 @@ test("an RPC URL is printed as its origin only", () => {
 		"https://node.example.com:8545",
 	);
 	assert.doesNotMatch(redactRpcUrl("not a url abc123secret"), /abc123secret/);
+});
+
+test("every given RPC URL is cut to its origin wherever an error quotes it", () => {
+	const keyed = "https://base-sepolia.g.alchemy.com/v2/abc123secret";
+	const message = `HTTP request failed.\n\nURL: ${keyed}\nRequest body: {}\nretry ${keyed}`;
+	const redacted = redactRpcUrls(message, [undefined, keyed]);
+	assert.doesNotMatch(redacted, /abc123secret/);
+	assert.equal(
+		redacted.match(/https:\/\/base-sepolia\.g\.alchemy\.com/g)?.length,
+		2,
+	);
+	assert.equal(redactRpcUrls("no URL here", [keyed]), "no URL here");
 });
 
 test("deploy:cli never prints a keyed RPC URL, not even in a provider error", () => {
