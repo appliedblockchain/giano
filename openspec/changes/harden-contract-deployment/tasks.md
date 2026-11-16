@@ -131,3 +131,13 @@
 - [x] 10.6 Record the open decisions the checklist depends on: `dev` reset or migration, rehearsal delays and the
       Safe proposer for testnet, and the immediate-role holders
 - [x] 10.7 Changeset for `@appliedblockchain/giano-contracts`
+
+## 11. Review fixes (PR #279)
+
+- [x] 11.1 Provisioning gives up the bootstrap key's run roles (signer, stake, tenant admin) even when a step fails,
+      and decides what to revoke from the end state, so a rerun clears what a failed run left (B1)
+- [x] 11.2 Provisioning checks every role holder, signer, stake and funding amount before the first transaction (B2)
+- [x] 11.3 The hand-off reads the timelock's role-grant history 200 blocks at a time, checks cancellers, executors and
+      admins as well as proposers, and fails closed when the history cannot be read (B3)
+- [x] 11.4 The hand-off refuses a `--timelock` other than the published one, and reads the deployment block only from
+      the matching record or `--from-block` (B4)

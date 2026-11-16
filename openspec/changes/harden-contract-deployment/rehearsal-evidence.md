@@ -54,14 +54,14 @@ Results of task groups 1, 3 and 9. Base Sepolia fork, anvil 1.7.1 (`deploy/docke
   assuming wallet management would still be sponsored, but the wallet-api's rules sponsor nothing for an empty
   allowlist. Fixed with `SPONSOR_ALLOWLIST` (task 7.6, "Sponsorship rules name the tenant's contracts on a public
   chain").
-- **N4 (new, found in the gate run; decision open). The paymaster watcher cannot run on `sepolia.base.org`.** The
+- **N4 (new, found in the gate run; decided). The paymaster watcher cannot run on `sepolia.base.org`.** The
   watcher asks for up to 9,000 blocks per `eth_getLogs` (5,000 on a cold start); the Base Sepolia profile's public
   RPC serves 200 ("eth_getLogs is limited to a 200 range"). The watcher ingested nothing and retried the same range
   every poll, so the ledger read the funded tenant as 0 wei and refused every sponsorship (`sufficient-balance`),
   and the drawdown alert fired falsely. `base-sepolia-rpc.publicnode.com` serves the range, and with it as the fork
-  upstream (`--fork-url`) the watcher ingests. Not fixed in this change: the choice between requiring such an RPC
-  and making the watcher shrink its span is recorded in `deploy/contracts/TESTNET-ROLLOUT.md` "Decisions needed
-  first", and in the PR.
+  upstream (`--fork-url`) the watcher ingests. Decided by the tech lead on the PR (2026-11-16): shrink the span to
+  200 blocks now, optimise later. The watcher change is a separate wallet-api PR; this change already reads the
+  hand-off's role-grant history 200 blocks at a time (`deploy/contracts/TESTNET-ROLLOUT.md` "Decisions needed first").
 - **N5 (harness). The fork's clock.** The timelocked upgrade warps the fork past the delay (1 hour on Base Sepolia),
   so the fork ran 3,599 s ahead of the wall clock that wallet-api signs `validUntil` from, and the bundler refused
   every sponsored operation with `AA32 paymaster expired or not due`. The rehearsal now resets the fork's clock

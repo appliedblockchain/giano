@@ -38,7 +38,7 @@ Set `RPC_URL` in your ignored local environment file for the serving backend; us
 as the deployment profile. It must serve `eth_getLogs` over 9,000 blocks, or the wallet-api's
 paymaster watcher never learns the tenant's balance and refuses every sponsorship. On Base Sepolia,
 `https://sepolia.base.org` serves only 200; `https://base-sepolia-rpc.publicnode.com` or a keyed
-endpoint works (an open decision, see TESTNET-ROLLOUT.md). `BUNDLER_NODE_RPC_URL` can override the bundler endpoint. Neither URL is
+endpoint works, until the watcher's 200-block span ships (decided, see TESTNET-ROLLOUT.md). `BUNDLER_NODE_RPC_URL` can override the bundler endpoint. Neither URL is
 exposed to browsers. The generic Compose file requires explicit chain settings; it has no hidden
 Ethereum Sepolia fallback. The generated public fragment supplies chain ID/name and the addresses:
 

@@ -48,7 +48,7 @@ const HOLDERS = {
 const SIGNER = holder("sponsorship-signer");
 const TENANT = "44444444-4444-4444-8444-444444444444";
 
-test("one holder per immediate role: the bootstrap key keeps none of them", {
+test("one holder per immediate role: the bootstrap key keeps none of them, even after a failed run", {
 	timeout: 120000,
 }, async () => {
 	const socket = createServer();
@@ -106,33 +106,36 @@ test("one holder per immediate role: the bootstrap key keeps none of them", {
 		});
 		const paymaster = record.contracts.paymasterProxy?.address as Address;
 
-		const run = spawnSync(
-			process.execPath,
-			[
-				"--import",
-				"tsx",
-				"scripts/provision-paymaster.ts",
-				"--paymaster",
-				paymaster,
-				"--signer",
-				SIGNER,
-				"--stake-eth",
-				"0.1",
-				"--tenant",
-				`${TENANT}:${holder("withdraw")}:provision-test:0.01`,
-				...Object.entries(HOLDERS).flatMap(([flag, [, address]]) => [
-					`--role-holder-${flag}`,
-					address,
-				]),
-			],
-			{
-				cwd: join(import.meta.dirname, ".."),
-				env: { ...process.env, RPC_URL: rpc, DEPLOYER_PRIVATE_KEY: OPERATOR },
-				encoding: "utf8",
-			},
-		);
-		assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-
+		const provision = (
+			overrides: { tenant?: string; holders?: string[] } = {},
+		) =>
+			spawnSync(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"scripts/provision-paymaster.ts",
+					"--paymaster",
+					paymaster,
+					"--signer",
+					SIGNER,
+					"--stake-eth",
+					"0.1",
+					"--tenant",
+					overrides.tenant ??
+						`${TENANT}:${holder("withdraw")}:provision-test:0.01`,
+					...(overrides.holders ??
+						Object.entries(HOLDERS).flatMap(([flag, [, address]]) => [
+							`--role-holder-${flag}`,
+							address,
+						])),
+				],
+				{
+					cwd: join(import.meta.dirname, ".."),
+					env: { ...process.env, RPC_URL: rpc, DEPLOYER_PRIVATE_KEY: OPERATOR },
+					encoding: "utf8",
+				},
+			);
 		const read = (functionName: string, args: unknown[] = []) =>
 			client.readContract({
 				address: paymaster,
@@ -140,6 +143,64 @@ test("one holder per immediate role: the bootstrap key keeps none of them", {
 				functionName: functionName as never,
 				args: args as never,
 			});
+		const runRoles = [
+			"SIGNER_ADMIN_ROLE",
+			"STAKE_ADMIN_ROLE",
+			"TENANT_ADMIN_ROLE",
+		];
+		const operatorHolds = async (roleName: string) =>
+			(await read("hasRole", [await read(roleName), operator])) as boolean;
+
+		// A mistyped holder is refused before anything is sent: no ETH spent, no role taken.
+		const nonce = await client.getTransactionCount({ address: operator });
+		const typo = provision({
+			holders: [
+				"--role-holder-pauser",
+				"0x123",
+				"--role-holder-signer-admin",
+				HOLDERS["signer-admin"][1],
+			],
+		});
+		assert.notEqual(typo.status, 0);
+		assert.match(
+			typo.stderr,
+			/role holder for pauser is not an address: 0x123/,
+		);
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+
+		// A run that fails part-way (a tenant funded with more ETH than the key holds) still gives up
+		// the roles it took for the run.
+		const broke = provision({
+			tenant: `${TENANT}:${holder("withdraw")}:provision-test:1000000`,
+		});
+		assert.notEqual(broke.status, 0, broke.stdout);
+		assert.match(broke.stdout, /stopped part-way/);
+		for (const roleName of runRoles)
+			assert.equal(await operatorHolds(roleName), false, `kept ${roleName}`);
+
+		// A run killed before it could clean up leaves a role behind; the rerun gives it up anyway,
+		// because what is revoked follows the end state, not what the rerun itself granted.
+		const operatorClient = createWalletClient({
+			chain,
+			transport,
+			account: privateKeyToAccount(OPERATOR),
+		});
+		await client.waitForTransactionReceipt({
+			hash: await operatorClient.writeContract({
+				address: paymaster,
+				abi: gianoPaymasterAbi,
+				functionName: "grantRole",
+				args: [(await read("SIGNER_ADMIN_ROLE")) as `0x${string}`, operator],
+			}),
+		});
+		assert.equal(await operatorHolds("SIGNER_ADMIN_ROLE"), true);
+
+		const run = provision();
+		assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+
 		for (const [roleName, address] of Object.values(HOLDERS)) {
 			const role = (await read(roleName)) as `0x${string}`;
 			assert.equal(await read("hasRole", [role, address]), true, `${roleName}`);

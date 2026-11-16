@@ -128,6 +128,7 @@ import {
 	chainPrerequisites,
 	handOffProblems,
 	isContractAccount,
+	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
 import {
@@ -181,6 +182,8 @@ const { positionals, values } = parseArgs({
 		timelock: { type: "string" },
 		salt: { type: "string" },
 		"safe-json": { type: "string" },
+		/** handoff: the timelock's deployment block, when its record has no deployment transaction. */
+		"from-block": { type: "string" },
 		proposer: { type: "string", multiple: true },
 		executor: { type: "string", multiple: true },
 		"min-delay": { type: "string" },
@@ -851,25 +854,38 @@ async function main(): Promise<void> {
 					`${timelock} is not a GianoTimelock on chain ${chainId}; refusing to hand it the paymaster`,
 				);
 			}
-			// The hand-off renounces ROLE_ADMIN and cannot be undone: check the timelock against what
-			// was published (the profile's timelock section, else the record's) before planning a call.
-			const published =
-				target.profile?.timelock ??
-				(record.timelock &&
+			// The hand-off renounces ROLE_ADMIN and cannot be undone. Only the published timelock may
+			// receive the roles: a second one with the same proposers and delays would pass every check
+			// below and leave the timelock that doctor and tenants rely on holding nothing.
+			const mismatch = timelockMismatch(timelock, {
+				profile: target.profile?.timelock?.address ?? undefined,
+				record: record.timelock?.address,
+			});
+			if (mismatch)
+				throw new Error(
+					`${mismatch} on chain ${chainId}; refusing to hand it the paymaster`,
+				);
+			// Then check it against what was published (the profile's timelock section, else the
+			// record's) before planning a call.
+			const recorded =
+				record.timelock &&
 				getAddress(record.timelock.address) === getAddress(timelock)
 					? record.timelock
-					: undefined);
+					: undefined;
+			const published = target.profile?.timelock ?? recorded;
 			if (!published)
 				throw new Error(
 					`no published timelock configuration for chain ${chainId} (a profile's timelock section, or the record of \`deploy:cli timelock\`); refusing to hand off to an unverified timelock`,
 				);
-			const deployedIn = record.timelock?.transactionHash
-				? (
-						await publicClient
-							.getTransactionReceipt({ hash: record.timelock.transactionHash })
-							.catch(() => undefined)
-					)?.blockNumber
-				: undefined;
+			const deployedIn = values["from-block"]
+				? BigInt(values["from-block"])
+				: recorded?.transactionHash
+					? (
+							await publicClient
+								.getTransactionReceipt({ hash: recorded.transactionHash })
+								.catch(() => undefined)
+						)?.blockNumber
+					: undefined;
 			const problems = await handOffProblems(publicClient, {
 				network: target.network,
 				proxy,

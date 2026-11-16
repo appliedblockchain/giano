@@ -387,6 +387,20 @@ export function isContractAccount(code: Hex | string | undefined): boolean {
 	return !(hex.length === 2 + 23 * 2 && hex.startsWith("0xef0100"));
 }
 
+/**
+ * Why `timelock` is not the one to hand the paymaster to, or `undefined` when it is. The published
+ * address is the profile's, else the deployment record's; with neither, there is nothing to compare.
+ */
+export function timelockMismatch(
+	timelock: Address,
+	published: { profile?: string; record?: string },
+): string | undefined {
+	const address = published.profile ?? published.record;
+	if (!address || getAddress(address) === getAddress(timelock))
+		return undefined;
+	return `--timelock ${getAddress(timelock)} is not the published timelock ${getAddress(address)} (${published.profile ? "the chain profile" : "the deployment record"})`;
+}
+
 /** The timelock configuration a hand-off is checked against: the profile's, else the recorded one. */
 export type PublishedTimelock = {
 	proposers: readonly string[];
@@ -448,24 +462,61 @@ export async function handOffProblems(
 				`published proposer ${proposer} does not hold CANCELLER_ROLE`,
 			);
 	}
-	try {
-		const grants = await client.getLogs({
-			address: timelock,
-			event: roleGranted,
-			args: { role: proposerRole },
-			fromBlock: published.fromBlock ?? 0n,
-			toBlock: "latest",
-		});
-		for (const grant of grants) {
-			const account = getAddress(grant.args.account as Address);
-			if (!expected.has(account) && (await holds(proposerRole, account)))
+
+	// Every role the timelock ever granted, against who may hold it. The roles are checked one
+	// published account at a time above, but an extra holder can only be found in the grant history,
+	// so a history that cannot be read fails the hand-off rather than passing it.
+	const allowed = new Map<Hex, { name: string; accounts: Set<Address> }>([
+		[
+			(await read("DEFAULT_ADMIN_ROLE")) as Hex,
+			{
+				name: "DEFAULT_ADMIN_ROLE",
+				accounts: new Set([getAddress(timelock)]),
+			},
+		],
+		[proposerRole, { name: "PROPOSER_ROLE", accounts: expected }],
+		[cancellerRole, { name: "CANCELLER_ROLE", accounts: expected }],
+		[
+			executorRole,
+			{
+				name: "EXECUTOR_ROLE",
+				accounts: new Set(
+					published.executors.length === 0
+						? [zeroAddress]
+						: published.executors.map((e) => getAddress(e)),
+				),
+			},
+		],
+	]);
+	if (published.fromBlock === undefined)
+		problems.push(
+			"the timelock's deployment block is unknown, so its role grants cannot be listed: record its deployment transaction (deploy:cli timelock), or pass --from-block",
+		);
+	else
+		try {
+			const seen = new Set<string>();
+			for (const grant of await logsInChunks(client, {
+				address: timelock,
+				fromBlock: published.fromBlock,
+			})) {
+				const role = grant.args.role as Hex;
+				const account = getAddress(grant.args.account as Address);
+				if (seen.has(`${role}:${account}`)) continue;
+				seen.add(`${role}:${account}`);
+				const rule = allowed.get(role);
+				if (rule?.accounts.has(account) || !(await holds(role, account)))
+					continue;
 				problems.push(
-					`${account} holds PROPOSER_ROLE but is not a published proposer`,
+					rule
+						? `${account} holds ${rule.name} but is not published for it`
+						: `${account} holds an unexpected timelock role ${role}`,
 				);
+			}
+		} catch (error) {
+			problems.push(
+				`could not list the timelock's role grants from block ${published.fromBlock}, so extra proposers, cancellers or executors cannot be ruled out: ${(error as Error).message.split("\n")[0]}`,
+			);
 		}
-	} catch {
-		// Some RPCs cap log ranges. The published proposers were still checked one by one.
-	}
 	if (options.network === "mainnet")
 		for (const proposer of expected)
 			if (!isContractAccount(await client.getCode({ address: proposer })))
@@ -504,6 +555,33 @@ export async function handOffProblems(
 		);
 	problems.push(...delayPolicyProblems(actual));
 	return problems;
+}
+
+/**
+ * The widest `eth_getLogs` span asked for at once. The Base Sepolia profile's public RPC refuses more
+ * than 200 blocks; the tech lead's call (N4) is to read at that span everywhere for now.
+ */
+export const LOG_CHUNK_BLOCKS = 200n;
+
+/** Every RoleGranted `address` emitted from `fromBlock` to the head, read `LOG_CHUNK_BLOCKS` at a time. */
+async function logsInChunks(
+	client: PublicClient,
+	options: { address: Address; fromBlock: bigint },
+) {
+	const head = await client.getBlockNumber({ cacheTime: 0 });
+	const logs = [];
+	for (let from = options.fromBlock; from <= head; from += LOG_CHUNK_BLOCKS) {
+		const to = from + LOG_CHUNK_BLOCKS - 1n;
+		logs.push(
+			...(await client.getLogs({
+				address: options.address,
+				event: roleGranted,
+				fromBlock: from,
+				toBlock: to < head ? to : head,
+			})),
+		);
+	}
+	return logs;
 }
 
 const roleGranted = {

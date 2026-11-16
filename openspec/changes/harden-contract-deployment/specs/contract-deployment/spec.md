@@ -131,6 +131,20 @@ SHALL be supplied explicitly on a mainnet chain, never defaulted to the operator
 - **WHEN** an operator asks provisioning on a mainnet chain to grant every role to one address
 - **THEN** provisioning refuses before sending anything
 
+#### Scenario: A mistyped role holder
+- **WHEN** a named role holder, signer, stake or tenant funding amount is not valid
+- **THEN** provisioning refuses before sending anything
+
+#### Scenario: A run that stops part-way
+- **WHEN** a provisioning run with separate holders fails after the bootstrap key took the signer, stake or tenant
+  admin role for the run
+- **THEN** the bootstrap key gives those roles up before the command exits, and a rerun with the same arguments
+  resumes
+
+#### Scenario: A rerun after a run that could not clean up
+- **WHEN** the bootstrap key still holds the signer, stake or tenant admin role and is not its named holder
+- **THEN** the rerun gives the role up, whether or not the rerun granted it
+
 ### Requirement: Sponsorship rules name the tenant's contracts on a public chain
 `contracts:sponsorship` SHALL install an allowlist of at least one contract, because the wallet-api enables no
 sponsorship, wallet management included, for a tenant whose allowlist is empty. On a chain without the demo ERC-20 it
@@ -148,8 +162,10 @@ none are given.
 ### Requirement: The timelock handoff is verified before it is sent
 Before granting the timelocked roles to a timelock and renouncing `ROLE_ADMIN`, the handoff SHALL verify all of the
 following on-chain:
+- the timelock is the published one: the profile's timelock address, else the deployment record's;
 - the timelock's code matches a committed release's `GianoTimelock` fingerprint;
-- its proposers and executors equal the profile's;
+- its proposers and executors equal the profile's, and no other account holds a proposer, canceller, executor or
+  admin role, judged from the timelock's role-grant history since its deployment block;
 - its minimum delay and each per-function delay are at least the profile's published values;
 - the delay policy passes the role-change rule.
 
@@ -169,6 +185,15 @@ same way.
 #### Scenario: EIP-7702-delegated proposer
 - **WHEN** a proposer's code is an EIP-7702 delegation designator
 - **THEN** the handoff on a mainnet refuses it as an EOA, and the doctor reports it as a key, not as a contract account
+
+#### Scenario: Another timelock than the published one
+- **WHEN** `--timelock` names an address other than the profile's timelock address
+- **THEN** the handoff sends nothing and names both addresses
+
+#### Scenario: The role-grant history cannot be read
+- **WHEN** the timelock's deployment block is unknown, or an `eth_getLogs` query over its role grants fails
+- **THEN** the handoff sends nothing, saying that extra role holders cannot be ruled out. It reads the history at
+  most 200 blocks per query, the span the Base Sepolia public RPC serves
 
 #### Scenario: Unrecognised timelock code
 - **WHEN** the timelock address holds code that matches no release's `GianoTimelock` fingerprint

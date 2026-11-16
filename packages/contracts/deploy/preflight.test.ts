@@ -21,6 +21,7 @@ import {
 	inspectDeployment,
 	profileCoreConfig,
 	roleAdmin,
+	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
 import { loadProfile } from "./profiles";
@@ -472,4 +473,28 @@ test("a mainnet profile while the mainnet deployer is unset: prints the plan, se
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("a hand-off goes only to the published timelock: the profile's, else the record's", () => {
+	const published = getAddress("0x00000000000000000000000000000000000071e1");
+	const other = getAddress("0x00000000000000000000000000000000000071e2");
+	assert.equal(timelockMismatch(published, { profile: published }), undefined);
+	assert.equal(
+		timelockMismatch(published, { profile: published.toLowerCase() }),
+		undefined,
+	);
+	assert.match(
+		timelockMismatch(other, { profile: published }) ?? "",
+		/--timelock 0x0+71e2 is not the published timelock 0x0+71e1 \(the chain profile\)/i,
+	);
+	// The profile wins over a record that names another timelock.
+	assert.match(
+		timelockMismatch(other, { profile: published, record: other }) ?? "",
+		/the chain profile/,
+	);
+	assert.match(
+		timelockMismatch(other, { record: published }) ?? "",
+		/\(the deployment record\)/,
+	);
+	assert.equal(timelockMismatch(other, {}), undefined);
 });

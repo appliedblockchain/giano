@@ -235,7 +235,16 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 				BigInt(Math.max(delays.minDelay, delays[name])),
 			);
 		// The hand-off pre-flight (handOffProblems): checked before anything irreversible is sent.
-		const published = { proposers: [proposer], executors: [], delays };
+		assert.ok(timelock.transactionHash);
+		const deployedIn = (
+			await client.getTransactionReceipt({ hash: timelock.transactionHash })
+		).blockNumber;
+		const published = {
+			proposers: [proposer],
+			executors: [],
+			delays,
+			fromBlock: deployedIn,
+		};
 		const preflight = (
 			overrides: Partial<Parameters<typeof handOffProblems>[1]>,
 		) =>
@@ -252,8 +261,76 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 			(
 				await preflight({ published: { ...published, proposers: [stranger] } })
 			).join("; "),
-			/does not hold PROPOSER_ROLE.*0x00000000000000000000000000000000000Ca5e0 holds PROPOSER_ROLE but is not a published proposer/i,
+			/does not hold PROPOSER_ROLE.*0x00000000000000000000000000000000000Ca5e0 holds PROPOSER_ROLE but is not published for it/i,
 		);
+		// The grant history decides whether anyone else holds a timelock role, so a history that
+		// cannot be read fails the hand-off (B3), on an RPC that refuses wide log ranges as on one
+		// that refuses them all.
+		assert.match(
+			(
+				await preflight({
+					published: { ...published, fromBlock: undefined },
+				})
+			).join("; "),
+			/deployment block is unknown/,
+		);
+		const noLogs = new Proxy(client, {
+			get: (target, property, receiver) =>
+				property === "getLogs"
+					? () => Promise.reject(new Error("block range too large"))
+					: Reflect.get(target, property, receiver),
+		});
+		assert.match(
+			(
+				await handOffProblems(noLogs, {
+					network: "local",
+					proxy,
+					timelock: timelock.address,
+					published,
+				})
+			).join("; "),
+			/could not list the timelock's role grants .*block range too large/,
+		);
+		// Extra cancellers and executors are found the same way as extra proposers, and a grant
+		// revoked since does not count.
+		await impersonate(testClient, timelock.address);
+		await testClient.setBalance({
+			address: timelock.address,
+			value: 10n ** 18n,
+		});
+		const asTimelock = createWalletClient({
+			chain,
+			transport,
+			account: timelock.address,
+		});
+		const timelockRole = async (
+			functionName: "grantRole" | "revokeRole",
+			role: "CANCELLER_ROLE" | "EXECUTOR_ROLE",
+		) => {
+			const id = await client.readContract({
+				address: timelock.address,
+				abi: gianoTimelockAbi,
+				functionName: role,
+			});
+			await client.waitForTransactionReceipt({
+				hash: await asTimelock.writeContract({
+					address: timelock.address,
+					abi: gianoTimelockAbi,
+					functionName,
+					args: [id, stranger],
+				}),
+			});
+		};
+		await timelockRole("grantRole", "CANCELLER_ROLE");
+		await timelockRole("grantRole", "EXECUTOR_ROLE");
+		assert.match(
+			(await preflight({})).join("; "),
+			/0x0000000000000000000000000000000000057a9e holds CANCELLER_ROLE but is not published for it.*0x0000000000000000000000000000000000057a9e holds EXECUTOR_ROLE but is not published for it/i,
+		);
+		await timelockRole("revokeRole", "CANCELLER_ROLE");
+		await timelockRole("revokeRole", "EXECUTOR_ROLE");
+		await testClient.stopImpersonatingAccount({ address: timelock.address });
+		assert.deepEqual(await preflight({}), []);
 		assert.match(
 			(await preflight({ network: "mainnet" })).join("; "),
 			/proposer .* is a key/,
