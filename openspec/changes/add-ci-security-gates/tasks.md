@@ -22,6 +22,7 @@
 - [x] 1.18 Make report mode fail on a `slither` or `aderyn` entry that matches no finding in the report (D1), so a stale entry cannot accept a later finding on the same line. Verify with unit tests, that both CI reports still pass, and that the Aderyn report without the AF-004 finding fails and names AF-004.
 - [x] 1.19 Extend `scripts/check-ci-gate.mjs` (with tests) to fail on a job `container` or `services` image that is not pinned by digest, and to check the `uses` of every local action a workflow uses (D12). Verify the check passes on every workflow and fails on `container: node:24`.
 - [x] 1.20 Make `scripts/check-ci-gate.mjs` (with tests) fail on a local Docker action whose `runs.image` is not a `docker://` image pinned by digest, including a Dockerfile, and check a local action in a folder of `.github/workflows` or reached through `..` (D12). Verify each of the three cases fails and every workflow still passes.
+- [ ] 1.21 Remove Aderyn, which Cyfrin retired on 2026-11-13 (D14): the Aderyn steps in `ci.yml` (job renamed "Solidity static analysis (Slither)"), `packages/contracts/aderyn.toml`, the `aderyn` tool in `scripts/check-accepted-findings.mjs` and its tests, AF-002 to AF-005, and Aderyn in `security/README.md` and `docs/abip-compliance.md`. Keep rejecting `aderyn-ignore` and `aderyn-fp` comments. Verify the unit tests and the register check pass, and the job is green on the PR.
 
 ## 2. Dependencies, secrets and source (PR 2)
 
