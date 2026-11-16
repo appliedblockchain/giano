@@ -17,11 +17,23 @@ import {
 	type Hex,
 	shortHex,
 } from "../lib/format";
-import { otherAccount, redactionOf, refusalReason } from "../lib/private-token";
+import {
+	isBalanceRefusal,
+	otherAccount,
+	readerKey,
+	redactionOf,
+	refusalReason,
+	staleReaderKeys,
+} from "../lib/private-token";
 import type { RunOutcome } from "../lib/run";
 import { submitTransaction } from "../lib/run";
 import { type DelegateTicket, SignedReader } from "../lib/signed-reads";
-import { type Demo, useDemo, useSectionEntries } from "../state/store";
+import {
+	type Demo,
+	useDemo,
+	useSectionEntries,
+	useSettledCount,
+} from "../state/store";
 import {
 	KeyValues,
 	Mono,
@@ -42,7 +54,8 @@ type OutsiderRow = {
 
 /**
  * One signed reader per chain and connected wallet. It outlives a chain switch, so returning to a
- * chain asks for no new approval, and it is dropped when that chain's session ends.
+ * chain asks for no new approval. PrivateTokenCard drops it when that chain's session ends or changes
+ * account, whichever chain is selected.
  */
 const readers = new Map<string, SignedReader>();
 
@@ -52,7 +65,16 @@ const readers = new Map<string, SignedReader>();
  * `privateToken`.
  */
 export function PrivateTokenCard() {
-	const { selected } = useDemo();
+	const { selected, state } = useDemo();
+	// This card stays mounted across chain switches, so it watches every chain's session, not only the
+	// selected one: a reader is dropped as soon as its session ends or changes account.
+	useEffect(() => {
+		for (const key of staleReaderKeys(
+			readers.keys(),
+			(chainId) => state.sessions[chainId]?.account,
+		))
+			readers.delete(key);
+	}, [state.sessions]);
 	const token = selected.config.privateToken;
 	if (!token) return null;
 	// Keyed by chain: a chain switch starts the section afresh.
@@ -65,6 +87,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 	const chainId = selected.chainId;
 	const entry = registry.require(chainId);
 	const entries = useSectionEntries("private-token");
+	const settled = useSettledCount();
 
 	const [meta, setMeta] = useState<Meta | null>();
 	const [deployed, setDeployed] = useState<boolean>();
@@ -105,16 +128,15 @@ function PrivateTokenSection({ token }: { token: Address }) {
 		};
 	}, [entry, token]);
 
-	// A new session (or none) starts without a balance or an approved delegate.
+	// A new session (or none) starts without a balance. PrivateTokenCard drops the session's reader.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `account` is a trigger: a new session clears the previous one's results
 	useEffect(() => {
 		setBalance(undefined);
 		setOutsider(undefined);
-		if (!account)
-			for (const key of readers.keys())
-				if (key.startsWith(`${chainId}:`)) readers.delete(key);
-	}, [account, chainId]);
+	}, [account]);
 
 	// The RPC checks a signed read against the wallet's code (ERC-1271), so a counterfactual wallet cannot read.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `settled` is a trigger: another card can deploy the wallet, so check again after every operation settles
 	useEffect(() => {
 		if (!account) {
 			setDeployed(undefined);
@@ -132,7 +154,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 		return () => {
 			live = false;
 		};
-	}, [entry, account]);
+	}, [entry, account, settled]);
 
 	const latestTransfer = useMemo(
 		() => findLatestTransfer(state.ledger.entries, chainId, account),
@@ -270,19 +292,24 @@ function PrivateTokenSection({ token }: { token: Address }) {
 			},
 		);
 
-	/** An outsider's balance read must be refused. A returned balance is a privacy violation. */
+	/**
+	 * An outsider's balance read must be refused. A returned balance is a privacy violation. Only the
+	 * token's own refusal counts as refused: any other error leaves the question open.
+	 */
 	const judgeBalanceRead = (
 		label: string,
 		target: Address,
 		outcome: RunOutcome<bigint>,
 	): OutsiderRow => {
-		if (outcome.error)
+		if (outcome.error) {
+			const refused = isBalanceRefusal(outcome.error.message);
 			return {
 				label,
-				tone: "green",
-				outcome: "refused",
+				tone: refused ? "green" : "orange",
+				outcome: refused ? "refused" : "read failed",
 				detail: <Mono muted>{refusalReason(outcome.error.message)}</Mono>,
 			};
+		}
 		const value = outcome.result ?? 0n;
 		demo.recordViolation(
 			"private-token",
@@ -377,6 +404,11 @@ function PrivateTokenSection({ token }: { token: Address }) {
 							method: "eth_getTransactionByHash",
 							params: [latestTransfer.txHash],
 						});
+						// No transaction is not a redacted one: report the read as failed.
+						if (!tx)
+							throw new Error(
+								`the RPC returned no transaction for ${latestTransfer.txHash}`,
+							);
 						api.update({
 							note: redactionOf(tx).hidden
 								? "the calldata and the sender came back as placeholders"
@@ -562,7 +594,7 @@ function Frame({
 /** The reader for this chain and wallet, created on first use. Its one prompt goes through `run`, so the ledger records it. */
 function readerFor(demo: Demo, wallet: Address): SignedReader {
 	const chainId = demo.selected.chainId;
-	const key = `${chainId}:${wallet.toLowerCase()}`;
+	const key = readerKey(chainId, wallet);
 	let reader = readers.get(key);
 	if (!reader) {
 		reader = new SignedReader({

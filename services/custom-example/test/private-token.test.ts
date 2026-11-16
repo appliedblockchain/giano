@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	isBalanceRefusal,
 	OUTSIDER_FALLBACK_ADDRESS,
 	otherAccount,
+	readerKey,
 	redactionOf,
 	refusalReason,
+	staleReaderKeys,
 } from "../src/lib/private-token.ts";
 
 const WALLET = "0xa25927650FB4562358350Add9981b0A4Eae5B821";
@@ -84,5 +87,57 @@ describe("otherAccount", () => {
 			OUTSIDER_FALLBACK_ADDRESS,
 		);
 		assert.equal(otherAccount(WALLET, "0x1234"), OUTSIDER_FALLBACK_ADDRESS);
+	});
+});
+
+describe("isBalanceRefusal", () => {
+	it("is true only for the private token's refusal", () => {
+		assert.equal(
+			isBalanceRefusal(
+				'The contract function "balanceOf" reverted with the following signature:\n0xdb11736b',
+			),
+			true,
+		);
+		assert.equal(
+			isBalanceRefusal("HTTP request failed.\n\nStatus: 502"),
+			false,
+		);
+		assert.equal(
+			isBalanceRefusal("The request took too long to respond."),
+			false,
+		);
+		assert.equal(
+			isBalanceRefusal("the wallet did not approve the read delegate"),
+			false,
+		);
+	});
+});
+
+describe("staleReaderKeys", () => {
+	const OTHER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+	const keys = [
+		readerKey(1, WALLET),
+		readerKey(2, WALLET),
+		readerKey(3, WALLET),
+	];
+
+	it("keeps a reader while its chain's session has the same wallet, on any chain", () => {
+		const accounts: Record<number, string> = {
+			1: WALLET,
+			2: WALLET.toLowerCase(),
+			3: WALLET,
+		};
+		assert.deepEqual(
+			staleReaderKeys(keys, (chainId) => accounts[chainId]),
+			[],
+		);
+	});
+
+	it("drops a reader whose session ended or changed account, whichever chain is selected", () => {
+		const accounts: Record<number, string> = { 1: WALLET, 3: OTHER };
+		assert.deepEqual(
+			staleReaderKeys(keys, (chainId) => accounts[chainId]),
+			[readerKey(2, WALLET), readerKey(3, WALLET)],
+		);
 	});
 });

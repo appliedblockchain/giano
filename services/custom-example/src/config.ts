@@ -85,6 +85,10 @@ const str = (value: unknown): string | undefined => {
 	return trimmed ? trimmed : undefined;
 };
 
+/** A blank string is unset, as envsubst renders an unset variable. Any other value goes to the schema, which rejects a value that is not a string. */
+const blankAsUnset = (value: unknown): unknown =>
+	typeof value === "string" ? str(value) : value;
+
 /** Development fallbacks: the same GIANO_* names, from .env.development/.env.local, inlined by Vite for `pnpm dev` only. */
 function fromDevEnv(): unknown {
 	const env = import.meta.env as Record<string, string | undefined>;
@@ -126,7 +130,7 @@ function normalise(raw: unknown): unknown {
 								defaultToken: str(
 									(chain as Record<string, unknown>).defaultToken,
 								),
-								privateToken: str(
+								privateToken: blankAsUnset(
 									(chain as Record<string, unknown>).privateToken,
 								),
 							}

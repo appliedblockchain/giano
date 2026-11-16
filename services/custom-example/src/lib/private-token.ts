@@ -40,6 +40,14 @@ export function redactionOf(tx: TransactionView | null | undefined): Redaction {
 export const UNAUTHORIZED_BALANCE_ACCESS = "0xdb11736b";
 
 /**
+ * Whether a failed balance read is the private token's own refusal. Only this refusal shows that the
+ * balance is private: an unreachable RPC, a timeout or a declined approval proves nothing.
+ */
+export function isBalanceRefusal(message: string): boolean {
+	return message.includes(UNAUTHORIZED_BALANCE_ACCESS);
+}
+
+/**
  * One line that says why a read failed. viem puts an undecoded revert's selector on the line after
  * "reverted with the following signature:", so the first line alone does not name the error.
  */
@@ -48,7 +56,7 @@ export function refusalReason(message: string): string {
 		.split("\n")
 		.map((line) => line.trim())
 		.filter(Boolean);
-	if (message.includes(UNAUTHORIZED_BALANCE_ACCESS))
+	if (isBalanceRefusal(message))
 		return `UCEFUnauthorizedBalanceAccess (${UNAUTHORIZED_BALANCE_ACCESS}): only the holder can read this balance`;
 	const signature = lines.findIndex((line) =>
 		line.endsWith("reverted with the following signature:"),
@@ -71,4 +79,25 @@ export function otherAccount(
 		latestRecipient.toLowerCase() !== wallet.toLowerCase()
 		? (latestRecipient as `0x${string}`)
 		: OUTSIDER_FALLBACK_ADDRESS;
+}
+
+/** The key of the signed reader for one chain and wallet. */
+export function readerKey(chainId: number, wallet: string): string {
+	return `${chainId}:${wallet.toLowerCase()}`;
+}
+
+/**
+ * The reader keys whose chain no longer has a session for that wallet: the session ended, or it
+ * changed account. `accountOn` gives the account of a chain's current session, if any.
+ */
+export function staleReaderKeys(
+	keys: Iterable<string>,
+	accountOn: (chainId: number) => string | undefined,
+): string[] {
+	const stale: string[] = [];
+	for (const key of keys) {
+		const [chainId, wallet] = key.split(":");
+		if (accountOn(Number(chainId))?.toLowerCase() !== wallet) stale.push(key);
+	}
+	return stale;
 }

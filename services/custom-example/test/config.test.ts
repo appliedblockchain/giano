@@ -40,6 +40,17 @@ describe("GIANO_CHAINS privateToken", () => {
 		assert.equal(result.config.chains[0].privateToken, undefined);
 	});
 
+	it("names privateToken on the configuration-error screen when it is not a string", () => {
+		for (const privateToken of [123, {}]) {
+			const result = load([chain({ privateToken })]);
+			assert.ok(!result.ok);
+			assert.deepEqual(
+				result.issues.map((issue) => issue.path),
+				["chains.0.privateToken"],
+			);
+		}
+	});
+
 	it("names privateToken on the configuration-error screen when it is not an address", () => {
 		const result = load([chain({ privateToken: "0x1234" })]);
 		assert.equal(result.ok, false);
