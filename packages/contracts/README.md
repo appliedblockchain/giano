@@ -156,17 +156,18 @@ the same flag. The flag without the key it needs is refused before any request i
 `testing` deploys the test fixtures: `PrivateERC20` (`giano.test.erc20`) and `PermissivePaymaster`
 (`giano.test.paymaster`). It refuses a production chain (R-29). It also deploys the private test token
 `GianoTestPrivateErc20` (`giano.test.private-erc20`), a UCEF token whose balance only the holder can
-read. It builds on UCEF's `UCEFOwned`, from the `lib/ucef-contracts` git submodule. That needs a
-release that carries it; v1 to v3 predate it.
+read. It builds on UCEF's `UCEFOwned`, from the `lib/ucef-contracts` git submodule.
 
 - On a remote chain, only when the chain's profile sets `"privateTestErc20": true`. Set it only where
   the RPC enforces private reads (Silent Data): on a public chain anyone can read the token's storage,
-  so a "private" token would mislead. A mainnet profile cannot set it. A profile that sets it with a
-  release that predates the token is refused before anything is sent.
-- On a local chain, whenever the release carries it: `--release dev` today.
+  so a "private" token would mislead. A mainnet profile cannot set it.
+- On a local chain, always.
 
-The registry lists it as `privateTestErc20`, and `gen:addresses` fails on a production chain that
-carries it.
+No release carries the token: it exists only for the demo. The CLI deploys it from the committed
+artifact `fixtures/private-test-erc20.json`, whatever the release (`fixtures/README.md`). Regenerate
+the artifact with `pnpm gen:fixtures` after a change to the token or to UCEF; CI fails on drift. The
+record names its release as `fixture`, with the artifact's fingerprint. The registry lists it as
+`privateTestErc20`, and `gen:addresses` fails on a production chain that carries it.
 
 The CLI takes a chain's class and overrides from `--chain <profile>`, else from the committed profile
 with the chain's id, else from `--network mainnet|testnet` (no overrides). `core` deploys `--release`,
@@ -190,7 +191,7 @@ Every run writes `deployments/<chainId>.json`: the network class, the signer and
 address, expected address, whether it is deterministic, release, code hash, fingerprint and
 transaction, plus every deviation. **Commit it** for every chain except the local ones;
 `pnpm gen:addresses` builds `addresses.ts` from these records and fails if a recorded fingerprint
-matches no release of that contract. Per-chain extras the CLI does not deploy (e.g. a non-default
+matches no release of that contract (for the private test token: its fixture artifact). Per-chain extras the CLI does not deploy (e.g. a non-default
 EntryPoint) go in `address-overrides.json`.
 
 The `giano-contracts-deployer` image (`Dockerfile.deployer`) runs `core` (and `testing` with
@@ -209,8 +210,8 @@ pnpm local:deploy      # CreateX, EntryPoint, P-256 verifier, every core contrac
 ```
 
 `local:deploy` impersonates the fixed local deployer, so it needs no key. It deploys the latest
-release, or `RELEASE=<version>`; `RELEASE=dev` deploys the working tree, which also carries the
-private test token `GianoTestPrivateErc20`. On a local chain the CLI also takes `--release dev`
+release, or `RELEASE=<version>`; `RELEASE=dev` deploys the working tree. It also deploys the private
+test token `GianoTestPrivateErc20` from its fixture artifact on every run. On a local chain the CLI also takes `--release dev`
 (the working tree, unreleased), `--impersonate`, `install-createx` and `install-entrypoint`. The
 e2e devnet state is built the same way (`e2e/devnet/generate-state.mjs`).
 
@@ -292,8 +293,9 @@ submodules and no network:
 | `generated.ts` | wagmi's `foundry` plugin over a build of `src/` | `pnpm gen:abis` |
 | `release-fingerprints.ts` | `releases/<vN>/standard-input.json`, compiled with plain solc | `pnpm gen:releases` |
 | `addresses.ts` | `deployments/<chainId>.json` + `address-overrides.json` | `pnpm gen:addresses` |
+| `fixtures/private-test-erc20.json` | the same build of `src/` (the private test token) | `pnpm gen:fixtures` |
 
-CI regenerates all three and fails on drift.
+CI regenerates all four and fails on drift.
 
 ```bash
 pnpm build:ts    # tsdown only — what prepublishOnly runs; needs no solc

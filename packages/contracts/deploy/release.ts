@@ -30,8 +30,6 @@ export const RELEASE_CONTRACTS = {
 		"node_modules/@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
 	PrivateERC20: "src/testing/PrivateERC20.sol",
 	PermissivePaymaster: "src/testing/PermissivePaymaster.sol",
-	/** From the first release cut after v3; older releases predate it. */
-	GianoTestPrivateErc20: "src/testing/GianoTestPrivateErc20.sol",
 } as const;
 
 export type ReleaseContract = keyof typeof RELEASE_CONTRACTS;

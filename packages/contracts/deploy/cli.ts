@@ -68,7 +68,8 @@
  * Test fixtures: `testing` deploys PrivateERC20 and PermissivePaymaster, never on a production chain
  * (R-29). It also deploys the private test token GianoTestPrivateErc20 (`giano.test.private-erc20`)
  * where the chain's profile sets `privateTestErc20: true`, which only a chain whose RPC enforces
- * private reads should do, and on a local chain whenever the release carries it.
+ * private reads should do, and on every local chain. The token comes from its committed artifact
+ * (fixtures/, deploy/fixtures.ts), not from the release.
  *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
  * Commit that file for any chain other than 31337/31338.
@@ -738,23 +739,15 @@ async function main(): Promise<void> {
 			const ctx = await deployerContext({ verifyOnly: true });
 			const problem = testingProblem(ctx.chainId, ctx.network);
 			if (problem) throw new Error(problem);
-			const selected = release(ctx.local, ctx.target);
-			// Refused here, before anything is sent, when the profile opts in and the release predates it.
-			const privateTestErc20 = privateTestErc20Wanted(selected, {
-				local: ctx.local,
-				profileId: ctx.target.profileId,
-				optIn: ctx.target.profile?.privateTestErc20,
-			});
-			if (ctx.local && !privateTestErc20)
-				log(
-					`  release ${selected.version} predates GianoTestPrivateErc20; pass --release dev to deploy the private test token on this chain`,
-				);
-			await deployTesting(ctx, selected, {
+			await deployTesting(ctx, release(ctx.local, ctx.target), {
 				holder: address("holder"),
 				owner: address("owner"),
 				entryPoint: address("entry-point"),
 				fundWei: parseEther(required("fund-eth")),
-				privateTestErc20,
+				privateTestErc20: privateTestErc20Wanted({
+					local: ctx.local,
+					optIn: ctx.target.profile?.privateTestErc20,
+				}),
 			});
 			save(ctx);
 			return;

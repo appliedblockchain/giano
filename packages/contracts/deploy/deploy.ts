@@ -45,6 +45,13 @@ import {
 	guardedSalt,
 } from "./create3";
 import { createxAbi } from "./createx";
+import {
+	FIXTURE_RELEASE,
+	type FixtureContractName,
+	fixtureMatch,
+	isFixtureContract,
+	loadFixture,
+} from "./fixtures";
 import { type CoreKey, placementOf } from "./plan";
 import type { DeployedContract, DeploymentRecord } from "./records";
 import { DEV_RELEASE, type Release } from "./release";
@@ -90,37 +97,25 @@ export type TestingParams = {
 	entryPoint: Address;
 	/** Wei forwarded to PermissivePaymaster's EntryPoint deposit; 0 skips funding. */
 	fundWei: bigint;
-	/** Also deploy GianoTestPrivateErc20 (see privateTestErc20Wanted). */
+	/**
+	 * Also deploy GianoTestPrivateErc20, from its committed artifact whatever the release (see
+	 * privateTestErc20Wanted).
+	 */
 	privateTestErc20?: boolean;
 };
-
-/** True when `release` carries `contract`; an older release predates the contracts added after it. */
-export function releaseCarries(
-	release: Release,
-	contract: ReleaseContractName,
-): boolean {
-	return contract in release.contracts;
-}
 
 /**
  * Whether `testing` deploys GianoTestPrivateErc20 (openspec silent-data-network, design D7). Its
  * privacy holds only where the RPC enforces private reads, so a remote chain needs its profile to opt
- * in (`privateTestErc20: true`). A local chain gets it whenever the release carries it (`--release
- * dev`), for the local Silent Data gateway. A profile that opts in with a release that predates the
- * token is refused, before anything is sent.
+ * in (`privateTestErc20: true`; a mainnet profile cannot, R-29). A local chain always gets it, for the
+ * local Silent Data gateway. It comes from a committed artifact (deploy/fixtures.ts), so the release
+ * plays no part.
  */
-export function privateTestErc20Wanted(
-	release: Release,
-	chain: { local: boolean; profileId?: string; optIn?: boolean },
-): boolean {
-	const carried = releaseCarries(release, CONTRACT_OF.privateTestErc20);
-	if (chain.local) return carried;
-	if (!chain.optIn) return false;
-	if (!carried)
-		throw new Error(
-			`profile ${chain.profileId} enables privateTestErc20, but release ${release.version} predates GianoTestPrivateErc20; cut a release that carries it, or pass --release with one`,
-		);
-	return true;
+export function privateTestErc20Wanted(chain: {
+	local: boolean;
+	optIn?: boolean;
+}): boolean {
+	return chain.local || chain.optIn === true;
 }
 
 function assertDeployerAccount(ctx: DeployContext): void {
@@ -161,7 +156,7 @@ export async function deployLabel(
 	}: {
 		label: string;
 		release: string;
-		contract: ReleaseContractName;
+		contract: ReleaseContractName | FixtureContractName;
 		initCode: Hex;
 		init?: Hex;
 	},
@@ -244,16 +239,25 @@ export async function deployLabel(
 
 /**
  * The record entry for `code` at `address`, which must be a release's `contract` (any release: a
- * chain may keep an older one). Only a `dev` build, local by construction, is exempt.
+ * chain may keep an older one), or, for a fixture, its committed artifact's. Only a `dev` build,
+ * local by construction, is exempt.
  */
 function releaseCode(
 	label: string,
 	release: string,
-	contract: ReleaseContractName,
+	contract: ReleaseContractName | FixtureContractName,
 	address: Address,
 	code: Hex,
 ): DeployedContract {
 	const codehash = keccak256(code);
+	if (isFixtureContract(contract)) {
+		const match = fixtureMatch(contract, code);
+		if (!match)
+			throw new Error(
+				`${label} at ${address} holds code ${codehash}, which is not ${contract}'s committed artifact (packages/contracts/fixtures)`,
+			);
+		return { address, label, codehash, ...match };
+	}
 	// Prefer the release being deployed: a release can leave a contract unchanged, and its code is
 	// then every such release's.
 	const match = releaseOf(contract, code, address, release);
@@ -443,8 +447,8 @@ export async function deployTestToken(
 }
 
 /**
- * PrivateERC20 and PermissivePaymaster, and GianoTestPrivateErc20 when `params.privateTestErc20`.
- * Never on a production chain (the CLI enforces it).
+ * PrivateERC20 and PermissivePaymaster from `release`, and GianoTestPrivateErc20 from its committed
+ * artifact when `params.privateTestErc20`. Never on a production chain (the CLI enforces it).
  */
 export async function deployTesting(
 	ctx: DeployContext,
@@ -452,14 +456,6 @@ export async function deployTesting(
 	params: TestingParams,
 ): Promise<void> {
 	const c = release.contracts;
-	// Before anything is sent: a release that predates the token cannot deploy it.
-	if (
-		params.privateTestErc20 &&
-		!releaseCarries(release, CONTRACT_OF.privateTestErc20)
-	)
-		throw new Error(
-			`release ${release.version} predates GianoTestPrivateErc20; deploy it from a release that carries it`,
-		);
 	await deployTestToken(ctx, release, params.holder);
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
@@ -493,9 +489,9 @@ export async function deployTesting(
 			"privateTestErc20",
 			await deployLabel(ctx, {
 				label: LABELS.privateTestErc20,
-				release: release.version,
+				release: FIXTURE_RELEASE,
 				contract: CONTRACT_OF.privateTestErc20,
-				initCode: c.GianoTestPrivateErc20.creationCode,
+				initCode: loadFixture(CONTRACT_OF.privateTestErc20).creationCode,
 			}),
 		);
 }

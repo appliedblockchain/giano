@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { RELEASE_FINGERPRINTS } from "../release-code";
-import { generateRegistry } from "../scripts/generate-addresses";
+import {
+	generateRegistry,
+	type KnownFingerprint,
+} from "../scripts/generate-addresses";
+import { FIXTURE_RELEASE, loadFixture } from "./fixtures";
 import type { DeploymentRecord } from "./records";
 
 const fingerprint = (contract: string) => {
@@ -65,7 +69,8 @@ const record = (): DeploymentRecord => ({
 function generate(
 	input: DeploymentRecord,
 	overrides: Record<string, Record<string, string>> = {},
-	fingerprints = RELEASE_FINGERPRINTS,
+	/** Undefined: the generator's own, every release's and every fixture artifact's. */
+	fingerprints?: readonly KnownFingerprint[],
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "giano-registry-"));
 	try {
@@ -190,49 +195,51 @@ test("a chain recorded as mainnet is a production chain for R-29, listed or not"
 	assert.doesNotThrow(() => generate({ ...mainnet, network: "testnet" }));
 });
 
-/** The private test token's fingerprint, under a release that carries it (none is cut yet). */
-const PRIVATE_TOKEN_FINGERPRINT = `0x${"ab".repeat(32)}` as const;
-const withPrivateToken = [
-	...RELEASE_FINGERPRINTS,
-	{
-		contract: "GianoTestPrivateErc20" as const,
-		release: "v2",
-		size: 1,
-		immutables: [],
-		fingerprint: PRIVATE_TOKEN_FINGERPRINT,
-	},
-];
-const privateToken = {
+/** The private test token as `testing` records it: from its committed artifact, not a release. */
+const privateToken = (
+	fingerprint = loadFixture("GianoTestPrivateErc20").fingerprint,
+) => ({
 	address: "0x7777777777777777777777777777777777777777" as `0x${string}`,
 	label: "giano.test.private-erc20",
-	release: "v2",
+	release: FIXTURE_RELEASE,
 	codehash: "0x00" as `0x${string}`,
-	fingerprint: PRIVATE_TOKEN_FINGERPRINT as `0x${string}`,
+	fingerprint,
 	deterministic: true,
-};
+});
 
 test("a testnet that carries the private test token lists it in its registry entry", () => {
 	const testnet = { ...record(), chainId: 19877, network: "testnet" as const };
-	testnet.contracts.privateTestErc20 = privateToken;
-	const { text } = generate(testnet, {}, withPrivateToken);
+	testnet.contracts.privateTestErc20 = privateToken();
+	const { text } = generate(testnet);
 	assert.match(
 		text,
 		/19877: \{[^}]*privateTestErc20: '0x7777777777777777777777777777777777777777'/,
 	);
-	// Its code is checked like any other contract's: a fingerprint of no release fails.
+});
+
+test("the private test token's code is checked against its committed artifact", () => {
+	const testnet = { ...record(), chainId: 19877, network: "testnet" as const };
+	// Code that is not the artifact's.
+	testnet.contracts.privateTestErc20 = privateToken(`0x${"ab".repeat(32)}`);
 	assert.throws(
 		() => generate(testnet),
-		/privateTestErc20 at 0x7777777777777777777777777777777777777777 .* matches no release's GianoTestPrivateErc20/,
+		/privateTestErc20 at 0x7777777777777777777777777777777777777777 .* matches no release's GianoTestPrivateErc20 \(release-fingerprints.ts\) nor its fixture artifact/,
+	);
+	// The artifact's code recorded under a release: the record must name `fixture`.
+	testnet.contracts.privateTestErc20 = { ...privateToken(), release: "v3" };
+	assert.throws(
+		() => generate(testnet),
+		/privateTestErc20 at 0x7777777777777777777777777777777777777777 is recorded as v3 but its fingerprint is fixture's/,
 	);
 });
 
 test("a production chain has no private test token entry: a record that carries one fails", () => {
-	const { text } = generate(record(), {}, withPrivateToken);
+	const { text } = generate(record());
 	assert.doesNotMatch(text, /privateTestErc20:/);
 	const mainnet = record();
-	mainnet.contracts.privateTestErc20 = privateToken;
+	mainnet.contracts.privateTestErc20 = privateToken();
 	assert.throws(
-		() => generate(mainnet, {}, withPrivateToken),
+		() => generate(mainnet),
 		/chain 8453 is a production chain but carries privateTestErc20=0x7777777777777777777777777777777777777777/,
 	);
 });

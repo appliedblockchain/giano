@@ -182,11 +182,10 @@ function status(): void {
 	const version = latestRelease();
 	const release = loadRelease(version);
 	const codes = creationCodes(foundryBuild().output);
-	// A contract the latest release predates counts as changed: deploying it needs the next release.
 	const changed = (Object.keys(RELEASE_CONTRACTS) as ReleaseContract[]).filter(
 		(name) =>
 			codes[name].toLowerCase() !==
-			release.contracts[name]?.creationCode.toLowerCase(),
+			release.contracts[name].creationCode.toLowerCase(),
 	);
 	if (changed.length === 0) console.log(`The build matches ${version}.`);
 	else

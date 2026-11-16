@@ -28,7 +28,9 @@
 //                              warning (`core --accept-unverified-implementation`). Without it, `core`
 //                              refuses that implementation, because it is not verified.
 //   RELEASE                    optional; the latest release by default
-//   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111)
+//   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111),
+//                              and the private test token (fixtures/private-test-erc20.json) on a
+//                              local chain, or when CHAIN_PROFILE_JSON sets "privateTestErc20": true
 //   PAYMASTER_FUND_ETH         the test paymaster's initial EntryPoint deposit (default 0)
 //   OUT_DIR                    where the record and the registry JSON go (default /out)
 

@@ -4,8 +4,9 @@
  *
  * A chain's addresses are whatever its record says: the class's deterministic ones, or a profile's
  * overrides. None is compared with a fixed address. What is checked is the code: every recorded
- * contract must carry the fingerprint of a release of that contract (release-fingerprints.ts), which
- * the deploy tooling computed from the chain itself when it recorded it.
+ * contract must carry the fingerprint of a release of that contract (release-fingerprints.ts), or,
+ * for a fixture deployed from a committed artifact, that artifact's (deploy/fixtures.ts). The deploy
+ * tooling computed it from the chain itself when it recorded it.
  *
  *   pnpm gen:addresses  (CI re-runs it and fails on drift)
  *
@@ -23,10 +24,24 @@ import {
 	type NetworkClass,
 } from "../deploy/config";
 import {
+	type FixtureContractName,
+	fixtureFingerprints,
+} from "../deploy/fixtures";
+import {
 	COMMITTED_DEPLOYMENTS_DIR,
 	type DeploymentRecord,
 } from "../deploy/records";
-import { RELEASE_FINGERPRINTS, type ReleaseFingerprint } from "../release-code";
+import {
+	RELEASE_FINGERPRINTS,
+	type ReleaseContractName,
+} from "../release-code";
+
+/** What a recorded fingerprint is checked against: a release's, or a fixture artifact's. */
+export type KnownFingerprint = {
+	contract: ReleaseContractName | FixtureContractName;
+	release: string;
+	fingerprint: `0x${string}`;
+};
 
 const pkgRoot = path.resolve(import.meta.dirname, "..");
 const overridesPath = path.join(pkgRoot, "address-overrides.json");
@@ -64,7 +79,10 @@ function isAddress(value: unknown): value is string {
 export function generateRegistry(
 	dir: string = COMMITTED_DEPLOYMENTS_DIR,
 	overrides: Overrides = JSON.parse(fs.readFileSync(overridesPath, "utf8")),
-	fingerprints: readonly ReleaseFingerprint[] = RELEASE_FINGERPRINTS,
+	fingerprints: readonly KnownFingerprint[] = [
+		...RELEASE_FINGERPRINTS,
+		...fixtureFingerprints(),
+	],
 ): { text: string; chains: number } {
 	overrides = { ...overrides };
 	delete overrides.$comment;
@@ -98,7 +116,8 @@ export function generateRegistry(
 					`chain ${chainId}: invalid ${key} address ${deployed.address}`,
 				);
 			// MC-19/MC-27: an address proves nothing about the code; the recorded fingerprint must be a
-			// release's, for this contract and the release the record names.
+			// release's, for this contract and the release the record names (`fixture` for a fixture
+			// deployed from its committed artifact).
 			// A release that leaves a contract unchanged shares its fingerprint with the one before, so a
 			// fingerprint can be several releases'; the recorded release must be one of them.
 			const contract = CONTRACT_OF[key];
@@ -111,7 +130,7 @@ export function generateRegistry(
 				.map((r) => r.release);
 			if (releases.length === 0)
 				throw new Error(
-					`chain ${chainId}: ${key} at ${deployed.address} has ${deployed.fingerprint ? `fingerprint ${deployed.fingerprint}` : `no fingerprint (code hash ${deployed.codehash})`}, which matches no release's ${contract} (release-fingerprints.ts)`,
+					`chain ${chainId}: ${key} at ${deployed.address} has ${deployed.fingerprint ? `fingerprint ${deployed.fingerprint}` : `no fingerprint (code hash ${deployed.codehash})`}, which matches no release's ${contract} (release-fingerprints.ts) nor its fixture artifact (fixtures/)`,
 				);
 			if (!releases.includes(deployed.release))
 				throw new Error(

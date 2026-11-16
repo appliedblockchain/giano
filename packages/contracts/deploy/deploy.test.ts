@@ -26,6 +26,7 @@ import {
 	deployTesting,
 	privateTestErc20Wanted,
 } from "./deploy";
+import { loadFixture } from "./fixtures";
 import { recordDeviations } from "./records";
 import { loadRelease, type Release } from "./release";
 
@@ -252,26 +253,27 @@ describe("deployTesting and the private test token (silent-data-network D7)", ()
 		entryPoint: PAYMASTER.entryPoint,
 		fundWei: 0n,
 	};
+	const artifact = loadFixture("GianoTestPrivateErc20");
 
-	/** A `dev` release (accepted without a fingerprint, as on a local chain), with or without the token. */
-	const devRelease = (withPrivateToken: boolean): Release => {
-		const contracts: Record<string, { source: string; creationCode: Hex }> = {
+	/** A `dev` release (accepted without a fingerprint, as on a local chain) with the two older fixtures. */
+	const devRelease = (): Release => ({
+		version: "dev",
+		compiler: { solc: "test", settings: {} },
+		contracts: {
 			PrivateERC20: { source: "", creationCode: "0x01" },
 			PermissivePaymaster: { source: "", creationCode: "0x02" },
-		};
-		if (withPrivateToken)
-			contracts.GianoTestPrivateErc20 = { source: "", creationCode: "0x03" };
-		return {
-			version: "dev",
-			compiler: { solc: "test", settings: {} },
-			contracts: contracts as Release["contracts"],
-		};
-	};
+		} as unknown as Release["contracts"],
+	});
 
-	/** Like `chain`, for the testing labels: every deployment leaves some code at its address. */
-	function testingChain() {
+	/**
+	 * Like `chain`, for the testing labels. A deployment leaves `privateTokenCode` at the token's
+	 * address (by default the runtime code whose hash is the artifact's fingerprint) and some code
+	 * elsewhere. Records each label sent and the init code it was sent with.
+	 */
+	function testingChain(privateTokenCode = artifact.runtimeCode) {
 		const code = new Map<string, Hex>();
 		const sent: string[] = [];
+		const initCodes = new Map<string, Hex>();
 		const salts = new Map(
 			TESTING_LABELS.map((l) => [
 				guardedSalt(CANONICAL_DEPLOYER, create3Salt(CANONICAL_DEPLOYER, l)),
@@ -282,12 +284,12 @@ describe("deployTesting and the private test token (silent-data-network D7)", ()
 			getCode: async ({ address }: { address: Address }) =>
 				address === CREATEX_ADDRESS ? "0x01" : (code.get(address) ?? "0x"),
 			readContract: async ({ args }: { args: [Hex] }) => salts.get(args[0]),
-			simulateContract: async ({ args }: { args: [Hex] }) => {
+			simulateContract: async ({ args }: { args: [Hex, Hex] }) => {
 				const label = TESTING_LABELS.find(
 					(l) => create3Salt(CANONICAL_DEPLOYER, l) === args[0],
 				) as string;
 				return {
-					request: { label },
+					request: { label, initCode: args[1] },
 					result: create3Address(CANONICAL_DEPLOYER, label),
 				};
 			},
@@ -295,86 +297,80 @@ describe("deployTesting and the private test token (silent-data-network D7)", ()
 		} as unknown as PublicClient;
 		const walletClient = {
 			account: { address: CANONICAL_DEPLOYER },
-			writeContract: async ({ label }: { label: string }) => {
+			writeContract: async ({
+				label,
+				initCode,
+			}: {
+				label: string;
+				initCode: Hex;
+			}) => {
 				sent.push(label);
-				code.set(create3Address(CANONICAL_DEPLOYER, label), "0x6001");
+				initCodes.set(label, initCode);
+				code.set(
+					create3Address(CANONICAL_DEPLOYER, label),
+					label === "giano.test.private-erc20" ? privateTokenCode : "0x6001",
+				);
 				return keccak256(`0x${Buffer.from(label).toString("hex")}`);
 			},
 		} as unknown as DeployContext["walletClient"];
-		return { publicClient, walletClient, sent };
+		return { publicClient, walletClient, sent, initCodes, code };
 	}
 
-	it("deploys GianoTestPrivateErc20 under giano.test.private-erc20 when asked, and records it", async () => {
-		const { publicClient, walletClient, sent } = testingChain();
+	it("deploys GianoTestPrivateErc20 from its artifact, whatever the release, and records it as `fixture`", async () => {
+		const { publicClient, walletClient, sent, initCodes } = testingChain();
 		const ctx = context(publicClient, walletClient);
-		await deployTesting(ctx, devRelease(true), {
+		await deployTesting(ctx, devRelease(), {
 			...PARAMS,
 			privateTestErc20: true,
 		});
 		assert.deepEqual(sent, TESTING_LABELS);
-		assert.equal(ctx.record.contracts.privateTestErc20?.address, PRIVATE_TOKEN);
 		assert.equal(
-			ctx.record.contracts.privateTestErc20?.label,
-			"giano.test.private-erc20",
+			initCodes.get("giano.test.private-erc20"),
+			artifact.creationCode,
 		);
-		assert.equal(ctx.record.contracts.privateTestErc20?.deterministic, true);
+		const recorded = ctx.record.contracts.privateTestErc20;
+		assert.equal(recorded?.address, PRIVATE_TOKEN);
+		assert.equal(recorded?.label, "giano.test.private-erc20");
+		assert.equal(recorded?.release, "fixture");
+		assert.equal(recorded?.fingerprint, artifact.fingerprint);
+		assert.equal(recorded?.deterministic, true);
 	});
 
-	it("leaves it out when not asked, even if the release carries it", async () => {
+	it("leaves it out when not asked", async () => {
 		const { publicClient, walletClient, sent } = testingChain();
 		const ctx = context(publicClient, walletClient);
-		await deployTesting(ctx, devRelease(true), PARAMS);
+		await deployTesting(ctx, devRelease(), PARAMS);
 		assert.deepEqual(sent, ["giano.test.erc20", "giano.test.paymaster"]);
 		assert.equal(ctx.record.contracts.privateTestErc20, undefined);
 	});
 
-	it("refuses a release that predates the token before sending anything", async () => {
+	it("a re-run finds it in place and sends nothing", async () => {
 		const { publicClient, walletClient, sent } = testingChain();
+		const ctx = context(publicClient, walletClient);
+		const params = { ...PARAMS, privateTestErc20: true };
+		await deployTesting(ctx, devRelease(), params);
+		sent.length = 0;
+		await deployTesting(ctx, devRelease(), params);
+		assert.deepEqual(sent, []);
+		assert.equal(ctx.record.contracts.privateTestErc20?.release, "fixture");
+	});
+
+	it("refuses code at its address that is not the artifact's", async () => {
+		const { publicClient, walletClient } = testingChain("0x6001");
 		await assert.rejects(
-			deployTesting(context(publicClient, walletClient), devRelease(false), {
+			deployTesting(context(publicClient, walletClient), devRelease(), {
 				...PARAMS,
 				privateTestErc20: true,
 			}),
-			/release dev predates GianoTestPrivateErc20/,
-		);
-		assert.deepEqual(sent, []);
-	});
-
-	it("a remote chain gets it only when its profile opts in", () => {
-		const remote = { local: false, profileId: "copper-heron" };
-		assert.equal(privateTestErc20Wanted(devRelease(true), remote), false);
-		assert.equal(
-			privateTestErc20Wanted(devRelease(true), { ...remote, optIn: false }),
-			false,
-		);
-		assert.equal(
-			privateTestErc20Wanted(devRelease(true), { ...remote, optIn: true }),
-			true,
-		);
-		// A release without the token: nothing to opt out of, so no error without the opt-in.
-		assert.equal(privateTestErc20Wanted(loadRelease("v3"), remote), false);
-	});
-
-	it("a profile that opts in with a release that predates the token is refused", () => {
-		assert.throws(
-			() =>
-				privateTestErc20Wanted(loadRelease("v3"), {
-					local: false,
-					profileId: "copper-heron",
-					optIn: true,
-				}),
-			/profile copper-heron enables privateTestErc20, but release v3 predates GianoTestPrivateErc20/,
+			/giano.test.private-erc20 at 0x[0-9a-fA-F]{40} holds code 0x[0-9a-f]{64}, which is not GianoTestPrivateErc20's committed artifact/,
 		);
 	});
 
-	it("a local chain gets it whenever the release carries it", () => {
-		assert.equal(
-			privateTestErc20Wanted(devRelease(true), { local: true }),
-			true,
-		);
-		assert.equal(
-			privateTestErc20Wanted(loadRelease("v3"), { local: true }),
-			false,
-		);
+	it("a remote chain gets it only when its profile opts in; a local chain always does", () => {
+		assert.equal(privateTestErc20Wanted({ local: false }), false);
+		assert.equal(privateTestErc20Wanted({ local: false, optIn: false }), false);
+		assert.equal(privateTestErc20Wanted({ local: false, optIn: true }), true);
+		assert.equal(privateTestErc20Wanted({ local: true }), true);
+		assert.equal(privateTestErc20Wanted({ local: true, optIn: false }), true);
 	});
 });
