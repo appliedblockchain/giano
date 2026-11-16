@@ -1173,16 +1173,19 @@ self-sustaining and grows without bound, and the §8.1 degradation story — "au
 working against a slightly stale balance until it catches up" — quietly stops being true, because
 it never catches up.
 
-On a two-second chain the cursor falls that far behind after about six hours, so this is reachable
-by an ordinary outage rather than by an exotic one.
+On a two-second chain the cursor falls more than 200 blocks behind in under seven minutes (and
+past a keyed endpoint's 10,000 in about six hours), so this is reachable by an ordinary outage or a
+slow restart rather than by an exotic one.
 
 Each pass is therefore clamped to a span under the cap and advances its cursor by what it actually
 ingested. The clamp is 200 blocks, the tightest cap the profiles' RPCs serve, so the same watcher
-runs on a public RPC and a keyed one; at a 4-second poll it still catches up about 100 times faster
-than a two-second chain makes blocks. Following each RPC's own cap is a later optimisation. The same outage then resolves as a catch-up over successive polls instead of a permanent
-stall, at the cost of a lag metric that stays elevated for a few poll intervals — which is exactly
-what `giano_paymaster_watcher_lag_blocks` (§8.5) exists to show. Nothing about idempotency changes:
-a clamped pass is the same pass, narrower.
+runs on a public RPC and a keyed one. The same outage then resolves as a catch-up over successive
+polls instead of a permanent stall: at a 4-second poll, 200 blocks a pass catches up about 100 times
+faster than a two-second chain makes blocks, so a six-hour outage clears in under four minutes, and a
+cold start's 5,000-block lookback takes 25 passes. The lag metric stays elevated meanwhile, which is
+exactly what `giano_paymaster_watcher_lag_blocks` (§8.5) exists to show, and until the cursor
+reaches the head authorisation reads the balances as of the cursor. Following each RPC's own cap is a
+later optimisation. Nothing about idempotency changes: a clamped pass is the same pass, narrower.
 
 The clamp is a *ceiling* and not the cold-start lookback; the two bound different things. A cold
 start looks back a bounded distance because this section's opening paragraph makes balances

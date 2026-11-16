@@ -18,7 +18,7 @@ chain it serves and the contracts there are not release code for EntryPoint v0.9
 | Reset `dev`, or migrate its legacy v0.7 accounts | tech lead | README §5. A reset is the usual testnet answer: announce it, withdraw the legacy paymaster's tenant balances and stake, and let existing test wallets go. A migration needs its own plan; no tool exists for it. |
 | The testnet timelock's proposer Safe and its signers | tech lead | The hand-off refuses an EOA proposer only on a mainnet, but the rehearsal of the Safe flow (runbook §6) needs a real Safe on Base Sepolia. |
 | The holder of each immediate paymaster role on testnet | tech lead | One address per `ROLE_HOLDER_*`, or `PAYMASTER_GRANT_ALL_TO` for a developer-held testnet. |
-| How wallet-api survives an RPC that caps `eth_getLogs` | tech lead | **Decided (2026-11-16):** shrink the span to 200 blocks now and optimise the whole process later. The paymaster watcher, which tells wallet-api each tenant's balance, asks for up to 9,000 blocks per `eth_getLogs` (5,000 on a cold start); `https://sepolia.base.org`, the Base Sepolia profile's public RPC, serves 200, so the watcher ingests nothing, every tenant reads as unfunded and every sponsorship is refused. Done: the watcher reads 200 blocks a pass, and the paymaster SDK (the console's log reads) narrows down to 200 when a node refuses a wider span. The hand-off's role-grant check reads 200 blocks at a time too. Step 10 must roll a `main` SHA that includes it. Found by the rehearsal (N4). |
+| How wallet-api survives an RPC that caps `eth_getLogs` | tech lead | **Decided (2026-11-16):** shrink the span to 200 blocks now and optimise the whole process later. The paymaster watcher, which tells wallet-api each tenant's balance, asked for up to 9,000 blocks per `eth_getLogs`; `https://sepolia.base.org`, the Base Sepolia profile's public RPC, serves 200, so the watcher ingested nothing, every tenant read as unfunded and every sponsorship was refused. Done (#294): the watcher reads 200 blocks a pass, the paymaster SDK (the console's log reads) narrows down to 200 when a node refuses a wider span, and the hand-off's role-grant check reads 200 blocks at a time. Not done: the bundler's receipt lookup still reads `bundler.maxBlockRange` (default 2,000) blocks, see the `GIANO_CHAINS` draft. Step 10 must roll a `main` SHA that includes it. Found by the rehearsal (N4). |
 | Testnet timelock delays | product | The shipped profiles carry rehearsal delays (5 minutes to 1 hour). Keep them for testnet unless product decides otherwise. |
 
 Before mainnet only, not before testnet: mainnet canonical deployer custody (`docs/key-ceremony.md`
@@ -52,15 +52,23 @@ them by the testnet deployer's address. The rehearsal's values are shown only to
 ```json
 {
   "chainId": 84532, "name": "Base Sepolia",
-  "rpcUrl": "<Base Sepolia RPC: keyed, or the public one now that the watcher reads 200 blocks a pass>",
+  "rpcUrl": "<keyed Base Sepolia RPC (recommended), or https://sepolia.base.org with the bundler section below>",
   "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
   "sponsorshipPaymaster": "<deployments/84532.json paymasterProxy>",
   "walletApi": {
     "factory": "<deployments/84532.json factory>",
     "policy": { "allowedPaymasters": ["<the same paymasterProxy>"] }
-  }
+  },
+  "bundler": { "maxBlockRange": 200 }
 }
 ```
+
+The `bundler` section is needed only when `rpcUrl` (or `bundler.rpcUrl`) is the public
+`https://sepolia.base.org`. The bundler answers `eth_getUserOperationReceipt` and
+`eth_getUserOperationByHash` for operations it did not submit itself (after a restart, or sent through another
+replica) with one `eth_getLogs` over the last `maxBlockRange` blocks, 2,000 by default, which that RPC refuses.
+At 200, such a lookup covers only about the last 400 seconds of Base Sepolia. A keyed `rpcUrl` (or a keyed
+`bundler.rpcUrl`) avoids both, so prefer it and leave the `bundler` section out.
 
 Once the contracts package that carries both records is released, `factory` and `entryPoint` may be
 left out and taken from the registry.

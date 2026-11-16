@@ -36,7 +36,10 @@ Neither supported testnet deploys a test ERC-20 or a permissive paymaster.
 
 Set `RPC_URL` in your ignored local environment file for the serving backend; use the same network
 as the deployment profile. The wallet-api's paymaster watcher reads `eth_getLogs` 200 blocks at a
-time, so the public `https://sepolia.base.org` (which serves 200) works, as does a keyed endpoint. `BUNDLER_NODE_RPC_URL` can override the bundler endpoint. Neither URL is
+time, so it works on the public `https://sepolia.base.org` (which serves 200). The bundler does not:
+it looks up receipts of operations it did not submit itself (after a restart, for example) with one
+`eth_getLogs` over the last 2,000 blocks. On Base Sepolia, set `BUNDLER_NODE_RPC_URL` to a keyed
+endpoint, or use a keyed `RPC_URL` for both. Neither URL is
 exposed to browsers. The generic Compose file requires explicit chain settings; it has no hidden
 Ethereum Sepolia fallback. The generated public fragment supplies chain ID/name and the addresses:
 

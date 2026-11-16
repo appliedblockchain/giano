@@ -640,19 +640,31 @@ if (values.platform)
 			run: async (step) => {
 				const started = Date.now();
 				let lag: number | undefined;
+				/** Why the last poll had no lag to read: an HTTP status, a fetch error, or a missing gauge. */
+				let lastProblem = "no poll completed";
 				while (Date.now() - started < 10 * 60_000) {
-					const metrics = await fetch(`${WALLET_API_URL}/metrics`, {
-						headers: { authorization: `Bearer ${METRICS_TOKEN}` },
-					})
-						.then((r) => (r.ok ? r.text() : ""))
-						.catch(() => "");
-					const found = metrics.match(
-						new RegExp(
-							`^giano_paymaster_watcher_lag_blocks\\{chain="${profile.chainId}"\\} (\\d+)`,
-							"m",
-						),
-					);
-					lag = found ? Number(found[1]) : undefined;
+					try {
+						const response = await fetch(`${WALLET_API_URL}/metrics`, {
+							headers: { authorization: `Bearer ${METRICS_TOKEN}` },
+							signal: AbortSignal.timeout(5_000),
+						});
+						if (!response.ok) {
+							lastProblem = `/metrics answered HTTP ${response.status}`;
+						} else {
+							const found = (await response.text()).match(
+								new RegExp(
+									`^giano_paymaster_watcher_lag_blocks\\{chain="${profile.chainId}"\\} (\\d+)`,
+									"m",
+								),
+							);
+							lag = found ? Number(found[1]) : undefined;
+							lastProblem = found
+								? `lag ${lag} blocks`
+								: `/metrics has no giano_paymaster_watcher_lag_blocks for chain ${profile.chainId} yet`;
+						}
+					} catch (error) {
+						lastProblem = `/metrics failed: ${(error as Error).message}`;
+					}
 					// Within a few blocks of the head: the confirmation depth plus a poll's worth.
 					if (lag !== undefined && lag <= 10) {
 						step.detail = `caught up in ${Math.round((Date.now() - started) / 1000)}s (lag ${lag} blocks)`;
@@ -661,7 +673,7 @@ if (values.platform)
 					await new Promise((resolve) => setTimeout(resolve, 2_000));
 				}
 				throw new Error(
-					`the paymaster watcher is still ${lag ?? "an unknown number of"} blocks behind after 10 minutes`,
+					`the paymaster watcher did not catch up within 10 minutes (last poll: ${lastProblem})`,
 				);
 			},
 		},
