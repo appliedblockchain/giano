@@ -36,12 +36,16 @@ no code change:
 - **No `eth_getStorageAt`:** nothing to set. wallet-api, giano-doctor and the paymaster SDK read
   the proxy implementation from its `Upgraded` logs when the storage read fails, in spans of at
   most 10,000 blocks.
-- **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `deploy:cli` (step 4) and to
-  `provision:paymaster` (step 7). Each request is then signed with `DEPLOYER_PRIVATE_KEY`, so the
-  RPC keeps the operator as `from`. Without it, role-gated calls fail with
-  `AccessControlUnauthorizedAccount`, and the CreateX simulation runs from a random address.
-  The wizard (`pnpm contracts:deploy`) and `pnpm contracts:provision` do not sign their requests,
-  so on such an RPC run these two commands directly.
+- **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `deploy:cli` (step 4),
+  `provision:paymaster` (step 7) and `deploy:cli timelock` and `handoff` (step 7a). Each request
+  is then signed with the key the command sends from, so the RPC keeps the operator as `from`:
+  `DEPLOYER_PRIVATE_KEY` for steps 4 and 7, `ROLE_ADMIN_PRIVATE_KEY` for step 7a. A later
+  `deploy:cli upgrade --execute --signed-rpc` signs with `DEPLOYER_PRIVATE_KEY`, and the
+  upgrader's own requests with `UPGRADER_PRIVATE_KEY`. Without the flag, role-gated calls fail
+  with `AccessControlUnauthorizedAccount`, and the CreateX simulation runs from a random address.
+  The wizard (`pnpm contracts:deploy`), `pnpm contracts:provision`, `pnpm contracts:timelock` and
+  `pnpm contracts:handoff` do not sign their requests, so on such an RPC run the low-level
+  commands directly.
 
 ## The checklist
 
@@ -140,6 +144,10 @@ no code change:
       because it renounces the operator's ROLE_ADMIN and cannot be undone. From then on
       contracts:provision refuses (ROLE_ADMIN is the timelock's); role changes are timelock
       proposals.
+      contracts:timelock and contracts:handoff do not sign their requests. Where the RPC rewrites
+      `from` on unsigned calls, run deploy:cli timelock and deploy:cli handoff directly, with the
+      flags that packages/contracts/deploy/operations.ts builds, plus --signed-rpc. Both sign with
+      ROLE_ADMIN_PRIVATE_KEY and refuse to start without it.
 
 8.  giano-doctor chain --rpc <url> --chain-id <id> …  → must be green.
       The same checks the wallet-api runs at boot: endpoint identity, EntryPoint, factory +

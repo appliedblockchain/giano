@@ -15,6 +15,12 @@
  *   pnpm deploy:cli timelock --rpc <url> --proposer <safe> [--proposer …] [--executor <0x…> …]
  *                            --min-delay <dur> --delay <function>=<dur> … [--release vN]
  *   pnpm deploy:cli handoff  --rpc <url> --timelock <0x…> [--execute] [--safe-json <file>]
+ *   --signed-rpc (core, testing, upgrade, p256, timelock, handoff) signs every request after the
+ *       chain id read with the key the command sends from: DEPLOYER_PRIVATE_KEY, and for
+ *       `upgrade --execute` also UPGRADER_PRIVATE_KEY for the upgrader's own requests;
+ *       ROLE_ADMIN_PRIVATE_KEY for `timelock` and `handoff`. It is for an RPC that replaces `from` on
+ *       an unsigned eth_call or eth_estimateGas (Silent Data). A missing key is refused before any
+ *       request is sent.
  *   pnpm deploy:cli p256     --rpc <url>     (optional: a gas optimisation, never a requirement)
  *       The wallet verifies passkeys with FreshCryptoLib built into its own code, so a chain without
  *       the RIP-7212 precompile works without this verifier. It funds the Arachnid signer with 0.1 ETH
@@ -75,6 +81,7 @@ import {
 	defineChain,
 	getAddress,
 	http,
+	type LocalAccount,
 	type PublicClient,
 	parseEther,
 	type Transport,
@@ -174,8 +181,9 @@ const { positionals, values } = parseArgs({
 		release: { type: "string" },
 		impersonate: { type: "boolean", default: false },
 		/**
-		 * Sign every RPC request with DEPLOYER_PRIVATE_KEY, for an RPC that replaces `from` on an
-		 * unsigned eth_call (Silent Data). Without it the CreateX simulation runs from a random address.
+		 * Sign every RPC request with the command's key (rpcSigner), for an RPC that replaces `from`
+		 * on an unsigned eth_call or eth_estimateGas (Silent Data). Without it the CreateX simulation
+		 * runs from a random address, and role-gated estimates fail.
 		 */
 		"signed-rpc": { type: "boolean", default: false },
 		"record-dir": { type: "string" },
@@ -424,7 +432,24 @@ function writeSafeJson(contents: unknown): void {
 	log(`wrote the Safe Transaction Builder batch to ${file}`);
 }
 
-async function connect(): Promise<{
+/**
+ * With --signed-rpc, the account that signs this command's requests, from the environment variable
+ * `keyEnv`. Called before connect(), so a missing key is refused before any request is sent.
+ */
+function rpcSigner(keyEnv: string): LocalAccount | undefined {
+	if (!values["signed-rpc"]) return undefined;
+	if (values.impersonate)
+		throw new Error("--signed-rpc signs with a key; drop --impersonate");
+	const key = process.env[keyEnv];
+	if (!key) throw new Error(`--signed-rpc needs ${keyEnv} to sign with`);
+	return privateKeyToAccount(key as `0x${string}`);
+}
+
+/**
+ * `signer` (from rpcSigner) signs every request after the chain id read: the signature covers the
+ * chain id, so the first eth_chainId goes unsigned.
+ */
+async function connect(signer?: LocalAccount): Promise<{
 	chainId: number;
 	chain: Chain;
 	transport: Transport;
@@ -432,9 +457,11 @@ async function connect(): Promise<{
 	local: boolean;
 }> {
 	const url = required("rpc");
-	const transport = http(url);
+	const chainId = await createPublicClient({
+		transport: http(url),
+	}).getChainId();
+	const transport = signer ? signedHttp(url, { chainId, signer }) : http(url);
 	const probe = createPublicClient({ transport });
-	const chainId = await probe.getChainId();
 	// Before any address is derived: a rehearsal's stand-in deployer only ever answers on a fork.
 	const rehearsal = await activateRehearsal(probe);
 	if (rehearsal)
@@ -473,12 +500,9 @@ async function deployerContext({
 		target: Network;
 	}
 > {
-	// Refused before connect(), so no request leaves unsigned.
-	if (values["signed-rpc"] && !process.env.DEPLOYER_PRIVATE_KEY)
-		throw new Error("--signed-rpc needs DEPLOYER_PRIVATE_KEY to sign with");
-	const connected = await connect();
-	const { chainId, chain, local } = connected;
-	let { transport, publicClient } = connected;
+	const { chainId, chain, transport, publicClient, local } = await connect(
+		rpcSigner("DEPLOYER_PRIVATE_KEY"),
+	);
 	const target = resolveNetwork(chainId, local);
 	// Before anything else: a record of another class means this run resolved the class wrongly.
 	const record = chainRecord(chainId, target);
@@ -497,14 +521,13 @@ async function deployerContext({
 		});
 	} else {
 		const key = process.env.DEPLOYER_PRIVATE_KEY;
-		if (key) {
-			const account = privateKeyToAccount(key as `0x${string}`);
-			if (values["signed-rpc"]) {
-				transport = signedHttp(required("rpc"), { chainId, signer: account });
-				publicClient = createPublicClient({ chain, transport }) as PublicClient;
-			}
-			walletClient = createWalletClient({ chain, transport, account });
-		} else if (!verifyOnly)
+		if (key)
+			walletClient = createWalletClient({
+				chain,
+				transport,
+				account: privateKeyToAccount(key as `0x${string}`),
+			});
+		else if (!verifyOnly)
 			throw new Error(
 				`set DEPLOYER_PRIVATE_KEY (the ${target.network} canonical deployer, from its 1Password item), or pass --impersonate on a local chain`,
 			);
@@ -753,10 +776,16 @@ async function main(): Promise<void> {
 			return;
 		}
 		case "upgrade": {
-			const ctx = await deployerContext();
 			const which = required("contract");
 			if (which !== "paymaster" && which !== "wallet")
 				throw new Error("--contract is paymaster or wallet");
+			// The upgrader sends upgradeToAndCall itself, and the RPC keeps `from` only for the key
+			// that signed the request. Checked before deployerContext() connects.
+			const upgraderSigner =
+				which === "paymaster" && values.execute && !values.timelock
+					? rpcSigner("UPGRADER_PRIVATE_KEY")
+					: undefined;
+			const ctx = await deployerContext();
 			const of =
 				which === "paymaster"
 					? "paymasterImplementation"
@@ -811,7 +840,12 @@ async function main(): Promise<void> {
 				);
 			const upgrader = createWalletClient({
 				chain: ctx.chain,
-				transport: http(required("rpc")),
+				transport: upgraderSigner
+					? signedHttp(required("rpc"), {
+							chainId: ctx.chainId,
+							signer: upgraderSigner,
+						})
+					: http(required("rpc")),
 				account: privateKeyToAccount(key as `0x${string}`),
 			});
 			const role = await ctx.publicClient.readContract({
@@ -854,8 +888,9 @@ async function main(): Promise<void> {
 			return;
 		}
 		case "timelock": {
-			const { chainId, chain, transport, publicClient, local } =
-				await connect();
+			const { chainId, chain, transport, publicClient, local } = await connect(
+				rpcSigner("ROLE_ADMIN_PRIVATE_KEY"),
+			);
 			const walletClient = await roleAdminClient(chain, transport, local);
 			const target = resolveNetwork(chainId, local);
 			const record = chainRecord(chainId, target);
@@ -893,8 +928,9 @@ async function main(): Promise<void> {
 			return;
 		}
 		case "handoff": {
-			const { chainId, chain, transport, publicClient, local } =
-				await connect();
+			const { chainId, chain, transport, publicClient, local } = await connect(
+				rpcSigner("ROLE_ADMIN_PRIVATE_KEY"),
+			);
 			const target = resolveNetwork(chainId, local);
 			const record = chainRecord(chainId, target);
 			const proxy = await paymasterProxy(publicClient, record, target);

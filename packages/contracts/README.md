@@ -146,10 +146,12 @@ pnpm deploy:cli p256 --rpc <url>                                   # P-256 verif
 #   core --rpc <url> --chain <profile> --role-admin <timelock> --signed-rpc   # an RPC that rewrites `from`
 ```
 
-`--signed-rpc` signs every request after the chain id read with `DEPLOYER_PRIVATE_KEY`
-(`deploy/signed-rpc.ts`). A Silent Data RPC keeps `from` only on a signed request, so without the
-flag the CreateX simulation runs from a random address. `provision:paymaster` takes the same flag.
-The flag without a key is refused before any request is sent.
+`--signed-rpc` signs every request after the chain id read with the key the command sends from
+(`deploy/signed-rpc.ts`): `DEPLOYER_PRIVATE_KEY`, or `ROLE_ADMIN_PRIVATE_KEY` for `timelock` and
+`handoff`. `upgrade --execute` also signs the upgrader's own requests with `UPGRADER_PRIVATE_KEY`.
+A Silent Data RPC keeps `from` only on a request that `from` signed, so without the flag the CreateX
+simulation runs from a random address and role-gated estimates fail. `provision:paymaster` takes
+the same flag. The flag without the key it needs is refused before any request is sent.
 
 The CLI takes a chain's class and overrides from `--chain <profile>`, else from the committed profile
 with the chain's id, else from `--network mainnet|testnet` (no overrides). `core` deploys `--release`,

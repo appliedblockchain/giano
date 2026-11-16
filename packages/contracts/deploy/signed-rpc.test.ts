@@ -150,11 +150,20 @@ function deployCore(url: string, flags: string[], key: string) {
 	);
 }
 
-/** Runs a package script with tsx, with DEPLOYER_PRIVATE_KEY set to `key` ("" for none). */
-function runScript(args: string[], key: string) {
+/**
+ * Runs a package script with tsx, with DEPLOYER_PRIVATE_KEY set to `key` ("" for none) and the
+ * other signing keys unset unless `env` sets them.
+ */
+function runScript(args: string[], key: string, env: NodeJS.ProcessEnv = {}) {
 	return promisify(execFile)(process.execPath, ["--import", "tsx", ...args], {
 		cwd: new URL("..", import.meta.url),
-		env: { ...process.env, DEPLOYER_PRIVATE_KEY: key },
+		env: {
+			...process.env,
+			ROLE_ADMIN_PRIVATE_KEY: "",
+			UPGRADER_PRIVATE_KEY: "",
+			...env,
+			DEPLOYER_PRIVATE_KEY: key,
+		},
 	}).then(
 		({ stdout, stderr }) => ({ code: 0, stdout, stderr }),
 		(error: { code: number; stdout: string; stderr: string }) => ({
@@ -216,5 +225,80 @@ test("deploy:cli core without --signed-rpc sends no signature headers", async ()
 			assert.equal(headers["x-timestamp"], undefined, method);
 			assert.equal(headers["x-signature"], undefined, method);
 		}
+	});
+});
+
+/** Runs `deploy:cli <command>` against the stub RPC with ROLE_ADMIN_PRIVATE_KEY set to `roleAdminKey`. */
+function deployRoleAdmin(
+	url: string,
+	command: "timelock" | "handoff",
+	roleAdminKey: string,
+) {
+	const flags =
+		command === "timelock"
+			? ["--proposer", "0x00000000000000000000000000000000000000bb"]
+			: [
+					"--timelock",
+					"0x00000000000000000000000000000000000000cc",
+					"--execute",
+				];
+	return runScript(
+		["deploy/cli.ts", command, "--rpc", url, ...flags, "--signed-rpc"],
+		ROOT_KEY,
+		{ ROLE_ADMIN_PRIVATE_KEY: roleAdminKey },
+	);
+}
+
+for (const command of ["timelock", "handoff"] as const) {
+	test(`deploy:cli ${command} --signed-rpc without ROLE_ADMIN_PRIVATE_KEY exits non-zero and sends no request`, async () => {
+		await withStubRpc(async (url, received) => {
+			const { code, stdout, stderr } = await deployRoleAdmin(url, command, "");
+			assert.notEqual(code, 0);
+			assert.match(
+				`${stdout}${stderr}`,
+				/--signed-rpc needs ROLE_ADMIN_PRIVATE_KEY/,
+			);
+			assert.deepEqual(received, []);
+		});
+	});
+
+	test(`deploy:cli ${command} --signed-rpc signs every request after the chain id read with ROLE_ADMIN_PRIVATE_KEY`, async () => {
+		await withStubRpc(async (url, received) => {
+			// DEPLOYER_PRIVATE_KEY is set too: the role admin, not the deployer, must sign.
+			await deployRoleAdmin(url, command, EPHEMERAL_KEY);
+			const [first, ...rest] = received;
+			assert.equal(first.method, "eth_chainId");
+			assert.ok(rest.length > 0);
+			for (const request of rest)
+				assert.equal(
+					await payloadSigner(request),
+					ephemeral.address,
+					request.method,
+				);
+		});
+	});
+}
+
+test("deploy:cli upgrade --execute --signed-rpc without UPGRADER_PRIVATE_KEY exits non-zero and sends no request", async () => {
+	await withStubRpc(async (url, received) => {
+		const { code, stdout, stderr } = await runScript(
+			[
+				"deploy/cli.ts",
+				"upgrade",
+				"--rpc",
+				url,
+				"--contract",
+				"paymaster",
+				"--execute",
+				"--signed-rpc",
+			],
+			ROOT_KEY,
+		);
+		assert.notEqual(code, 0);
+		assert.match(
+			`${stdout}${stderr}`,
+			/--signed-rpc needs UPGRADER_PRIVATE_KEY/,
+		);
+		assert.deepEqual(received, []);
 	});
 });
