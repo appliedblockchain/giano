@@ -196,6 +196,33 @@ allowlist without inspecting or calling the signer. Safe-mode ERC-4337 bundlers 
 `EXTCODESIZE` against an account with no code. Invalid signatures, including estimation stubs,
 return signature-validation failure.
 
+## Reading a proxy's implementation
+
+`erc1967.ts` reads which implementation an ERC-1967 proxy, such as the paymaster proxy, delegates
+to. The deploy tooling, `giano-doctor`, wallet-api's chain check and the paymaster SDK all use it.
+
+```ts
+import { proxyImplementation } from '@appliedblockchain/giano-contracts';
+
+// The implementation address, or null when the proxy has none.
+const implementation = await proxyImplementation(publicClient, paymasterProxy);
+```
+
+- `proxyImplementation(client, proxy)` reads the implementation slot (`IMPLEMENTATION_SLOT`) with
+  `eth_getStorageAt`. When that read succeeds, it reads no logs.
+- When the RPC refuses `eth_getStorageAt` (a Silent Data gateway does), it falls back to the
+  proxy's latest `Upgraded` event (`UPGRADED_TOPIC`). ERC-1967 requires that event on every
+  implementation change, so the newest one names the current implementation.
+- The fallback walks back from the latest block, newest first, in spans of at most 10,000 blocks
+  (`UPGRADED_LOG_CHUNK`). That is the widest `eth_getLogs` span the Silent Data gateway and
+  wallet-api's platform read relay accept. It stops at the first span that holds an event.
+- The fallback needs `getBlockNumber` and `request` on the client. Without them, the call raises
+  the original storage-read error. When no span holds an event, it returns null.
+- `implementationFromUpgradedLogs(getLogs, latest)` is the log walk alone, for a caller with its
+  own log reader. `implementationFromSlot(word)` decodes a raw slot word.
+
+The walk costs one `eth_getLogs` request per 10,000 blocks since the last upgrade.
+
 ## Toolchain
 
 Foundry is the only Solidity toolchain. `foundry.toml` pins everything that reaches the bytecode:

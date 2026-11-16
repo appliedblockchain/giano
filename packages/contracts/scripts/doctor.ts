@@ -82,7 +82,12 @@ import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
-import { IMPLEMENTATION_SLOT, implementationFromSlot } from "../erc1967";
+import {
+	IMPLEMENTATION_SLOT,
+	implementationFromSlot,
+	implementationFromUpgradedLogs,
+	UPGRADED_TOPIC,
+} from "../erc1967";
 import {
 	gianoPaymasterAbi,
 	gianoSmartWalletAbi,
@@ -395,9 +400,22 @@ async function checkSponsorshipPaymaster(
 	try {
 		// The proxy's code proves nothing about what it delegates to: the slot must hold paymaster
 		// release code.
-		const impl = implementationFromSlot(
-			await provider.getStorage(address, IMPLEMENTATION_SLOT),
-		);
+		const impl = await provider
+			.getStorage(address, IMPLEMENTATION_SLOT)
+			.then(implementationFromSlot)
+			// An RPC that refuses eth_getStorageAt (Silent Data): the latest Upgraded event instead.
+			.catch(async () =>
+				implementationFromUpgradedLogs(
+					(fromBlock, toBlock) =>
+						provider.getLogs({
+							address,
+							topics: [UPGRADED_TOPIC],
+							fromBlock,
+							toBlock,
+						}),
+					BigInt(await provider.getBlockNumber()),
+				),
+			);
 		if (!impl)
 			report(
 				"fail",

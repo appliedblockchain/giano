@@ -2,12 +2,12 @@ import {
 	getGianoDeployment,
 	gianoPaymasterAbi,
 	iEntryPointAbi,
+	proxyImplementation,
 } from "@appliedblockchain/giano-contracts";
 import {
 	type Account,
 	type Address,
 	type Chain,
-	getAddress,
 	type Hash,
 	type Hex,
 	type PublicClient,
@@ -275,12 +275,9 @@ export class GianoPaymasterClient {
 	 * code, the size of a contract, only when it changes.
 	 */
 	async readImplementationSlot(): Promise<Address> {
-		const word = await this.publicClient.getStorageAt({
-			address: this.address,
-			slot: ERC1967_IMPLEMENTATION_SLOT,
-		});
-		return getAddress(
-			`0x${(word ?? "0x").slice(2).padStart(64, "0").slice(24)}`,
+		return (
+			(await proxyImplementation(this.publicClient, this.address)) ??
+			zeroAddress
 		);
 	}
 
