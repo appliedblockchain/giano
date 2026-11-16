@@ -38,6 +38,11 @@ export const chainSchema = z.object({
 	explorerUrl: z.string().url().optional(),
 	/** The default ERC-20 for this chain's token card — Giano's test token at its CREATE2 address. */
 	defaultToken: address.optional(),
+	/**
+	 * A token whose balances only the holder can read (Giano's private test token). Set it only on a
+	 * chain whose RPC enforces private reads (Silent Data): the private token section appears for it.
+	 */
+	privateToken: address.optional(),
 });
 
 export const runtimeConfigSchema = z.object({
@@ -120,6 +125,9 @@ function normalise(raw: unknown): unknown {
 								),
 								defaultToken: str(
 									(chain as Record<string, unknown>).defaultToken,
+								),
+								privateToken: str(
+									(chain as Record<string, unknown>).privateToken,
 								),
 							}
 						: chain,

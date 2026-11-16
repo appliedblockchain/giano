@@ -86,6 +86,7 @@ The private token section builds the gateway headers in a small module in the de
 - *Why:* this keeps the demo on the published Giano surface (`personal_sign` only) and adds no package that the scope routing blocks. One prompt per hour matches "one approval per session".
 - *Alternative:* add `@appliedblockchain/silentdatarollup-viem` to the demo through an `.npmrc` scope exception. Rejected for now, because a scope exception for one package is the deviation the connector README warns about.
 - *Risk:* the wallet's `personal_sign` signature must be what the gateway's ERC-1271 check expects for a delegate ticket (see Risks). Task 4.1 proves this against the local gateway before any UI work.
+- *Encoding (task 4.1, verified):* the dApp passes `keccak256(toBytes(chainId + JSON.stringify(ticket)))` to `personal_sign` as a `0x`-prefixed hex string. The wallet signs those 32 raw bytes, not their hex text (wallet-core `toPersonalMessageBytes`): its passkey signs `replaySafeHash(hashMessage(raw))`. The ticket JSON is exactly the `x-delegate` header value, with the keys `expires` (RFC 3339) and `ephemeralAddress`, in that order. Checked against the local gateway on anvil with a passkey-owned wallet: the delegate-signed `eth_call` ran with `CALLER` equal to the wallet. Passing the message itself as text is refused with HTTP 401 "Can not recover signer from signature".
 
 ### 7. The private test token is UCEF's `UCEFOwned` model, imported from a Forge library, with an open mint, and deployed from a committed artifact
 

@@ -21,6 +21,7 @@ defect in one of them. Requirements and decisions: [`specs/DEMO-REQUIREMENTS.md`
 | **Signing** | `personal_sign`, `eth_sign`, `eth_signTypedData_v4` with editable typed data | Invalid typed-data JSON; reject in the wallet |
 | **Raw user operation** | `eth_prepareUserOperation` → `eth_signUserOperation` → `eth_sendSignedUserOperation`, each payload inspectable; `signed_eth_call` | Call `signed_eth_call` without `to`/`data` |
 | **ERC-20** | Default token per chain (Giano's test ERC-20, same CREATE3 address everywhere), `mint`, `transfer`, `approve`, EIP-2612 permit signature, token balance deltas | Load a token without `nonces()` and ask for a permit (no popup, clean entry); a chain without a default token |
+| **Private token** | Shown only for a chain whose `GIANO_CHAINS` entry names `privateToken`. A balance only the holder can read: a signed `balanceOf` through a read delegate the wallet approves with one `personal_sign` per hour, `mint` and `transfer` (sponsored), and the outsider view: the same balance read unsigned, another address's balance read signed for the wallet, and the latest transfer's bundle transaction read unsigned | An outsider read that returns a balance raises a violation banner and a `violation` ledger row; a counterfactual wallet cannot sign reads ("deploy the wallet first") |
 | **Wallet management** | `openWalletManagement()` — the app passes nothing and learns nothing | Any returned data is a violation |
 | **Adapters** | wagmi `createGianoConnector` (connect, `switchChain` → `UnsupportedChainSwitchError`, send + `waitForUserOperationReceipt`) and RainbowKit `giano()` | `switchChain` succeeding would be the finding |
 | **Failure lab** | Popup blocked (call after the gesture expired), unserved chain, disallowed origin (`origin-not-allowed` against the other tenant), user rejection, revoke then `eth_accounts`, invalid address, invalid calldata | These are the failures |
@@ -70,7 +71,7 @@ reaches `dist/`.
 | Variable | Required | Meaning |
 | --- | --- | --- |
 | `GIANO_WALLET_URL` | yes | The **tenant's** wallet origin. Each dApp is pinned to exactly one. |
-| `GIANO_CHAINS` | yes | JSON array of `{ chainId, name, rpcUrl, explorerUrl?, defaultToken? }`. `rpcUrl` is browser-facing: a public endpoint, or `/rpc/<chainId>` (below). |
+| `GIANO_CHAINS` | yes | JSON array of `{ chainId, name, rpcUrl, explorerUrl?, defaultToken?, privateToken? }`. `rpcUrl` is browser-facing: a public endpoint, or `/rpc/<chainId>` (below). `privateToken` is Giano's private test token on that chain; set it only where the RPC enforces private reads (Silent Data), and the private token card appears for that chain. |
 | `GIANO_RPC_UPSTREAM_<chainId>` | no | Keyed provider URL for that chain, proxied same-origin at `/rpc/<chainId>`; the key never reaches the browser or the CSP header. |
 | `GIANO_OTHER_WALLET_URL` | no | A wallet origin that does **not** allow-list this dApp — enables the failure lab's disallowed-origin control. |
 | `GIANO_APP_LABEL` | no | Free-text tag beside the title, to tell two instances apart. |
@@ -106,6 +107,24 @@ same-origin` on this page (else the popup handshake times out — the preflight'
   is the one allowed import.
 - **Every action goes through `runAction`** (`src/lib/run.ts`): the ledger is the record; there are
   no toasts.
+
+## Private reads (Silent Data chains)
+
+On a Silent Data chain the RPC answers a private read only when the request is signed for the
+account that may see it. `src/lib/signed-reads.ts` does that for a Giano wallet, with viem only:
+
+1. On the first signed read it creates an ephemeral key in memory and a ticket
+   `{ expires, ephemeralAddress }` that expires in 1 hour.
+2. The wallet approves the ticket with one `personal_sign` (one passkey prompt). The message is
+   `keccak256(chainId + JSON.stringify(ticket))`, passed as `0x` hex, so the wallet signs those 32
+   bytes.
+3. The ephemeral key signs each read. The RPC checks the approval against the wallet's code
+   (ERC-1271) and runs the call with `from` set to the wallet. A wallet that is not deployed yet
+   cannot sign reads, so the card asks for a mint first, which deploys it.
+
+A read close to the expiry asks the wallet for a new approval, and the ledger records it as a
+renewal. The integration snippet is in `specs/INTEGRATION.md` §9, "Private reads on a Silent Data
+chain".
 
 ## Reading and exporting the ledger
 

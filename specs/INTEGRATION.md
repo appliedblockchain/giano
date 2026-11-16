@@ -428,6 +428,57 @@ selector matches (visibly flagged as unverified), and otherwise tells the user p
 explain the call and shows the raw data. The full how-to, a worked descriptor and the validation
 error shape are in [`DEVELOPER-GUIDE.md` §5.8](./DEVELOPER-GUIDE.md#58-transaction-display-mappings-what-users-read-before-they-sign).
 
+### Private reads on a Silent Data chain
+
+On a Silent Data chain the RPC hides private state. It runs an unsigned `eth_call` from a random
+address, so a contract that checks `msg.sender` (a private token's `balanceOf`) refuses it. It
+answers a private read only when the request is signed for the account that may see it. A Giano
+wallet signs with a passkey, so it cannot sign every read. Instead it approves a short-lived
+delegate key once, and that key signs each read. The reference code is
+`services/custom-example/src/lib/signed-reads.ts` (viem only); its private token card uses it
+exactly like this:
+
+```ts
+import { createPublicClient, erc20Abi } from 'viem';
+// A copy of services/custom-example/src/lib/signed-reads.ts.
+import { SignedReader } from './signed-reads';
+
+// One reader per chain and connected wallet. Its first read asks the wallet for one
+// personal_sign (one passkey prompt), which approves a delegate key for 1 hour.
+const reader = new SignedReader({
+  chainId: chain.id,
+  wallet: account,
+  personalSign: (message) =>
+    provider.request({ method: 'personal_sign', params: [message, account] }),
+});
+const privateClient = createPublicClient({ chain, transport: reader.transport(rpcUrl) });
+
+// The RPC runs this call with `from` set to the wallet, so only the holder gets an answer.
+const balance = await privateClient.readContract({
+  address: privateToken, abi: erc20Abi, functionName: 'balanceOf', args: [account], account,
+});
+```
+
+- **What the wallet signs.** The ticket is `{ expires, ephemeralAddress }`, with `expires` in
+  RFC 3339. The dApp passes `keccak256(chainId + JSON.stringify(ticket))` to `personal_sign` as a
+  `0x` hex string, so the wallet signs those 32 bytes. The RPC checks that signature with ERC-1271
+  on the wallet.
+- **What each read carries.** `x-signer-swc` (the wallet), `x-signer-swc-type: giano`,
+  `x-delegate` (the ticket JSON), `x-delegate-signature` (the wallet's approval), `x-timestamp`,
+  and `x-signature`: the delegate key's EIP-191 signature of `chainId + body + timestamp`, over
+  the exact HTTP body.
+- **The wallet must be deployed.** ERC-1271 needs the wallet's code, so a counterfactual wallet
+  cannot sign reads. Its first transaction deploys it.
+- **Expiry.** The RPC refuses a ticket that expires more than 12 hours ahead. The reader uses
+  1 hour, and the first read within a minute of the expiry asks the wallet for a new approval.
+- **What outsiders see.** An unsigned read of a balance, or a read signed for the wallet of another
+  account's balance, is refused. An unsigned read of a transaction returns placeholders for its
+  calldata, sender and value. The bundler answers `eth_getUserOperationByHash` with `null` for such
+  a transaction; the user operation receipt still answers.
+- **What the operator sees.** Before inclusion, the bundler and wallet-api hold each user
+  operation's calldata (recipients, amounts). The Giano operator therefore sees what the chain
+  hides from outsiders, as with any ERC-4337 bundler.
+
 ### Building your own wallet interface: the wallet SDK
 
 `@appliedblockchain/giano-wallet-kit` is the package a **wallet origin** is built from — Giano's
