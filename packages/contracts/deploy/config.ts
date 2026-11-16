@@ -31,7 +31,8 @@ export const DEPLOYERS: {
 	readonly local: Address;
 } = checkDeployers({
 	mainnet: null,
-	testnet: null,
+	// 1Password item "Giano testnet canonical deployer" (docs/key-ceremony.md, Canonical deployers).
+	testnet: getAddress("0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5"),
 	local: getAddress("0x000000000000000000000000000000000000dEaD"),
 });
 

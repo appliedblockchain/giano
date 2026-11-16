@@ -525,9 +525,9 @@ deployer's deployment.
 
 The first canonical freeze (CREATE2, salt `0xAB…AB`, from the v1.1.0 build) never reached production
 accounts and has been replaced, together with every chain deployed under it. The registry holds no
-public chain until the class's canonical deployer deploys there; until the development team sets
-them, `DEPLOYERS.mainnet` and `DEPLOYERS.testnet` in `deploy/config.ts` are `null` and the deploy
-tooling refuses to sign for those classes. Local chains use the fixed `local` deployer, so setting a
+public chain until the class's canonical deployer deploys there. `DEPLOYERS.testnet` in
+`deploy/config.ts` is set (`0xBf8e…41B5`, docs/key-ceremony.md); `DEPLOYERS.mainnet` is still `null`,
+and the deploy tooling refuses to sign for mainnet until the development team sets it. Local chains use the fixed `local` deployer, so setting a
 real deployer regenerates nothing.
 
 The CREATE3 scheme is meant to be the last address change: addresses depend only on the class
