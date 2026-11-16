@@ -10,6 +10,7 @@ import {
 	parseUnits,
 } from "viem";
 import { erc20Abi, testErc20Abi } from "../lib/erc20";
+import type { ErrorRecord } from "../lib/errors";
 import {
 	type Address,
 	formatTime,
@@ -45,6 +46,9 @@ import {
 import { Field } from "./ui/field";
 
 type Meta = { name: string; symbol: string; decimals: number };
+
+/** An outsider's balance read is expected to fail with the token's refusal, and with nothing else. */
+const refusedRead = (error: ErrorRecord) => isBalanceRefusal(error.message);
 
 /** The ledger note on a send that is not followed by a balance read, because no delegate is approved. */
 const NO_AUTOMATIC_READ =
@@ -356,6 +360,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 							account: wallet,
 							noBalances: true,
 							expected: true,
+							expectedError: refusedRead,
 						},
 						(api) =>
 							api.entry.publicClient.readContract({
@@ -384,6 +389,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 							account: wallet,
 							noBalances: true,
 							expected: true,
+							expectedError: refusedRead,
 						},
 						() =>
 							signedClient().readContract({
@@ -414,7 +420,6 @@ function PrivateTokenSection({ token }: { token: Address }) {
 						params: [latestTransfer.txHash],
 						chainId,
 						noBalances: true,
-						expected: true,
 					},
 					async (api) => {
 						const tx = await api.entry.publicClient.request({
