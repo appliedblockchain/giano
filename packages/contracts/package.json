@@ -29,6 +29,7 @@
 	"files": [
 		"dist",
 		"src/**/*.sol",
+		"!src/testing/GianoTestPrivateErc20.sol",
 		"vendor/**/*.sol",
 		"index.ts",
 		"generated.ts",

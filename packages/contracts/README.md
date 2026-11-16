@@ -157,6 +157,8 @@ the same flag. The flag without the key it needs is refused before any request i
 (`giano.test.paymaster`). It refuses a production chain (R-29). It also deploys the private test token
 `GianoTestPrivateErc20` (`giano.test.private-erc20`), a UCEF token whose balance only the holder can
 read. It builds on UCEF's `UCEFOwned`, from the `lib/ucef-contracts` git submodule.
+The npm package leaves its source out: the source imports `lib/`, which the package does not ship,
+and no consumer needs it. Its ABI is in `generated.ts`.
 
 - On a remote chain, only when the chain's profile sets `"privateTestErc20": true`. Set it only where
   the RPC enforces private reads (Silent Data): on a public chain anyone can read the token's storage,
