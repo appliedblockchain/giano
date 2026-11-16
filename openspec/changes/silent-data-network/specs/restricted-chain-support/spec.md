@@ -70,11 +70,12 @@ At estimation, the bundler SHALL refuse a user operation whose `maxFeePerGas` is
 - **THEN** the bundler answers with invalid-params error "user operation max fee per gas must be larger than 0 during gas estimation"
 
 ### Requirement: Fixed limits are sponsored and settled like simulated ones
-On a chain that charges gas and sets `stateOverride: false`, wallet-api SHALL compute the sponsorship maximum charge and the tenant reservation from the fixed limits the bundler returned, with the same rules as for simulated limits. The tenant SHALL be charged the actual cost from `UserOperationEvent`, and the rest of the reservation SHALL be released.
+On a chain that charges gas and sets `stateOverride: false`, wallet-api SHALL compute the sponsorship maximum charge and the tenant reservation from the fixed limits the bundler returned, with the same rules as for simulated limits. The tenant SHALL be charged what the paymaster's `Sponsored` event records (gas cost, fee and overhead), as for simulated limits, and the rest of the reservation SHALL be released.
 
 #### Scenario: Sponsored operation on a gas-charging restricted chain
 - **WHEN** a tenant with a sufficient balance and cap sponsors an ETH transfer on a chain with base fee above 0 and `stateOverride: false`
-- **THEN** the operation succeeds, the tenant's ledger is charged the event's actual gas cost plus the fee, and the reservation above that is released
+- **THEN** the operation succeeds, the tenant's ledger is charged the `Sponsored` event's gas cost plus its fee plus its overhead, and the reservation above that is released
+- **AND** the `Sponsored` gas cost is at most the `UserOperationEvent`'s `actualGasCost`
 
 #### Scenario: Cap below the fixed-limit charge
 - **WHEN** the maximum charge from the fixed limits exceeds the tenant's `maxCostPerTxWei`
