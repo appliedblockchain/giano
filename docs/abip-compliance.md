@@ -139,10 +139,12 @@ automatically: checking release dates would need network access to each project'
 | Tool | Version | Released | Integrity check | Where it is pinned |
 |------|---------|----------|-----------------|--------------------|
 | Slither | 0.11.6 | 2026-07-28 | hash-locked pip requirements; every dependency also at least 7 days old (`uv pip compile --exclude-newer`) | `packages/contracts/requirements-ci.in` and `requirements-ci.txt` |
-| Aderyn | 0.6.8 | 2026-01-22 | sha256 of `aderyn-x86_64-unknown-linux-gnu.tar.xz` | `ci.yml`, job `solidity-analysis` (`ADERYN_VERSION`, `ADERYN_SHA256`) |
 | gitleaks | 8.30.1 | 2026-03-21 | sha256 of `gitleaks_8.30.1_linux_x64.tar.gz` | `ci.yml`, job `secret-scan` (`GITLEAKS_VERSION`, `GITLEAKS_SHA256`) |
 | CodeQL (`github/codeql-action`) | 4.39.1 | 2026-10-21 | the commit SHA of the release (`9b3254085494b55a0f7c4c2b3d2d52cc712ce370`), as #246 pins every action; the action downloads its own CodeQL bundle | `codeql.yml` (`init` and `analyze`) |
 | Trivy | 0.76.1 | 2026-10-21 | sha256 of `trivy_0.76.1_Linux-64bit.tar.gz` and `trivy_0.76.1_Linux-ARM64.tar.gz`. Both match the release's checksums file and GitHub's asset digests. | `docker.yml`, job `build`, and `security-scan.yml`, job `images` (`SCAN_TRIVY_VERSION`, `SCAN_TRIVY_SHA256_AMD64`, `SCAN_TRIVY_SHA256_ARM64`) |
+
+Aderyn 0.6.8 was also in this table. Cyfrin retired Aderyn on 2026-11-13 and withdrew every release
+binary, so CI could no longer install it. Slither is now the only Solidity static analyser (`ci-security-gates`).
 
 ## ABIP-8: Key Generation Ceremony (adopted)
 
