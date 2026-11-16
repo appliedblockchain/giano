@@ -5,14 +5,40 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Address, Hex } from "viem";
-import type { LabelKey, NetworkClass } from "./config";
+import {
+	type LabelKey,
+	type NetworkClass,
+	REHEARSAL_DEPLOYER_ENV,
+} from "./config";
 import type { DeviationReason } from "./plan";
 
-export const DEPLOYMENTS_DIR = path.resolve(
+/** The committed records: the only source of the published address registry (addresses.ts). */
+export const COMMITTED_DEPLOYMENTS_DIR = path.resolve(
 	import.meta.dirname,
 	"..",
 	"deployments",
 );
+
+/**
+ * Where a rehearsal keeps everything it writes: records, profile copies and address files. Ignored by
+ * git, so a rehearsal can never change what is committed or published.
+ */
+export const REHEARSAL_DIR = path.resolve(
+	import.meta.dirname,
+	"..",
+	"..",
+	"..",
+	"deploy",
+	"rehearsal",
+);
+
+/**
+ * The records this process reads and writes by default: the committed ones, or the rehearsal's own
+ * when the process was started for a rehearsal (config.ts `REHEARSAL_DEPLOYER_ENV`).
+ */
+export const DEPLOYMENTS_DIR = process.env[REHEARSAL_DEPLOYER_ENV]?.trim()
+	? path.join(REHEARSAL_DIR, "records")
+	: COMMITTED_DEPLOYMENTS_DIR;
 
 export type DeployedContract = {
 	address: Address;

@@ -22,6 +22,7 @@ See `proposal.md` for the motivation. The current state that shapes the design:
 - **Trial run of Slither and Aderyn (2026-11-09).** Slither 0.11.6 reported 1 High, 2 Medium, 6 Low and 18
   Informational. Aderyn v0.6.8 reported 3 High detectors (4 instances) and 15 Low detectors. All Highs look like false
   positives or deliberate design (table in D9). Slither's Foundry integration runs `forge clean`, which deletes `out/`.
+  Aderyn was later removed (D14).
 - **Frozen addresses.** solc embeds a hash of every source file in the contract metadata. A comment added to a `.sol`
   file changes the bytecode and the CREATE2 addresses (`dependency-security`, frozen addresses requirement).
 
@@ -85,8 +86,8 @@ decides pass or fail. The script has two modes:
   contains a `slither-disable` or `aderyn-ignore` comment.
 - **Report mode** (`--tool <tool> --report <file> […]`): reads one report, keeps findings at or above the gate
   severity, drops the ones that match a valid (not expired) register entry, and fails on the rest. It fails when the
-  report is missing or not valid JSON. It prints each accepted finding with its entry ID. For `slither` and `aderyn`,
-  it also fails on each entry of that tool that matches no finding in the report. Their findings change only with the
+  report is missing or not valid JSON. It prints each accepted finding with its entry ID. For `slither`, it also
+  fails on each entry of that tool that matches no finding in the report. Its findings change only with the
   contract source or the pinned tool version, so an unused entry means the finding was fixed or moved, and the same PR
   removes or updates the entry. The other tools' findings can change without a code change, for example when an
   advisory database changes, so their unused entries do not fail.
@@ -96,7 +97,6 @@ Match keys:
 | Tool | Gate | Match key |
 |------|------|-----------|
 | `slither` | High | `check` and the result `id`. Slither derives the `id` from the flagged code, so it changes when the code changes, and the entry must be reviewed again. |
-| `aderyn` | High | detector name, `contract_path` and `line_no`. Aderyn has no stable finding hash. A line shift above the finding needs an entry update; that is an accepted cost. |
 | `pnpm-audit` | high, critical | workspace and GHSA ID |
 | `trivy` | HIGH, CRITICAL with a fix | image name, package name and vulnerability ID |
 | `gitleaks` | any | finding fingerprint |
@@ -116,28 +116,26 @@ never falls back to `slither.conf.json`.
 Tool configs hold only the scope: production contracts in `packages/contracts/src` without `src/testing/`, which holds
 test-only contracts (`PermissivePaymaster`, `PrivateERC20`) that production never deploys. Slither uses `include_paths`,
 which keeps a finding when any of its code is in that scope; `filter_paths` would drop a finding in `src/` that also
-touches `lib/`. The script does not read what the configs set. It compares each file with a fixed copy, apart from
-the reasons: `slither.config.json` must be exactly the fixed object plus a `//` member, and `aderyn.toml` exactly the
-fixed lines plus blank lines and whole-line comments. It fails if either file is missing. So a scope change is a
-change to the script, and no JSON or TOML form can add a setting that the check does not see.
+touches `lib/`. The script does not read what the configs set. It compares the file with a fixed copy, apart from
+the reasons: `slither.config.json` must be exactly the fixed object plus a `//` member. It fails if the file is
+missing. So a scope change is a change to the script, and no JSON form can add a setting that the check does not see.
+(`aderyn.toml` had the same rule until D14.)
 Slither keeps its informational and optimization detectors off. Severity filters are not suppressions.
 
 ### D4. Solidity analysis is its own job in `ci.yml`
 
-Job `solidity-analysis`, named "Solidity static analysis (Slither, Aderyn)". It is separate from `forge` and
+Job `solidity-analysis`, named "Solidity static analysis (Slither)". It is separate from `forge` and
 `forge-coverage`, because Slither runs `forge clean` and rebuilds with `--build-info`.
 
 - Checkout with submodules. Foundry v1.7.1 through `foundry-toolchain`, as the other jobs use.
 - Python 3.12 through `actions/setup-python`. `pip install --require-hashes -r packages/contracts/requirements-ci.txt`.
   `requirements-ci.in` pins `slither-analyzer==0.11.6` (the trial version). `requirements-ci.txt` is generated with
   `uv pip compile requirements-ci.in --python-version 3.12 --universal --generate-hashes`.
-- Aderyn v0.6.8 Linux x86_64 release archive, checked with `sha256sum -c` against the sha256 recorded in the workflow.
-- Config files in `packages/contracts`: `slither.config.json` (`include_paths`, `show_ignored_findings`, informational
-  and optimization off) and `aderyn.toml` (source root `src`, exclude `src/testing`).
-- Each tool step deletes its old report first: Slither keeps an existing report file instead of overwriting it.
-- Run both tools with `if: ${{ !cancelled() }}` on the second, so one failure does not hide the other report. Then
-  run the script in report mode for each report. Upload `slither.json`, `slither.sarif` and `aderyn-report.json` with
-  `if: always()`.
+- Config file in `packages/contracts`: `slither.config.json` (`include_paths`, `show_ignored_findings`, informational
+  and optimization off).
+- The Slither step deletes its old report first: Slither keeps an existing report file instead of overwriting it.
+- Run the script in report mode on the report. Upload `slither.json` and `slither.sarif` with `if: always()`.
+- Until D14 the job also ran Aderyn v0.6.8 from its release binary, checked with `sha256sum -c`.
 
 ### D5. Dependency audit: `pnpm audit --json`, fail closed
 
@@ -188,7 +186,7 @@ the API and reports any without a register entry (tool `codeql`). This keeps R2 
 
 Job `secret-scan`, named "Secret scan (gitleaks)". It uses the gitleaks release binary with a recorded sha256. The
 gitleaks GitHub Action needs a paid licence for organisation repositories, and a binary follows the same pattern as
-Aderyn.
+Trivy (D10).
 
 - On `pull_request`: checkout with full history, then `gitleaks git --log-opts="<base sha>..<head sha>" --redact
   --ignore-gitleaks-allow --report-format json --exit-code 0`. `--ignore-gitleaks-allow` makes gitleaks ignore
@@ -230,6 +228,8 @@ Scanning the full history is out of scope. Credentials already in history are G3
 | AF-003 | aderyn | `contract-locks-ether`, `GianoPaymaster.sol:50` | False positive. `receive()` reverts, and `depositFor` and `addStake` (L553) forward all of `msg.value` to the EntryPoint. The inherited `upgradeToAndCall` is also payable, but only `UPGRADER_ROLE` can call it, through the proxy, and the implementation it chooses handles the value. Aderyn 0.6.8 does not count a call with value to a named function as a send. |
 | AF-004 | aderyn | `unprotected-initializer`, `GianoSmartWalletFactory.sol:81` | False positive. The flagged function is the view `initCodeHash()`. Aderyn matches the `init` name prefix and finds no revert or `initializer` modifier; it does not check mutability. |
 | AF-005 | aderyn | `yul-return`, `ERC1271InputGenerator.sol:48` | By design. The constructor returns the replay-safe hash to an `eth_call`; no deploy script or release deploys the contract, and no code in this repo calls it. It fails for hashes that start with byte `0xEF` (EIP-3541), a point for G22. |
+
+AF-002 to AF-005 were removed with Aderyn (D14). Their IDs are not reused.
 
 Rui Sereno owns every initial entry. The register first also held AF-006 and AF-007 for the `minimatch` and `glob`
 advisories. #260 fixed both, so the entries were removed. Their IDs are not reused. G22 (independent contract
@@ -278,7 +278,7 @@ the number of images it reads differs from the number of Dockerfiles listed.
 Recorded in `docs/abip-compliance.md` under ABIP-6 and ABIP-7. The rule: an exact version, released at least 7 days
 before the PR that adopts it, with an integrity hash. pip packages use a hash-locked requirements file. Release
 binaries use a sha256 in the workflow's `env`, next to the version and a comment with the release date. Trial versions:
-Slither 0.11.6 and Aderyn v0.6.8. gitleaks and Trivy versions are chosen when their PRs are written, under the same
+Slither 0.11.6 and Aderyn v0.6.8 (pinned until D14). gitleaks and Trivy versions are chosen when their PRs are written, under the same
 rule. The rule is not checked automatically; a check of binary release dates would need network access to each
 project's release page.
 
@@ -326,16 +326,38 @@ unrelated PRs while an advisory is open would not gate the release. The way to u
 expiry and an owner who fixes the advisory before that date. The weekly scan reports entries 14 days before they
 expire, so an expiry is not a surprise.
 
+### D14. Aderyn removed; Slither alone covers R1
+
+Cyfrin retired Aderyn on 2026-11-13. It removed the release binaries of every version and disabled the release
+workflow (Cyfrin/aderyn #1096, #1097, #1098), so the install step returned 404 and the job failed on every PR. The
+Aderyn steps, `aderyn.toml`, the `aderyn` tool in the register script and AF-002 to AF-005 are removed.
+
+R1 needs CI to check the Solidity contracts. One maintained analyser meets it. No requirement asked for two tools.
+Aderyn's 4 Highs were 3 false positives (AF-002 to AF-004) and 1 deliberate design choice (AF-005). Two points that
+these entries tracked now move to G22 (independent contract review), because no CI check covers them any more:
+
+- AF-005 recorded a real defect. `ERC1271InputGenerator` fails for a hash that starts with byte `0xEF` (EIP-3541),
+  about 1 in 256 hashes. G22 decides whether to fix or remove the contract.
+- AF-002 and AF-003 asked us to watch for locked ether. Slither's `locked-ether` is Medium, below the High gate. If
+  `GianoSmartWalletFactory.createAccount` stops forwarding `msg.value`, or `GianoPaymaster` gains a payable path that
+  does not send the value on, CI no longer fails. G22 checks both contracts for this case.
+
+The forge tests and G22 remain the main protection for the contracts. `aderyn-ignore` and `aderyn-fp`
+comments in contract source stay rejected, so dead suppressions do not return.
+
+Alternative considered: build Aderyn from the source tarball that is still published. It would keep CI green, but it
+would run a security tool that gets no new detectors and no fixes.
+
 ## Risks / Trade-offs
 
 - [The audit, Trivy database or CodeQL depend on outside services] → Each fails closed. A rerun is the remedy. The
   failure message says the tool could not run, not that a finding exists.
-- [Aderyn matches by line number, so an unrelated edit above a finding breaks the match] → The job fails with the
-  detector and new line, and the fix is a one-line register update. Contract source changes are rare and reviewed.
-  An entry left behind after its finding is fixed would accept a later finding of the same detector on the same line,
-  so report mode fails on a `slither` or `aderyn` entry that matches no finding. A new finding of the same detector on
-  the same line in the same PR still matches the old entry, so a reviewer checks the line when a PR changes a flagged
-  contract.
+- [An entry left behind after its finding is fixed makes the register disagree with the code] → Report mode fails on
+  a `slither` entry that matches no finding, so the PR that fixes or moves a finding also updates its entry. A Slither
+  `id` hashes the whole finding, so a stale entry cannot match a different finding. Contract source changes are rare
+  and reviewed.
+- [One analyser only (D14)] → A pattern that Slither does not report at High passes the gate. The forge tests and G22
+  cover the contracts beyond static analysis. A second, maintained analyser can be added in a change of its own.
 - [A new advisory blocks unrelated PRs] → D13. A short-lived register entry unblocks the team within one PR.
 - [Building each image twice in `docker.yml` costs time] → The second build reuses the builder's cache. On PRs the
   second build does not run.

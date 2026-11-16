@@ -12,7 +12,6 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import {
-	checkAderynConfig,
 	checkGitleaksConfig,
 	checkPnpmAuditSettings,
 	checkRepository,
@@ -46,8 +45,6 @@ const entry = (overrides = {}) => ({
 const register = (...entries) => ({ entries });
 const rules = (errs) => errs.map((e) => e.rule);
 const DEFAULT_RULES = "[extend]\nuseDefault = true\n\n";
-const ADERYN_TOML =
-	'version = 1\nroot = "."\nsrc = "src"\nexclude = ["src/testing/"]\n';
 
 describe("check-accepted-findings: register", () => {
 	it("passes a valid entry, with expiry exactly 180 days after acceptance", () => {
@@ -155,6 +152,11 @@ describe("check-accepted-findings: register", () => {
 			rules(validateRegister(register(entry({ tool: "semgrep" })), TODAY)),
 			["bad-tool"],
 		);
+		// Aderyn was removed from CI (it is retired), so an entry for it is not valid any more.
+		assert.deepEqual(
+			rules(validateRegister(register(entry({ tool: "aderyn" })), TODAY)),
+			["bad-tool"],
+		);
 	});
 
 	it("rejects a match that does not fit the tool's finding identifier", () => {
@@ -188,11 +190,6 @@ describe("check-accepted-findings: register", () => {
 
 	it("accepts the match shape of every tool", () => {
 		const matches = {
-			aderyn: {
-				detector_name: "yul-return",
-				contract_path: "src/utils/ERC1271InputGenerator.sol",
-				line_no: 48,
-			},
 			"pnpm-audit": { workspace: ".", ghsa: "GHSA-g3hv-75wg-m249" },
 			trivy: {
 				image: "giano-wallet-api",
@@ -346,67 +343,6 @@ describe("check-accepted-findings: suppressions", () => {
 				["invalid-config"],
 				text,
 			);
-	});
-
-	it("allows exactly the fixed lines in aderyn.toml, apart from blank lines and comments", () => {
-		const scope = `# reason\n\n  # indented reason\n${ADERYN_TOML}\n# end\n`;
-		assert.deepEqual(checkAderynConfig(scope), []);
-		assert.deepEqual(
-			checkAderynConfig(ADERYN_TOML.replaceAll("\n", "\r\n")),
-			[],
-		);
-		const errs = checkAderynConfig(
-			`${scope}[detectors]\nexclude = ["yul-return"]\n`,
-		);
-		assert.deepEqual(
-			errs.map((e) => [e.line, e.rule]),
-			[[10, "config-scope"]],
-		);
-		assert.match(
-			errs[0].message,
-			/^has '\[detectors\]' where it must have nothing more\./,
-		);
-		const missing = checkAderynConfig(ADERYN_TOML.replace('src = "src"\n', ""));
-		assert.deepEqual(
-			missing.map((e) => e.line),
-			[3],
-		);
-		assert.match(
-			missing[0].message,
-			/^has 'exclude = \["src\/testing\/"\]' where it must have 'src = "src"'\./,
-		);
-		assert.match(
-			checkAderynConfig("version = 1\n")[0].message,
-			/^ends where it must have 'root = "\."'\./,
-		);
-	});
-
-	it("rejects any other line in aderyn.toml, whatever TOML form it takes", () => {
-		for (const toml of [
-			ADERYN_TOML.replace('src = "src"', 'src = "src/testing"'),
-			ADERYN_TOML.replace('"src/testing/"', '"src/"'),
-			ADERYN_TOML.replace('root = "."', 'root = "lib"'),
-			ADERYN_TOML.replace('src = "src"\n', ""),
-			`${ADERYN_TOML}include = ["src/utils/"]\n`,
-			// The same values in another form, or with a trailing comment, are not the fixed lines.
-			ADERYN_TOML.replace('root = "."', 'root = "." # comment'),
-			ADERYN_TOML.replace('["src/testing/"]', '[ "src/testing/" ]'),
-			ADERYN_TOML.replace('src = "src"', "src = 'src'"),
-			ADERYN_TOML.replace(
-				'exclude = ["src/testing/"]',
-				'exclude = [\n"src/testing/",\n]',
-			),
-			// Every form that sets detectors.
-			`${ADERYN_TOML}[detectors]\n`,
-			`${ADERYN_TOML}["detectors"]\n`,
-			`${ADERYN_TOML}detectors.yul-return = false\n`,
-			`${ADERYN_TOML}detectors = { yul-return = false }\n`,
-			`${ADERYN_TOML}"src" = "src"\n`,
-			`${ADERYN_TOML}x = '''\n# not a comment\n'''\n`,
-			`﻿${ADERYN_TOML}`,
-			"",
-		])
-			assert.deepEqual(rules(checkAderynConfig(toml)), ["config-scope"], toml);
 	});
 
 	it("lets each gitleaks entry accept exactly one allowlist, named first in its description", () => {
@@ -719,7 +655,6 @@ describe("check-accepted-findings: repository check", () => {
 			"packages/contracts/slither.config.json",
 			JSON.stringify(SLITHER_SCOPE),
 		);
-		write("packages/contracts/aderyn.toml", ADERYN_TOML);
 		assert.deepEqual(checkRepository(root, TODAY), []);
 
 		write(
@@ -760,7 +695,6 @@ describe("check-accepted-findings: repository check", () => {
 				join(dir, "packages/contracts/slither.config.json"),
 				JSON.stringify(SLITHER_SCOPE),
 			);
-			writeFileSync(join(dir, "packages/contracts/aderyn.toml"), ADERYN_TOML);
 			symlinkSync(
 				join(dir, "hidden/Baz.sol"),
 				join(dir, "packages/contracts/src/Baz.sol"),
@@ -796,7 +730,6 @@ describe("check-accepted-findings: repository check", () => {
 			);
 			const errs = checkRepository(dir, TODAY);
 			assert.deepEqual(errs.map((e) => `${e.file} ${e.rule}`).sort(), [
-				"packages/contracts/aderyn.toml config-scope",
 				"packages/contracts/slither.conf.json suppression-file",
 				"packages/contracts/slither.config.json config-scope",
 				"packages/contracts/src symlink",
@@ -866,28 +799,6 @@ const slitherHigh = {
 	impact: "High",
 	first_markdown_element: "src/GianoSmartWallet.sol#L299-L306",
 };
-// Like Aderyn 0.6.8: issue_count counts issues (detectors), not instances.
-const aderynReport = (high, low = []) =>
-	JSON.stringify({
-		issue_count: { high: high.length, low: low.length },
-		high_issues: { issues: high },
-		low_issues: { issues: low },
-	});
-const aderynHigh = {
-	detector_name: "yul-return",
-	instances: [
-		{ contract_path: "src/utils/ERC1271InputGenerator.sol", line_no: 48 },
-	],
-};
-const aderynEntry = entry({
-	id: "AF-005",
-	tool: "aderyn",
-	match: {
-		detector_name: "yul-return",
-		contract_path: "src/utils/ERC1271InputGenerator.sol",
-		line_no: 48,
-	},
-});
 // Like pnpm audit: metadata.vulnerabilities counts each advisory once, by severity.
 const auditReport = (advisories) => {
 	const vulnerabilities = {
@@ -983,11 +894,6 @@ const CASES = {
 			error: "compilation failed",
 			results: {},
 		}),
-	},
-	aderyn: {
-		report: aderynReport([aderynHigh]),
-		entry: aderynEntry,
-		invalid: JSON.stringify({ files_summary: {} }),
 	},
 	"pnpm-audit": {
 		report: auditReport(advisory("high")),
@@ -1153,19 +1059,6 @@ describe("check-accepted-findings: report details", () => {
 		assert.match(slither.failures[0].message, /accepts medium .* reports high/);
 	});
 
-	it("fails an Aderyn issue that lists no instances", () => {
-		for (const level of ["high", "low"]) {
-			const issue = { detector_name: "x", instances: [] };
-			const text =
-				level === "high" ? aderynReport([issue]) : aderynReport([], [issue]);
-			assert.throws(
-				() => evaluateReport("aderyn", text, [], TODAY),
-				/Aderyn issue x lists no instances/,
-				level,
-			);
-		}
-	});
-
 	it("fails a report whose findings are not objects or whose lists are null", () => {
 		const cases = [
 			[
@@ -1176,8 +1069,6 @@ describe("check-accepted-findings: report details", () => {
 				"slither",
 				JSON.stringify({ success: true, results: { detectors: null } }),
 			],
-			["aderyn", aderynReport([{ detector_name: "x", instances: [null] }])],
-			["aderyn", aderynReport([null])],
 			[
 				"pnpm-audit",
 				JSON.stringify({
@@ -1214,25 +1105,6 @@ describe("check-accepted-findings: report details", () => {
 			);
 	});
 
-	it("fails an Aderyn report whose counts or categories do not match its issues", () => {
-		const run = (report) => () =>
-			evaluateReport("aderyn", JSON.stringify(report), register(), TODAY);
-		const base = JSON.parse(aderynReport([aderynHigh]));
-		assert.throws(
-			run({
-				...base,
-				issue_count: { high: 3, low: 0 },
-				high_issues: { issues: [] },
-			}),
-			/counts 3 high issues but lists 0/,
-		);
-		assert.throws(run({ ...base, issue_count: undefined }), /counts undefined/);
-		assert.throws(
-			run({ ...base, critical_issues: { issues: [] } }),
-			/unknown categories/,
-		);
-	});
-
 	it("fails a pnpm audit report whose summary counts a gated advisory it does not list", () => {
 		const report = JSON.stringify({
 			advisories: {},
@@ -1259,33 +1131,14 @@ describe("check-accepted-findings: report details", () => {
 		);
 	});
 
-	it("does not gate Aderyn low issues, and needs path and line to match", () => {
-		const low = evaluateReport(
-			"aderyn",
-			aderynReport([], [aderynHigh]),
-			register(),
-			TODAY,
+	it("throws on a report from an unknown tool, including the retired Aderyn", () => {
+		assert.throws(
+			() => evaluateReport("aderyn", "{}", register(), TODAY),
+			/unknown tool 'aderyn'/,
 		);
-		assert.deepEqual(low.failures, []);
-		assert.equal(low.belowGate, 1);
-		const moved = {
-			...aderynHigh,
-			instances: [
-				{ contract_path: "src/utils/ERC1271InputGenerator.sol", line_no: 49 },
-			],
-		};
-		const failures = evaluateReport(
-			"aderyn",
-			aderynReport([moved]),
-			register(aderynEntry),
-			TODAY,
-		).failures;
-		assert.equal(failures.length, 2);
-		assert.match(failures[0].message, /no entry in/);
-		assert.match(failures[1].label, /^AF-005 in /);
 	});
 
-	it("fails a Slither or Aderyn entry that matches no finding in the report", () => {
+	it("fails a Slither entry that matches no finding in the report", () => {
 		const slither = evaluateReport(
 			"slither",
 			slitherReport([]),
@@ -1299,15 +1152,16 @@ describe("check-accepted-findings: report details", () => {
 					"matches no slither finding in this report. Remove the entry if the finding is fixed, or update its match if the finding moved",
 			},
 		]);
-		const aderyn = evaluateReport(
-			"aderyn",
-			aderynReport([]),
-			register(aderynEntry, entry()),
+		// Only entries of the report's own tool must match a finding.
+		const onlySlither = evaluateReport(
+			"slither",
+			slitherReport([]),
+			register(entry(), auditEntry),
 			TODAY,
 		);
 		assert.deepEqual(
-			aderyn.failures.map((f) => f.label),
-			["AF-005 in security/accepted-findings.json"],
+			onlySlither.failures.map((f) => f.label),
+			["AF-001 in security/accepted-findings.json"],
 		);
 		// A finding that the entry matches but no longer covers still uses the entry.
 		const raised = evaluateReport(

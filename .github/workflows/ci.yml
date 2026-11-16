@@ -305,18 +305,14 @@ jobs:
         run: pnpm coverage:check
 
   solidity-analysis:
-    # G25 (openspec: ci-security-gates, design D4): Slither and Aderyn on the production contracts,
-    # packages/contracts/src without src/testing (scope in slither.config.json and aderyn.toml).
-    # Fails on any High finding from either tool that is not in security/accepted-findings.json.
-    # A job of its own because Slither runs `forge clean` and rebuilds with --build-info. Both tools
-    # are pinned with an integrity hash (docs/abip-compliance.md, "Tools installed outside npm").
-    name: Solidity static analysis (Slither, Aderyn)
+    # G25 (openspec: ci-security-gates, design D4): Slither on the production contracts,
+    # packages/contracts/src without src/testing (scope in slither.config.json).
+    # Fails on any High finding that is not in security/accepted-findings.json.
+    # A job of its own because Slither runs `forge clean` and rebuilds with --build-info. Slither is
+    # pinned with an integrity hash (docs/abip-compliance.md, "Tools installed outside npm").
+    # Aderyn ran here too until Cyfrin retired it and withdrew its downloads (2026-11-13).
+    name: Solidity static analysis (Slither)
     runs-on: ubuntu-26.04
-    env:
-      # Aderyn 0.6.8, released 2026-01-22. The sha256 of aderyn-x86_64-unknown-linux-gnu.tar.xz,
-      # as published with the release.
-      ADERYN_VERSION: 0.6.8
-      ADERYN_SHA256: ffd6ca658962e211a3ac821c646f69c8e14bf1b1001cbfe091bcd4535a691e46
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -340,14 +336,6 @@ jobs:
           python -m venv "$RUNNER_TEMP/slither"
           "$RUNNER_TEMP/slither/bin/pip" install --require-hashes -r packages/contracts/requirements-ci.txt
           echo "$RUNNER_TEMP/slither/bin" >> "$GITHUB_PATH"
-      - name: Install Aderyn (release binary, sha256 checked)
-        working-directory: ${{ runner.temp }}
-        run: |
-          curl -fsSL -o aderyn.tar.xz \
-            "https://github.com/Cyfrin/aderyn/releases/download/aderyn-v${ADERYN_VERSION}/aderyn-x86_64-unknown-linux-gnu.tar.xz"
-          echo "${ADERYN_SHA256}  aderyn.tar.xz" | sha256sum -c -
-          tar -xJf aderyn.tar.xz
-          echo "$RUNNER_TEMP/aderyn-x86_64-unknown-linux-gnu" >> "$GITHUB_PATH"
       - name: Slither
         # Slither exits non-zero whenever it reports a finding. The register check decides, and it
         # fails when the report is missing or says Slither did not succeed.
@@ -358,18 +346,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/reports"
           rm -f "$RUNNER_TEMP/reports/slither.json" "$RUNNER_TEMP/reports/slither.sarif"
           slither . --config-file slither.config.json --json "$RUNNER_TEMP/reports/slither.json" --sarif "$RUNNER_TEMP/reports/slither.sarif" || true
-      - name: Aderyn
-        if: ${{ !cancelled() }}
-        working-directory: packages/contracts
-        run: |
-          rm -f "$RUNNER_TEMP/reports/aderyn-report.json"
-          aderyn . --output "$RUNNER_TEMP/reports/aderyn-report.json"
       - name: Slither High findings are fixed or accepted
         if: ${{ !cancelled() }}
         run: node scripts/check-accepted-findings.mjs --tool slither --report "$RUNNER_TEMP/reports/slither.json"
-      - name: Aderyn High findings are fixed or accepted
-        if: ${{ !cancelled() }}
-        run: node scripts/check-accepted-findings.mjs --tool aderyn --report "$RUNNER_TEMP/reports/aderyn-report.json"
       - name: Upload the reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
