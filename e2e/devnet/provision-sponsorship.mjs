@@ -35,9 +35,9 @@ const apiUrl = (process.env.WALLET_API_URL ?? "http://api.localhost").replace(
  * instead of `addresses.json`, which is a devnet artefact. `SPONSOR_TENANTS` is a JSON array of
  * `{ slug, adminKey }`; the Sepolia demo (deploy/contracts/provision-sponsorship.sh) passes it.
  *
- * `SPONSOR_ERC20` is optional alongside it: a production chain (R-29) carries no demo ERC-20, so
- * there the allowlist is empty and only wallet management — governed by platform policy, not by
- * the allowlist — is sponsored.
+ * `SPONSOR_ERC20` is optional alongside it: a production chain (R-29) carries no demo ERC-20. There
+ * the tenant's own contracts come from `SPONSOR_ALLOWLIST` (comma-separated addresses), because the
+ * wallet-api sponsors nothing, wallet management included, for a tenant whose allowlist is empty.
  *
  * The point of the override is that this stays the *single* implementation of "install a tenant's
  * rules through the real admin API". A per-stack copy would drift, and the drift would show up as
@@ -52,6 +52,21 @@ const addresses = tenantsOverride
 			testErc20: process.env.SPONSOR_ERC20 || undefined,
 		}
 	: JSON.parse(fs.readFileSync(path.join(dir, "addresses.json"), "utf8"));
+
+/** The allowlist: the demo ERC-20, then SPONSOR_ALLOWLIST, each contract once, every function. */
+const allowlisted = [
+	...new Set(
+		[addresses.testErc20, ...(process.env.SPONSOR_ALLOWLIST ?? "").split(",")]
+			.map((contract) => contract?.trim().toLowerCase())
+			.filter(Boolean),
+	),
+];
+if (allowlisted.length === 0) {
+	throw new Error(
+		"No contract to sponsor: no demo ERC-20 and no SPONSOR_ALLOWLIST. The wallet-api sponsors nothing, " +
+			"not even wallet management, for a tenant with an empty allowlist.",
+	);
+}
 
 /**
  * Every chain the stack sponsors on, provisioned identically (MC-117) so a sponsored
@@ -70,10 +85,11 @@ const TENANT_ADMIN_KEYS = {
 };
 
 /**
- * What the demo sponsors. The demo ERC-20 in full; wallet management needs no entry here at all,
- * because it is governed by platform policy rather than by a tenant's allowlist — the "add a
+ * What the demo sponsors. The allow-listed contracts in full. Wallet management needs no entry of its
+ * own, because it is governed by platform policy rather than by a tenant's allowlist — the "add a
  * passkey on a new device" flow is the case where a user is least likely to hold a native token,
- * so a tenant must not be able to break it by leaving something out of a list.
+ * so a tenant must not be able to break it by leaving something out of a list. It still needs
+ * sponsorship to be on, and the wallet-api treats an empty allowlist as off.
  */
 function demoConfig() {
 	return {
@@ -81,9 +97,7 @@ function demoConfig() {
 		// 0.5 ETH per transaction: far above anything the demo does, and low enough that the cap is
 		// still a real rule rather than a decoration.
 		maxCostPerTxWei: (5n * 10n ** 17n).toString(),
-		allowlist: addresses.testErc20
-			? [{ contract: addresses.testErc20, functions: "all" }]
-			: [],
+		allowlist: allowlisted.map((contract) => ({ contract, functions: "all" })),
 		// No `walletManagement` block: its absence means sponsored, which is the point. The cap comes
 		// from SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI, set generously for this stack because the baked
 		// devnet state leaves the base fee high (~100 gwei after the deployment blocks) and a tight cap

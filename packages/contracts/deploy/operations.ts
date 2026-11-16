@@ -11,7 +11,7 @@ import {
 	TIMELOCKED_FUNCTION_NAMES,
 	type TimelockDelays,
 } from "../timelock";
-import { classDeployer, ENTRY_POINT_V09 } from "./config";
+import { activateRehearsal, classDeployer, ENTRY_POINT_V09 } from "./config";
 import { type Plan, planCore } from "./plan";
 import { inspectDeployment } from "./preflight";
 import {
@@ -103,6 +103,34 @@ async function main() {
 			);
 		}
 		console.log(`${profile.name} (${profile.chainId}): ${command}`);
+		// A rehearsal's stand-in deployer is accepted only once the RPC has shown it is an anvil fork.
+		let rehearsal: Awaited<ReturnType<typeof activateRehearsal>>;
+		try {
+			rehearsal = await activateRehearsal(
+				createPublicClient({ transport: http(rpc) }),
+			);
+		} catch (error) {
+			throw new OperatorError(
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+		if (rehearsal)
+			console.log(
+				`REHEARSAL on an anvil fork: stand-in deployer ${rehearsal}; confirmations are answered automatically.`,
+			);
+		const confirm = async (phrase: string): Promise<boolean> => {
+			if (rehearsal) {
+				console.log(`Type '${phrase}' to continue: ${phrase} (rehearsal)`);
+				return true;
+			}
+			if (!rl)
+				throw new OperatorError(
+					"Writes require an interactive terminal. Use --plan to inspect the target first.",
+				);
+			return (
+				(await rl.question(`Type '${phrase}' to continue: `)).trim() === phrase
+			);
+		};
 		if (values.plan) {
 			console.log(
 				"Read-only plan; no operation invoked. Provide operator credentials through --env-file or the environment. See deploy/contracts/README.md.",
@@ -110,7 +138,7 @@ async function main() {
 			return;
 		}
 		if (command === "timelock" || command === "handoff") {
-			await timelockWorkflow(command, selected, rpc, rl);
+			await timelockWorkflow(command, selected, rpc, confirm);
 			return;
 		}
 		// Where this chain's contracts are: the record, the profile's overrides, else the class's
@@ -155,8 +183,17 @@ async function main() {
 			}
 			const needed =
 				command === "provision"
-					? ["SPONSORSHIP_SIGNER_KEY", "PAYMASTER_TENANTS"]
+					? ["PAYMASTER_TENANTS"]
 					: ["ADMIN_API_KEY", "TENANT_SLUG", "WALLET_API_URL"];
+			// The sponsorship signer by address: a production signer's key never leaves its HSM.
+			if (
+				command === "provision" &&
+				!process.env.SPONSORSHIP_SIGNER_ADDRESS?.trim() &&
+				!process.env.SPONSORSHIP_SIGNER_KEY?.trim()
+			)
+				throw new OperatorError(
+					"Provide SPONSORSHIP_SIGNER_ADDRESS (the address wallet-api signs sponsorships with) in the selected operator environment before continuing.",
+				);
 			for (const name of needed)
 				if (!process.env[name]?.trim())
 					throw new OperatorError(
@@ -192,15 +229,7 @@ async function main() {
 					? "Provisioning sends transactions. Each rerun ADDS the configured tenant funding again; review amounts and existing balances."
 					: "This updates tenant sponsorship policies through the configured wallet-api.",
 			);
-			const confirmation = `${command} ${profile.chainId}`;
-			if (!rl)
-				throw new OperatorError(
-					"Writes require an interactive terminal. Use --plan to inspect the target first.",
-				);
-			if (
-				(await rl.question(`Type '${confirmation}' to continue: `)).trim() !==
-				confirmation
-			) {
+			if (!(await confirm(`${command} ${profile.chainId}`))) {
 				console.log("Cancelled. No operation invoked.");
 				return;
 			}
@@ -220,6 +249,8 @@ async function main() {
 		const env = {
 			...process.env,
 			GIANO_PROFILE_LOADED: "1",
+			// The scripts refuse development shortcuts (grant-all, a signer key) on a mainnet.
+			GIANO_NETWORK: profile.network,
 			ENTRYPOINT_ADDRESS: ENTRY_POINT_V09,
 			CHAIN_ID: String(profile.chainId),
 			CHAIN_NAME: profile.name,
@@ -285,7 +316,7 @@ async function timelockWorkflow(
 	command: "timelock" | "handoff",
 	selected: ProfileFile,
 	rpc: string,
-	rl: ReturnType<typeof createInterface> | undefined,
+	confirm: (phrase: string) => Promise<boolean>,
 ): Promise<void> {
 	const { profile } = selected;
 	const timelock = profile.timelock;
@@ -321,15 +352,7 @@ async function timelockWorkflow(
 		console.log(
 			`The hand-off gives ${timelock.address} every timelocked role and renounces your ROLE_ADMIN. Only the timelock can undo it, after the role delay.`,
 		);
-	const confirmation = `${command} ${profile.chainId}`;
-	if (!rl)
-		throw new OperatorError(
-			"Writes require an interactive terminal. Use --plan to inspect the target first.",
-		);
-	if (
-		(await rl.question(`Type '${confirmation}' to continue: `)).trim() !==
-		confirmation
-	) {
+	if (!(await confirm(`${command} ${profile.chainId}`))) {
 		console.log("Cancelled. No operation invoked.");
 		return;
 	}

@@ -2901,34 +2901,42 @@ no regeneration of any generated file, devnet or e2e state.
 one-off chain operation performed with the contracts package's deploy CLI, before the first
 `terraform apply`:
 
-**The two `core` runs below use the testnet canonical deployer key.** There is one canonical
+**Rehearse first, then deploy with the testnet canonical deployer key.** There is one canonical
 deployer per network class, and both keys are development-team keys kept in 1Password, outside
-ABIP-8 scope: a deployer only places contracts, and holds no role or funds once deployment ends
-([`docs/key-ceremony.md`](../docs/key-ceremony.md) names the items). Load the testnet key from its
-1Password item into the deploying shell's environment only — never into a file in the repository, a
-dotenv or this environment's secrets — and never use the mainnet key here. Anyone can check the
-result without a key: `deploy:cli core` with no `DEPLOYER_PRIVATE_KEY` verifies every contract and
-code, and sends nothing.
+ABIP-8 scope ([`docs/key-ceremony.md`](../docs/key-ceremony.md) names the items, and says what a leak
+allows). Load the testnet key from its 1Password item into the deploying shell's environment only —
+never into a file in the repository, a dotenv or this environment's secrets — and never use the
+mainnet key here. Anyone can check the result without a key: `deploy:cli core` with no
+`DEPLOYER_PRIVATE_KEY` verifies every contract and its code, and sends nothing.
 
 ```
-# development team, testnet canonical deployer key from 1Password in DEPLOYER_PRIVATE_KEY (this shell only):
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <base sepolia rpc> --chain base-sepolia --role-admin <EOA>
-pnpm --filter @appliedblockchain/giano-contracts deploy:cli core --rpc <eth sepolia rpc> --chain ethereum-sepolia --role-admin <EOA>
+# anyone, no key, nothing sent: the whole path on a fork of each chain (deploy/contracts/README.md, "Rehearsal")
+pnpm contracts:rehearse --chain base-sepolia --platform
+pnpm contracts:rehearse --chain ethereum-sepolia
 
-# anyone, no key:
-pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- …
+# development team, testnet canonical deployer key from 1Password in CANONICAL_DEPLOYER_PRIVATE_KEY (this shell only):
+pnpm contracts:deploy --chain base-sepolia --role-admin <bootstrap operator EOA>
+pnpm contracts:deploy --chain ethereum-sepolia --role-admin <bootstrap operator EOA>
+
+# the bootstrap operator, its key in the operator file: provision, then hand off to the timelock
+pnpm contracts:provision --chain <profile> --env-file <operator-file>
+pnpm contracts:timelock  --chain <profile> --env-file <operator-file>
+pnpm contracts:handoff   --chain <profile> --env-file <operator-file>
+pnpm contracts:doctor    --chain <profile> --env-file <operator-file>
 ```
 
-`core` deploys the wallet implementation, the factory and the paymaster (implementation, and proxy
-initialised in the same transaction) from the latest release. `--role-admin` is the paymaster's sole
-`ROLE_ADMIN`; for a dev environment that is a developer-held EOA rather than a timelock, and the same
-EOA can hold the role on both chains. Only the testnet canonical deployer's key can deploy at the
-deterministic addresses (the salts are permissioned; another key lands at its own addresses and is
-recorded as a deviation), and the proxy lands at the same testnet address on both chains regardless
-of the role admin or any other parameter. Each run writes
-`packages/contracts/deployments/<chainId>.json`; commit both records, run
-`pnpm --filter @appliedblockchain/giano-contracts gen:addresses`, and the registry carries the
-factory and paymaster for both chains, so `var.paymaster_address` only needs to match
+The wizard deploys the wallet implementation, the factory and the paymaster (implementation, and
+proxy initialised in the same transaction) from the profile's release, which CI keeps at the newest
+release until the chain has a record. The factory's implementation is immutable, so that release is
+what every new wallet on the chain starts on. `--role-admin` is the paymaster's bootstrap
+`ROLE_ADMIN`: a developer-held EOA that provisions the paymaster and then hands the timelocked roles
+to the profile's `GianoTimelock` (docs/PAYMASTER-TIMELOCK-RUNBOOK.md §2). The same EOA can bootstrap
+both chains. Only the testnet canonical deployer's key can deploy at the deterministic addresses (the
+salts are permissioned; another key lands at its own addresses and is recorded as a deviation), and
+the proxy lands at the same testnet address on both chains whatever the role admin or any other
+parameter. Each run writes `packages/contracts/deployments/<chainId>.json`; commit both records, run
+`pnpm --filter @appliedblockchain/giano-contracts gen:addresses`, and the registry carries the factory
+and paymaster for both chains, so `var.paymaster_address` only needs to match
 `getGianoDeployment(chainId).sponsorshipPaymaster` for each.
 
 ### 13.2 Funded accounts
