@@ -143,7 +143,13 @@ pnpm deploy:cli p256 --rpc <url>                                   # P-256 verif
 #   test-token --rpc <url> --chain <profile> --holder <0x…>       # the test ERC-20 alone: served testnets
 #                                                                  # too, never a mainnet; canonical deployer only
 #   upgrade --rpc <url> --contract paymaster --release v2
+#   core --rpc <url> --chain <profile> --role-admin <timelock> --signed-rpc   # an RPC that rewrites `from`
 ```
+
+`--signed-rpc` signs every request after the chain id read with `DEPLOYER_PRIVATE_KEY`
+(`deploy/signed-rpc.ts`). A Silent Data RPC keeps `from` only on a signed request, so without the
+flag the CreateX simulation runs from a random address. `provision:paymaster` takes the same flag.
+The flag without a key is refused before any request is sent.
 
 The CLI takes a chain's class and overrides from `--chain <profile>`, else from the committed profile
 with the chain's id, else from `--network mainnet|testnet` (no overrides). `core` deploys `--release`,

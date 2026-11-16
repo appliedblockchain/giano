@@ -4,6 +4,7 @@
  *   pnpm deploy:cli addresses
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
  *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
+ *                            [--signed-rpc]   (sign every request with DEPLOYER_PRIVATE_KEY)
  *                            [--accept-unverified-implementation]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli test-token --rpc <url> [--holder <0x…>]      (--holder required to deploy)
@@ -164,6 +165,7 @@ import {
 	loadRelease,
 	type Release,
 } from "./release";
+import { signedHttp } from "./signed-rpc";
 
 const { positionals, values } = parseArgs({
 	allowPositionals: true,
@@ -171,6 +173,11 @@ const { positionals, values } = parseArgs({
 		rpc: { type: "string" },
 		release: { type: "string" },
 		impersonate: { type: "boolean", default: false },
+		/**
+		 * Sign every RPC request with DEPLOYER_PRIVATE_KEY, for an RPC that replaces `from` on an
+		 * unsigned eth_call (Silent Data). Without it the CreateX simulation runs from a random address.
+		 */
+		"signed-rpc": { type: "boolean", default: false },
 		"record-dir": { type: "string" },
 		// network class: a committed profile, or the class alone
 		chain: { type: "string" },
@@ -466,7 +473,12 @@ async function deployerContext({
 		target: Network;
 	}
 > {
-	const { chainId, chain, transport, publicClient, local } = await connect();
+	// Refused before connect(), so no request leaves unsigned.
+	if (values["signed-rpc"] && !process.env.DEPLOYER_PRIVATE_KEY)
+		throw new Error("--signed-rpc needs DEPLOYER_PRIVATE_KEY to sign with");
+	const connected = await connect();
+	const { chainId, chain, local } = connected;
+	let { transport, publicClient } = connected;
 	const target = resolveNetwork(chainId, local);
 	// Before anything else: a record of another class means this run resolved the class wrongly.
 	const record = chainRecord(chainId, target);
@@ -485,13 +497,14 @@ async function deployerContext({
 		});
 	} else {
 		const key = process.env.DEPLOYER_PRIVATE_KEY;
-		if (key)
-			walletClient = createWalletClient({
-				chain,
-				transport,
-				account: privateKeyToAccount(key as `0x${string}`),
-			});
-		else if (!verifyOnly)
+		if (key) {
+			const account = privateKeyToAccount(key as `0x${string}`);
+			if (values["signed-rpc"]) {
+				transport = signedHttp(required("rpc"), { chainId, signer: account });
+				publicClient = createPublicClient({ chain, transport }) as PublicClient;
+			}
+			walletClient = createWalletClient({ chain, transport, account });
+		} else if (!verifyOnly)
 			throw new Error(
 				`set DEPLOYER_PRIVATE_KEY (the ${target.network} canonical deployer, from its 1Password item), or pass --impersonate on a local chain`,
 			);

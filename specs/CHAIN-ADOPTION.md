@@ -26,6 +26,23 @@ EntryPoint v0.9 requires Cancun EVM opcodes (including `MCOPY`, `TLOAD`, and `TS
 an EIP-1559 `basefee`. Confirm RPC support for `eth_call` state overrides and gas estimation.
 See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.md).
 
+**An RPC that restricts reads** (a Silent Data gateway, for example) needs three settings, and
+no code change:
+
+- **No `eth_call` state overrides:** set `bundler.stateOverride: false` in the chain's
+  `GIANO_CHAINS` entry. The bundler then returns fixed gas limits instead of simulating
+  (`services/bundler/README.md`). On a gas-charging chain, size the caps and balances for them
+  (step 7).
+- **No `eth_getStorageAt`:** nothing to set. wallet-api, giano-doctor and the paymaster SDK read
+  the proxy implementation from its `Upgraded` logs when the storage read fails, in spans of at
+  most 10,000 blocks.
+- **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `deploy:cli` (step 4) and to
+  `provision:paymaster` (step 7). Each request is then signed with `DEPLOYER_PRIVATE_KEY`, so the
+  RPC keeps the operator as `from`. Without it, role-gated calls fail with
+  `AccessControlUnauthorizedAccount`, and the CreateX simulation runs from a random address.
+  The wizard (`pnpm contracts:deploy`) and `pnpm contracts:provision` do not sign their requests,
+  so on such an RPC run these two commands directly.
+
 ## The checklist
 
 ```
@@ -67,6 +84,11 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       <profile>` typed in the wizard. The low-level `deploy:cli core` runs the same chain
       prerequisite checks (CreateX codehash, EntryPoint v0.9, Cancun) but has no prompt, so it
       refuses every mainnet deviation.
+      Where the RPC rewrites `from` on unsigned calls (see above), deploy with the low-level command
+      instead: the wizard does not sign its requests. Load the same key as DEPLOYER_PRIVATE_KEY; the
+      command refuses to start without it:
+        pnpm --filter @appliedblockchain/giano-contracts \
+          deploy:cli core --rpc <url> --chain <profile> --role-admin <bootstrap operator EOA> --signed-rpc
       Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
       code and sends nothing.
       From a committed release, never a fresh build (MC-26): the release's creation code is
@@ -95,6 +117,21 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       address). Sponsorship is per chain: every tenant
       that sponsors here funds a balance HERE, and configures its rules HERE — nothing is
       inherited from another chain (MC-67).
+      contracts:provision does not sign its requests. Where the RPC rewrites `from` on unsigned
+      calls, run provision:paymaster directly with the flags that deploy/contracts/provision-paymaster.sh
+      builds, plus --signed-rpc.
+      On a gas-charging chain with bundler.stateOverride: false, every operation carries the
+      bundler's fixed limits: verification 1,000,000, call 300,000 (unless the wallet sends its
+      own), paymaster verification 200,000 and post-op 100,000. The maximum charge is then about
+      1.6 million gas plus pre-verification gas, times maxFeePerGas, about four times that of a
+      simulated ETH transfer. Settlement still charges the actual cost. Size for that maximum:
+        - the paymaster deposit: it must cover the prefund of every operation in flight;
+        - each tenant's balance on this chain: wallet-api reserves the maximum charge before
+          it signs;
+        - each tenant's maxCostPerTxWei rule, and the platform's wallet-management cap
+          (SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI): a cap below the maximum charge refuses the
+          operation.
+      A gasless chain (base fee 0) needs none of this: the gas part of the charge is 0.
 
 7a. Hand the timelocked roles to the timelock (G9; docs/PAYMASTER-TIMELOCK-RUNBOOK.md §2).
       pnpm contracts:timelock, then pnpm contracts:handoff. The hand-off first checks the timelock
