@@ -12,15 +12,15 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 | 3 | `feat(contracts): sign RPC requests with --signed-rpc (H6)` | group 3 | PR 2 | `giano-contracts` minor |
 | 4 | `feat(contracts): private test ERC-20 for Silent Data chains (H6)` | group 5 | PR 3 | `giano-contracts` minor |
 | 5 | `feat(custom-example): private token section (H6)` | task 4.2, group 6, task 9.1 | PR 4 | none (private package) |
-| 6a | `chore(contracts): adopt iron-kestrel (H6)` | group 8 | PR 5 | none |
-| 6b | `chore(contracts): adopt copper-heron (H6)` | group 7 | PR 6a (top of the stack) | none |
+| 6a | `chore(contracts): adopt iron-kestrel (H6)` | group 8 | PR 5 | `giano-contracts` patch (`addresses.ts`) |
+| 6b | `chore(contracts): adopt copper-heron (H6)` | group 7 | PR 6a (top of the stack) | `giano-contracts` patch (`addresses.ts`) |
 
 - Every PR is one layer of the same stack, based on the PR in the row above. The stack merges bottom-up with `gh stack merge`, with merge commits, never squash. `gh stack merge` merges every PR up to the one chosen in one operation, so the lower layers can merge while a higher layer waits.
 - The stack follows the per-chain-contract-addresses stack (#196–#201). PR 0's branch is `docs/openspec-silent-data-network`. Its description has `## Summary`, `## Open questions` and `## Test plan` (`openspec validate silent-data-network --strict`, `biome ci .`), and says the implementation follows as a `gh stack` set out in this file. Every other PR's description starts "Layer N of the `silent-data-network` stack (OpenSpec change in #<PR 0>, tasks …)", where N is its position from the bottom (PR 0 is layer 1), then has `## What` and `## Verification`.
 - PRs 1, 2 and 3 change separate files, so a rebase of the stack (`gh stack rebase`) does not conflict between them.
 - Task 4.1 is a check, not a PR. It runs before PR 5 is written. If it fails, PR 5 waits, and PRs 0–4 still merge. PRs 6a and 6b sit above PR 5 and wait with it: task 9.2 needs the demo's private token section anyway.
-- PRs 6a and 6b wait for the testnet canonical deployer key. PR 6b also waits for funding of the copper-heron presigned senders. Each commits one `deployments/<chainId>.json`. Each is added to the top of the stack when its work can start.
-- Task 9.2 is recorded in the description of PR 6a and PR 6b, one chain each.
+- PRs 6a and 6b wait for the testnet canonical deployer key. PR 6b also waits for funding of the copper-heron presigned senders. Each commits one `deployments/<chainId>.json` and the `addresses.ts` that `gen:addresses` regenerates from it. The published registry changes, so each carries a `giano-contracts` patch changeset. Each is added to the top of the stack when its work can start.
+- Task 9.2 is recorded in the description of PR 6a and PR 6b, one chain each. PR 6b also records the checks across both chains.
 
 - [x] 0.1 Split the uncommitted work on `feat/silent-data-network` into the branches for PRs 0–3. Each file goes to one branch: the change folder to PR 0; `erc1967.ts`, `deploy/erc1967.test.ts`, `scripts/doctor.ts` and paymaster-sdk `client.ts` to PR 1; `chains.ts`, bundler `config.ts`, `estimator.ts`, `registry.ts` and `test/config.test.ts` to PR 2; `deploy/signed-rpc.ts`, `deploy/cli.ts` and `scripts/provision-paymaster.ts` to PR 3. Verify that each branch passes lint, tests and typecheck on its own, on top of `main`.
 - [x] 0.2 Replace `.changeset/silent-data-rpc-limits.md` with one changeset per PR, as in the table above. Verify that `pnpm changeset status` lists the expected bumps on each branch.

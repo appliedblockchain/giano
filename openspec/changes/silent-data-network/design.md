@@ -133,7 +133,7 @@ The work ships as one stack of PRs, listed at the top of `tasks.md`. It merges b
 3. Release `giano-contracts` and `giano-paymaster-sdk` from the merged changesets. Bump the bundler and wallet-api images.
 4. Merge PR 4 (the private test token) and PR 5 (the demo section), the next two layers.
 5. When the testnet key exists, add PR 6a to the top of the stack: adopt iron-kestrel per `specs/CHAIN-ADOPTION.md`, and commit `deployments/19874.json`. When the copper-heron presigned senders are also funded, add PR 6b on top of it and commit `deployments/19877.json`.
-6. After each adoption PR, add that chain's entry to the dev `chains` secret, and add `privateToken` to the demo's chain list.
+6. After each adoption PR merges, release `giano-contracts` from its changeset, so the published `addresses.ts` lists the new chain. Then add that chain's entry to the dev `chains` secret, and add `privateToken` to the demo's chain list.
 7. Rollback: revert the PR, or remove the chain's entry from the `chains` secret and the demo's chain list. Other chains are unaffected.
 
 ## Open Questions

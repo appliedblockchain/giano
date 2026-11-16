@@ -20,7 +20,7 @@ Silent Data chains come in two kinds, and Giano must work on both with the same 
 Already implemented on branch `feat/silent-data-network` (uncommitted):
 
 - The paymaster proxy's implementation is read from its latest ERC-1967 `Upgraded` event when `eth_getStorageAt` fails. This is used in `erc1967.ts` (new exports `implementationFromUpgradedLogs`, `proxyImplementation`, `UPGRADED_TOPIC`), in `giano-doctor` and in the paymaster SDK. The log walk uses spans of 10,000 blocks.
-- A chain's `bundler` section gains `stateOverride` (default `true`). With `false`, the bundler does not simulate. It returns fixed gas limits, and uses a caller's value where it is higher.
+- A chain's `bundler` section gains `stateOverride` (default `true`). With `false`, the bundler does not simulate. It returns fixed gas limits. It keeps the call gas a caller sends, and a higher verification gas.
 - The bundler accepts a fee of 0 at estimation when the chain's base fee is 0.
 - `deploy:cli` and `provision:paymaster` gain `--signed-rpc`. Each request after the chain id read is signed with the deploying key, so the gateway keeps `from`.
 - A changeset: `giano-contracts` minor, `giano-paymaster-sdk` patch. It is split into one changeset per PR before the PRs open.

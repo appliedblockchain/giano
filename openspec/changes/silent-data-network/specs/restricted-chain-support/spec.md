@@ -26,11 +26,18 @@ When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHA
 - **THEN** the original storage-read error is raised unchanged
 
 ### Requirement: Gas estimation without state overrides
-A chain's `bundler` section SHALL accept `stateOverride`, a boolean whose default is `true`. With `false`, the bundler SHALL estimate a user operation without any `eth_call` state override, and SHALL return fixed limits: verification gas of at least 1,000,000, call gas of 300,000, and paymaster verification gas of at least 200,000 when there is a paymaster. A higher value the caller sends SHALL be kept.
+A chain's `bundler` section SHALL accept `stateOverride`, a boolean whose default is `true`. With `false`, the bundler SHALL estimate a user operation without any `eth_call` state override, and SHALL return fixed limits: verification gas of at least 1,000,000, and paymaster verification gas of at least 200,000 when there is a paymaster. A higher verification or paymaster verification gas that the caller sends SHALL be kept.
 
 #### Scenario: Chain refuses state overrides
 - **WHEN** a chain sets `bundler.stateOverride: false` and a wallet asks for an estimate with no limits
 - **THEN** the estimate returns verification gas 1,000,000 and call gas 300,000, and the RPC receives no `eth_call` with a third parameter
+
+### Requirement: Call gas without state overrides
+On a chain with `stateOverride: false`, the estimated call gas SHALL be 0 when the call data is empty. Otherwise it SHALL be the call gas the caller sends, when that is above 0, and 300,000 when the caller sends none.
+
+#### Scenario: Caller sends no call gas
+- **WHEN** the caller sends call gas 0 with non-empty call data
+- **THEN** the estimate returns call gas 300,000
 
 #### Scenario: Caller knows its call gas
 - **WHEN** the caller sends call gas 120,000 on a chain with `stateOverride: false`
