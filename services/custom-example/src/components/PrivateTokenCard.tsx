@@ -7,7 +7,6 @@ import {
 	encodeFunctionData,
 	getAddress,
 	isAddress,
-	parseUnits,
 } from "viem";
 import { erc20Abi, testErc20Abi } from "../lib/erc20";
 import type { ErrorRecord } from "../lib/errors";
@@ -21,6 +20,7 @@ import {
 import {
 	isBalanceRefusal,
 	otherAccount,
+	parseAmount,
 	readerKey,
 	redactionOf,
 	refusalReason,
@@ -229,7 +229,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 		if (!meta) return;
 		let units: bigint;
 		try {
-			units = parseUnits(amount || "0", meta.decimals);
+			units = parseAmount(amount, meta.decimals);
 		} catch {
 			await refuse(`${op} (invalid amount)`, {
 				amount,
@@ -344,64 +344,62 @@ function PrivateTokenSection({ token }: { token: Address }) {
 	const showOutsider = async () => {
 		setBusy(true);
 		try {
-			const rows: OutsiderRow[] = [];
-			const unsignedLabel = "Your balance, read without a signature";
-			rows.push(
-				judgeBalanceRead(
-					unsignedLabel,
-					wallet,
-					await run(
-						{
-							section: "private-token",
-							label: `Outsider: ${unsignedLabel.toLowerCase()}`,
-							method: "eth_call balanceOf, unsigned",
-							params: { token, account: wallet },
-							chainId,
+			// The signed read goes first: it may ask the wallet to approve the read delegate, and the
+			// wallet opens its popup only right after the click. An unsigned read first would delay it.
+			const other = otherAccount(wallet, latestTransfer?.recipient);
+			const otherLabel = `Balance of ${shortHex(other)}, signed for your wallet`;
+			const signedRow = judgeBalanceRead(
+				otherLabel,
+				other,
+				await run(
+					{
+						section: "private-token",
+						label: `Outsider: ${otherLabel.toLowerCase()}`,
+						method: "eth_call balanceOf, signed for the wallet",
+						params: { token, account: other },
+						chainId,
+						account: wallet,
+						noBalances: true,
+						expected: true,
+						expectedError: refusedRead,
+					},
+					() =>
+						signedClient().readContract({
+							address: token,
+							abi: erc20Abi,
+							functionName: "balanceOf",
+							args: [other],
 							account: wallet,
-							noBalances: true,
-							expected: true,
-							expectedError: refusedRead,
-						},
-						(api) =>
-							api.entry.publicClient.readContract({
-								address: token,
-								abi: erc20Abi,
-								functionName: "balanceOf",
-								args: [wallet],
-							}),
-					),
+						}),
 				),
 			);
 
-			const other = otherAccount(wallet, latestTransfer?.recipient);
-			const otherLabel = `Balance of ${shortHex(other)}, signed for your wallet`;
-			rows.push(
-				judgeBalanceRead(
-					otherLabel,
-					other,
-					await run(
-						{
-							section: "private-token",
-							label: `Outsider: ${otherLabel.toLowerCase()}`,
-							method: "eth_call balanceOf, signed for the wallet",
-							params: { token, account: other },
-							chainId,
-							account: wallet,
-							noBalances: true,
-							expected: true,
-							expectedError: refusedRead,
-						},
-						() =>
-							signedClient().readContract({
-								address: token,
-								abi: erc20Abi,
-								functionName: "balanceOf",
-								args: [other],
-								account: wallet,
-							}),
-					),
+			const unsignedLabel = "Your balance, read without a signature";
+			const unsignedRow = judgeBalanceRead(
+				unsignedLabel,
+				wallet,
+				await run(
+					{
+						section: "private-token",
+						label: `Outsider: ${unsignedLabel.toLowerCase()}`,
+						method: "eth_call balanceOf, unsigned",
+						params: { token, account: wallet },
+						chainId,
+						account: wallet,
+						noBalances: true,
+						expected: true,
+						expectedError: refusedRead,
+					},
+					(api) =>
+						api.entry.publicClient.readContract({
+							address: token,
+							abi: erc20Abi,
+							functionName: "balanceOf",
+							args: [wallet],
+						}),
 				),
 			);
+			const rows: OutsiderRow[] = [unsignedRow, signedRow];
 
 			const txLabel = "Your latest transfer's bundle transaction, unsigned";
 			if (!latestTransfer) {

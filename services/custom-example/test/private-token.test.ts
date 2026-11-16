@@ -4,6 +4,7 @@ import {
 	isBalanceRefusal,
 	OUTSIDER_FALLBACK_ADDRESS,
 	otherAccount,
+	parseAmount,
 	readerKey,
 	redactionOf,
 	refusalReason,
@@ -139,5 +140,22 @@ describe("staleReaderKeys", () => {
 			staleReaderKeys(keys, (chainId) => accounts[chainId]),
 			[readerKey(2, WALLET), readerKey(3, WALLET)],
 		);
+	});
+});
+
+describe("parseAmount", () => {
+	it("reads a decimal amount in base units, and an empty field as 0", () => {
+		assert.equal(parseAmount("1.5", 18), 1_500_000_000_000_000_000n);
+		assert.equal(parseAmount(" 100 ", 0), 100n);
+		assert.equal(parseAmount("", 18), 0n);
+	});
+
+	it("rejects a negative amount and one that does not fit a uint256", () => {
+		assert.throws(() => parseAmount("-5", 18), /negative/);
+		assert.throws(
+			() => parseAmount((2n ** 256n).toString(), 0),
+			/does not fit a uint256/,
+		);
+		assert.equal(parseAmount((2n ** 256n - 1n).toString(), 0), 2n ** 256n - 1n);
 	});
 });
