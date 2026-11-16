@@ -3,7 +3,8 @@
  * Giano contracts and the test fixtures at the local class's deterministic addresses:
  *
  *   CreateX, EntryPoint v0.9, the P-256 verifier, the wallet factory + implementation, the paymaster
- *   (proxy initialised with ROLE_ADMIN on anvil account 0), PrivateERC20 and PermissivePaymaster.
+ *   (proxy initialised with ROLE_ADMIN on anvil account 0), PrivateERC20 and PermissivePaymaster,
+ *   and GianoTestPrivateErc20 when the release carries it (RELEASE=dev today; v1 to v3 predate it).
  *
  * The fixed local deployer (DEPLOYERS.local, deploy/config.ts) is impersonated, so no key is
  * involved, and the addresses never move when a real mainnet or testnet deployer is set. Writes deployments/<chainId>.json
@@ -27,6 +28,7 @@ import {
 	type DeployContext,
 	deployCore,
 	deployTesting,
+	privateTestErc20Wanted,
 } from "../deploy/deploy";
 import {
 	impersonate,
@@ -93,6 +95,7 @@ async function main(): Promise<void> {
 		owner: ANVIL_ACCOUNT_0,
 		entryPoint: ENTRY_POINT_V09,
 		fundWei: parseEther(process.env.PAYMASTER_FUND_ETH ?? "500"),
+		privateTestErc20: privateTestErc20Wanted(release, { local: true }),
 	});
 	log(`recorded in ${writeRecord(ctx.record)}`);
 }

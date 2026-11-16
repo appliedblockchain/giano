@@ -208,9 +208,11 @@ pnpm local:node        # anvil
 pnpm local:deploy      # CreateX, EntryPoint, P-256 verifier, every core contract and fixture
 ```
 
-`local:deploy` impersonates the fixed local deployer, so it needs no key. On a local chain the CLI
-also takes `--release dev` (the working tree, unreleased), `--impersonate`, `install-createx` and
-`install-entrypoint`. The e2e devnet state is built the same way (`e2e/devnet/generate-state.mjs`).
+`local:deploy` impersonates the fixed local deployer, so it needs no key. It deploys the latest
+release, or `RELEASE=<version>`; `RELEASE=dev` deploys the working tree, which also carries the
+private test token `GianoTestPrivateErc20`. On a local chain the CLI also takes `--release dev`
+(the working tree, unreleased), `--impersonate`, `install-createx` and `install-entrypoint`. The
+e2e devnet state is built the same way (`e2e/devnet/generate-state.mjs`).
 
 ## Paymaster signer verification and upgrades
 
