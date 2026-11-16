@@ -27,7 +27,6 @@ export const REGISTER_PATH = "security/accepted-findings.json";
 export const MAX_ACCEPTANCE_DAYS = 180;
 export const CONTRACTS_SRC = "packages/contracts/src";
 export const SLITHER_CONFIG = "packages/contracts/slither.config.json";
-export const ADERYN_CONFIG = "packages/contracts/aderyn.toml";
 export const GITLEAKS_CONFIG = ".gitleaks.toml";
 // The two pnpm workspaces, as `--workspace` and `match.workspace` name them.
 export const WORKSPACES = [".", "services/custom-example"];
@@ -54,7 +53,8 @@ export const PNPM_CONFIG_FILES = [
 const PNPM_AUDIT_SETTING =
 	/\b(auditConfig|audit-config|auditLevel|audit-level|ignoreGhsas|ignore-ghsas|ignoreCves|ignore-cves)\b|^\s*["']?ignore["']?\s*[:=]/m;
 
-// A source comment changes the contract metadata hash, and so the CREATE2 addresses.
+// A source comment changes the contract metadata hash, and so the CREATE2 addresses. The Aderyn
+// comments stay rejected after Aderyn was removed (it is retired), so dead suppressions do not return.
 const IN_SOURCE_SUPPRESSION = /slither-disable|aderyn-ignore|aderyn-fp/;
 
 // The fixed content of each Solidity tool config. Any other setting (detectors_to_exclude,
@@ -73,15 +73,6 @@ export const SLITHER_SCOPE = {
 	exclude_optimization: true,
 	show_ignored_findings: true,
 };
-// aderyn.toml is these lines, in this order, plus blank lines and whole-line `#` comments with the
-// reasons. A line that starts with `#` is a comment in TOML unless an earlier line opened a
-// multi-line string or array, and none of these lines opens one.
-export const ADERYN_LINES = [
-	"version = 1",
-	'root = "."',
-	'src = "src"',
-	'exclude = ["src/testing/"]',
-];
 
 const REQUIRED_FIELDS = [
 	"id",
@@ -117,9 +108,6 @@ const FIELD_TYPES = {
 // keys of one shape. A gitleaks entry can instead name the allowlist in .gitleaks.toml it covers.
 export const MATCH_SHAPES = {
 	slither: [{ check: "string", id: "sha3_256" }],
-	aderyn: [
-		{ detector_name: "string", contract_path: "string", line_no: "line" },
-	],
 	"pnpm-audit": [{ workspace: "workspace", ghsa: "ghsa" }],
 	trivy: [{ image: "string", package: "string", vulnerability: "string" }],
 	gitleaks: [{ fingerprint: "string" }, { allowlist: "string" }],
@@ -130,7 +118,6 @@ export const TOOLS = Object.keys(MATCH_SHAPES);
 // weekly scan reads through the code scanning API.
 export const REPORT_TOOLS = [
 	"slither",
-	"aderyn",
 	"pnpm-audit",
 	"trivy",
 	"gitleaks",
@@ -404,29 +391,6 @@ export function checkSlitherConfig(text, file = SLITHER_CONFIG) {
 			message: `differs from the fixed scope in: ${differs.join(", ")}. Apart from "//" with the reasons, it must be exactly ${JSON.stringify(SLITHER_SCOPE)}. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
 		},
 	];
-}
-
-/** aderyn.toml is exactly ADERYN_LINES plus blank lines and whole-line comments (design D3). */
-export function checkAderynConfig(text, file = ADERYN_CONFIG) {
-	const raw = text.split(/\r?\n/);
-	const lines = raw
-		.map((code, i) => ({ code, line: i + 1 }))
-		.filter(({ code }) => !/^[ \t]*(#.*)?$/.test(code));
-	for (let i = 0; i < Math.max(lines.length, ADERYN_LINES.length); i++) {
-		if (lines[i]?.code === ADERYN_LINES[i]) continue;
-		const found = lines[i] ? `has '${lines[i].code}'` : "ends";
-		const expected =
-			i < ADERYN_LINES.length ? `'${ADERYN_LINES[i]}'` : "nothing more";
-		return [
-			{
-				file,
-				line: lines[i]?.line ?? raw.length,
-				rule: "config-scope",
-				message: `${found} where it must have ${expected}. Apart from blank lines and whole-line # comments, it must be exactly these lines: ${ADERYN_LINES.join(" | ")}. Detectors stay on; record each accepted finding in ${REGISTER_PATH} instead`,
-			},
-		];
-	}
-	return [];
 }
 
 // The register check reads .gitleaks.toml without a TOML library. It reads a plain subset of TOML
@@ -834,22 +798,16 @@ export function checkRepository(root, today) {
 		existsSync(resolve(root, file))
 			? readFileSync(resolve(root, file), "utf8")
 			: null;
-	// Without its config, a tool falls back to its defaults or to another config file, so both
-	// configs must exist while the contracts package does.
-	const contracts = dirname(CONTRACTS_SRC);
-	for (const [file, check] of [
-		[SLITHER_CONFIG, checkSlitherConfig],
-		[ADERYN_CONFIG, checkAderynConfig],
-	]) {
-		const text = read(file);
-		if (text !== null) errs.push(...check(text));
-		else if (existsSync(resolve(root, contracts)))
-			errs.push({
-				file,
-				rule: "config-scope",
-				message: "does not exist. The tool needs it to analyse the fixed scope",
-			});
-	}
+	// Without its config, Slither falls back to its defaults or to another config file, so the
+	// config must exist while the contracts package does.
+	const slitherConfig = read(SLITHER_CONFIG);
+	if (slitherConfig !== null) errs.push(...checkSlitherConfig(slitherConfig));
+	else if (existsSync(resolve(root, dirname(CONTRACTS_SRC))))
+		errs.push({
+			file: SLITHER_CONFIG,
+			rule: "config-scope",
+			message: "does not exist. Slither needs it to analyse the fixed scope",
+		});
 	// If src itself, or a folder above it, is a symlink, the tools resolve the paths outside the
 	// fixed scope and drop every finding.
 	const src = resolve(root, CONTRACTS_SRC);
@@ -937,19 +895,6 @@ function requireArray(value, what) {
 const optionalArray = (value, what) =>
 	value === undefined ? [] : requireArray(value, what);
 
-// An Aderyn issue with no instance would add no finding, so a listed High would pass unseen.
-function requireInstances(issue) {
-	const instances = requireArray(
-		issue.instances,
-		`${issue.detector_name} instances`,
-	);
-	if (instances.length === 0)
-		throw new ReportError(
-			`Aderyn issue ${issue.detector_name} lists no instances`,
-		);
-	return instances;
-}
-
 // Each parser returns [{ key, gating, label }]. `key` holds the same fields as the tool's match
 // shape, so an entry matches when every field of its `match` equals the finding's key.
 export const PARSERS = {
@@ -974,48 +919,6 @@ export const PARSERS = {
 				label: `${d.check} (${d.impact}) at ${d.first_markdown_element ?? "unknown location"}`,
 			}),
 		);
-	},
-	aderyn(report) {
-		if (
-			!isObject(report) ||
-			!isObject(report.high_issues) ||
-			!isObject(report.low_issues)
-		)
-			throw new ReportError("Aderyn report has no high_issues and low_issues");
-		// Aderyn 0.6.8 has two categories. Any other one (older versions had critical and medium)
-		// would be ignored, so it makes the report invalid.
-		const categories = Object.keys(report).filter((k) => k.endsWith("_issues"));
-		if (categories.some((k) => k !== "high_issues" && k !== "low_issues"))
-			throw new ReportError(
-				`Aderyn report has unknown categories: ${categories.join(", ")}`,
-			);
-		for (const level of ["high", "low"]) {
-			const issues = requireArray(
-				report[`${level}_issues`].issues,
-				`${level}_issues.issues`,
-			);
-			if (report.issue_count?.[level] !== issues.length)
-				throw new ReportError(
-					`Aderyn report counts ${report.issue_count?.[level]} ${level} issues but lists ${issues.length}`,
-				);
-		}
-		const instances = (issues, gating) =>
-			requireArray(issues.issues, "issues").flatMap((issue) =>
-				requireInstances(issue).map((x) => ({
-					key: {
-						detector_name: issue.detector_name,
-						contract_path: x.contract_path,
-						line_no: x.line_no,
-					},
-					gating,
-					severity: gating ? "high" : "low",
-					label: `${issue.detector_name} (${gating ? "High" : "Low"}) at ${x.contract_path}:${x.line_no}`,
-				})),
-			);
-		return [
-			...instances(report.high_issues, true),
-			...instances(report.low_issues, false),
-		];
 	},
 	"pnpm-audit"(report, { workspace }) {
 		if (!isObject(report))
@@ -1143,10 +1046,9 @@ const matches = (entry, key) =>
 
 // Tools whose findings change only when the contract source or the pinned tool version changes. For
 // these, every entry must match a finding in each report. An entry that matches nothing fails, so the
-// PR that fixes or moves a finding also removes or updates its entry. Otherwise a stale Aderyn entry,
-// which matches only a detector, a file and a line, would later accept a different finding that lands
-// on the same line.
-export const FULL_SCAN_TOOLS = ["slither", "aderyn"];
+// PR that fixes or moves a finding also removes or updates its entry. Otherwise a stale entry would
+// later accept a different finding.
+export const FULL_SCAN_TOOLS = ["slither"];
 
 /**
  * Decides one report. Returns { accepted: [{ entry, label }], failures: [{ label, message }],
