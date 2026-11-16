@@ -471,6 +471,14 @@ const balance = await privateClient.readContract({
   cannot sign reads. Its first transaction deploys it.
 - **Expiry.** The RPC refuses a ticket that expires more than 12 hours ahead. The reader uses
   1 hour, and the first read within a minute of the expiry asks the wallet for a new approval.
+- **Start the approval from a click.** The approval opens the wallet's popup, and the browser
+  opens it only right after a click. So start a read that may need an approval (the first read,
+  or one near the expiry) directly from a click, before any other request. A read that waits for
+  a transaction or another request first fails with `POPUP_BLOCKED`. The demo reads again after a
+  send only while `reader.delegate` is set.
+- **Drop the reader when the session ends.** The reader holds an approved delegate key, valid for
+  up to 1 hour. Drop it when the wallet's session on that chain ends or changes account, so a new
+  session asks for a new approval.
 - **What outsiders see.** An unsigned read of a balance, or a read signed for the wallet of another
   account's balance, is refused. An unsigned read of a transaction returns placeholders for its
   calldata, sender and value. The bundler answers `eth_getUserOperationByHash` with `null` for such
