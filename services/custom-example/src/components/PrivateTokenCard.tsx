@@ -45,6 +45,10 @@ import {
 import { Field } from "./ui/field";
 
 type Meta = { name: string; symbol: string; decimals: number };
+
+/** The ledger note on a send that is not followed by a balance read, because no delegate is approved. */
+const NO_AUTOMATIC_READ =
+	'balance not read after this send: the read delegate needs approval, and the wallet opens its popup only from a click on "Read my balance (signed)"';
 type OutsiderRow = {
 	label: string;
 	tone: Tone;
@@ -65,7 +69,7 @@ const readers = new Map<string, SignedReader>();
  * `privateToken`.
  */
 export function PrivateTokenCard() {
-	const { selected, state } = useDemo();
+	const { selected, state, account } = useDemo();
 	// This card stays mounted across chain switches, so it watches every chain's session, not only the
 	// selected one: a reader is dropped as soon as its session ends or changes account.
 	useEffect(() => {
@@ -77,8 +81,14 @@ export function PrivateTokenCard() {
 	}, [state.sessions]);
 	const token = selected.config.privateToken;
 	if (!token) return null;
-	// Keyed by chain: a chain switch starts the section afresh.
-	return <PrivateTokenSection key={selected.chainId} token={token} />;
+	// Keyed by chain and account: a chain switch, a new session or another account starts the section
+	// afresh, and a read or send still pending for the previous one cannot update the new one.
+	return (
+		<PrivateTokenSection
+			key={`${selected.chainId}:${account ?? ""}`}
+			token={token}
+		/>
+	);
 }
 
 function PrivateTokenSection({ token }: { token: Address }) {
@@ -96,6 +106,8 @@ function PrivateTokenSection({ token }: { token: Address }) {
 	const [recipient, setRecipient] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [outsider, setOutsider] = useState<OutsiderRow[]>();
+	// A send succeeded, but the balance was not read after it: see `send`.
+	const [unread, setUnread] = useState(false);
 
 	// Name, symbol and decimals are public: read them unsigned.
 	useEffect(() => {
@@ -127,13 +139,6 @@ function PrivateTokenSection({ token }: { token: Address }) {
 			live = false;
 		};
 	}, [entry, token]);
-
-	// A new session (or none) starts without a balance. PrivateTokenCard drops the session's reader.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `account` is a trigger: a new session clears the previous one's results
-	useEffect(() => {
-		setBalance(undefined);
-		setOutsider(undefined);
-	}, [account]);
 
 	// The RPC checks a signed read against the wallet's code (ERC-1271), so a counterfactual wallet cannot read.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `settled` is a trigger: another card can deploy the wallet, so check again after every operation settles
@@ -210,7 +215,10 @@ function PrivateTokenSection({ token }: { token: Address }) {
 				return { reader: wallet, balance: value.toString() };
 			},
 		);
-		if (outcome.result) setBalance(BigInt(outcome.result.balance));
+		if (outcome.result) {
+			setBalance(BigInt(outcome.result.balance));
+			setUnread(false);
+		}
 	};
 
 	const send = async (op: "mint" | "transfer") => {
@@ -258,7 +266,12 @@ function PrivateTokenSection({ token }: { token: Address }) {
 					declaredPayer: "sponsored",
 					sponsoredSend: true,
 				},
-				(api) => submitTransaction(api, { to: token, data }),
+				async (api) => {
+					const receipt = await submitTransaction(api, { to: token, data });
+					if (receipt.success !== false && !reader.delegate)
+						api.update({ note: NO_AUTOMATIC_READ });
+					return receipt;
+				},
 			);
 			if (outcome.error || outcome.result?.success === false) return;
 			// The first mint deploys the wallet, so check again before reading.
@@ -267,10 +280,14 @@ function PrivateTokenSection({ token }: { token: Address }) {
 				.catch(() => undefined);
 			const isDeployed = Boolean(code && code !== "0x");
 			setDeployed(isDeployed);
-			if (isDeployed)
+			if (!isDeployed) return;
+			// Read again only with an approved delegate. Otherwise the read would open the wallet's
+			// approval popup long after the click, and the browser would block it (POPUP_BLOCKED).
+			if (reader.delegate)
 				await readBalance(
 					`after ${op === "mint" ? "minting" : "transferring"} ${amount} ${meta.symbol}`,
 				);
+			else setUnread(true);
 		} finally {
 			setBusy(false);
 		}
@@ -479,6 +496,13 @@ function PrivateTokenSection({ token }: { token: Address }) {
 					],
 				]}
 			/>
+			{unread && (
+				<StatusText tone="gray">
+					Your balance changed. Click "Read my balance (signed)" to read it: the
+					read asks your wallet to approve the read delegate, and the wallet
+					opens its popup only from a click.
+				</StatusText>
+			)}
 			{deployed === false && (
 				<StatusText tone="orange">
 					Deploy the wallet first. The RPC checks a signed read against the
