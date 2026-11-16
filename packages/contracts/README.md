@@ -203,8 +203,9 @@ so a chain at non-deterministic addresses is verified where it is; see
 `scripts/deployer-entrypoint.mjs`. On an RPC that refuses `eth_getStorageAt` (Silent Data),
 `ACCEPT_UNVERIFIED_IMPLEMENTATION=true` passes `--accept-unverified-implementation` to `core`. Without `DEPLOYER_PRIVATE_KEY` it only verifies, which is how the
 Helm pre-install Job runs in a client's cluster. Never give it a canonical deployer key there.
-The image's `giano-addresses.<chainId>.json` lists the test fixtures only with `DEPLOY_TESTING=true`,
-the one run that checks their code on chain.
+The image's `giano-addresses.<chainId>.json` lists only the test fixtures that `testing` checked on
+chain in the same run: none without `DEPLOY_TESTING=true`, and the private test token only on a chain
+that gets it (a local chain, or a profile that opts in).
 
 ### Local chains
 
