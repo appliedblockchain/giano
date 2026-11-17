@@ -89,7 +89,7 @@ const ANVIL_PORT = 8547;
  * quietly not running, which is worse than it failing.
  */
 const ANVIL_IMAGE =
-	"ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd";
+	"ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd"; // v1.7.1
 const ANVIL_CONTAINER = "giano-paymaster-chain-test";
 const RPC_URL = `http://127.0.0.1:${ANVIL_PORT}`;
 const CHAIN_ID = 31337;
