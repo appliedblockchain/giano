@@ -24,6 +24,7 @@ import {
 	DEPLOYERS,
 	ENTRY_POINT_V09,
 	isClassDeployer,
+	isMainnetChain,
 	type NetworkClass,
 } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
@@ -491,6 +492,29 @@ export async function scanStartProblem(
 	}
 	if (code && code !== "0x")
 		return `--from-block ${fromBlock} is after the timelock's deployment: ${timelock} already has code at block ${before}, so the scan would skip the role grants made at deployment`;
+	return undefined;
+}
+
+/**
+ * Why `deploy:cli test-token` must not run, or undefined when it may. Never on a mainnet (the token is
+ * a test fixture, R-29). Only from the class's canonical deployer on a public chain, so the token lands
+ * at the address the profiles and allowlists expect: the operator files use `DEPLOYER_PRIVATE_KEY`
+ * for the bootstrap admin, and a run with one loaded would otherwise deploy from that key elsewhere
+ * (testnet rollout finding F12). Without a key the run only verifies.
+ */
+export function testTokenProblem(options: {
+	chainId: number;
+	network: NetworkClass;
+	local: boolean;
+	signer?: Address;
+	canonical: Address | null;
+}): string | undefined {
+	const { chainId, network, local, signer, canonical } = options;
+	if (isMainnetChain(chainId, network))
+		return `chain ${chainId} is a mainnet; the test ERC-20 is a test fixture and never goes there (R-29)`;
+	if (local || !signer) return undefined;
+	if (!canonical || getAddress(signer) !== getAddress(canonical))
+		return `signer ${getAddress(signer)} is not the ${network} canonical deployer ${canonical ?? "(not configured)"}: the test ERC-20 would land at another address. Load the canonical deployer key as DEPLOYER_PRIVATE_KEY for this command only, without an operator file`;
 	return undefined;
 }
 

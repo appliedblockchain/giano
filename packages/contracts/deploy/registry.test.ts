@@ -153,6 +153,33 @@ test("address-overrides.json cannot set a Giano contract", () => {
 	);
 });
 
+test("the served testnets may carry the test ERC-20 but never the permissive paymaster; a mainnet neither", () => {
+	const token = contract(
+		"0x7777777777777777777777777777777777777777",
+		"PrivateERC20",
+	);
+	const permissive = contract(
+		"0x6666666666666666666666666666666666666666",
+		"PermissivePaymaster",
+	);
+	// Base Sepolia: on the production list (served) but a testnet.
+	const served = { ...record(), chainId: 84532, network: "testnet" as const };
+	served.contracts.testErc20 = token;
+	assert.doesNotThrow(() => generate(served));
+	served.contracts.testPaymaster = permissive;
+	assert.throws(
+		() => generate(served),
+		/chain 84532 is a production chain but carries testPaymaster/,
+	);
+	// Base mainnet: no test ERC-20 either.
+	const mainnet = record();
+	mainnet.contracts.testErc20 = token;
+	assert.throws(
+		() => generate(mainnet),
+		/chain 8453 is a mainnet but carries testErc20/,
+	);
+});
+
 test("a chain recorded as mainnet is a production chain for R-29, listed or not", () => {
 	const mainnet = { ...record(), chainId: 4242 };
 	mainnet.contracts.testPaymaster = contract(

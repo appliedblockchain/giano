@@ -5,6 +5,9 @@
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
  *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
+ *   pnpm deploy:cli test-token --rpc <url> --holder <0x…>
+ *       The test ERC-20 alone, for the reference dApp: allowed on the served testnets, never on a
+ *       mainnet, and only from the class's canonical deployer (R-29 keeps `testing` off both).
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
  *   pnpm deploy:cli timelock --rpc <url> --proposer <safe> [--proposer …] [--executor <0x…> …]
@@ -103,6 +106,7 @@ import {
 	type DeployContext,
 	deployCore,
 	deployTesting,
+	deployTestToken,
 	deployTimelock,
 	deployUpgradeTarget,
 	paymasterUpgradeCalldata,
@@ -131,6 +135,7 @@ import {
 	handOffScanStart,
 	isContractAccount,
 	scanStartProblem,
+	testTokenProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -693,6 +698,20 @@ async function main(): Promise<void> {
 			save(ctx);
 			return;
 		}
+		case "test-token": {
+			const ctx = await deployerContext({ verifyOnly: true });
+			const problem = testTokenProblem({
+				chainId: ctx.chainId,
+				network: ctx.network,
+				local: ctx.local,
+				signer: ctx.walletClient?.account.address,
+				canonical: classDeployer(ctx.network),
+			});
+			if (problem) throw new Error(problem);
+			await deployTestToken(ctx, release(ctx.local), address("holder"));
+			save(ctx);
+			return;
+		}
 		case "upgrade": {
 			const ctx = await deployerContext();
 			const which = required("contract");
@@ -974,7 +993,7 @@ async function main(): Promise<void> {
 		}
 		default:
 			console.error(
-				"usage: giano-deploy addresses | core | testing | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
+				"usage: giano-deploy addresses | core | testing | test-token | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
 			);
 			process.exit(2);
 	}

@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	CONTRACT_OF,
+	isMainnetChain,
 	isProductionChain,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
@@ -157,16 +158,25 @@ export function generateRegistry(
 		})
 		.join("\n");
 
-	// R-29 layer 2: a testing artifact on a production chain (the fixed list, or any chain recorded
-	// as mainnet) is a build failure, not a warning.
+	// R-29 layer 2: the permissive paymaster on a production chain (the fixed list, served testnets
+	// included, or any chain recorded as mainnet) is a build failure, not a warning. The test ERC-20
+	// moves no sponsorship funds: the served testnets may carry it for the reference dApp, a mainnet
+	// never does.
 	for (const [id, record] of Object.entries(chains)) {
 		const chainId = Number(id);
-		if (!isProductionChain(chainId, networks[chainId])) continue;
-		for (const field of ["testPaymaster", "testErc20"]) {
+		const forbidden = [
+			...(isProductionChain(chainId, networks[chainId])
+				? ["testPaymaster"]
+				: []),
+			...(isMainnetChain(chainId, networks[chainId]) ? ["testErc20"] : []),
+		];
+		for (const field of forbidden) {
 			if (record[field]) {
 				throw new Error(
-					`chain ${chainId} is a production chain but carries ${field}=${record[field]}. ` +
-						"Testing contracts must never be deployed to a production chain.",
+					`chain ${chainId} is a ${field === "testErc20" ? "mainnet" : "production chain"} but carries ${field}=${record[field]}. ` +
+						(field === "testErc20"
+							? "The test ERC-20 must never be deployed to a mainnet."
+							: "Testing contracts must never be deployed to a production chain."),
 				);
 			}
 		}

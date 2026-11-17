@@ -386,12 +386,16 @@ export async function deployCore(
 }
 
 /** PrivateERC20 and PermissivePaymaster. Never on a production chain (the CLI enforces it). */
-export async function deployTesting(
+/**
+ * The test ERC-20 alone (`PrivateERC20`, anyone may mint): the reference dApp's token. Unlike the
+ * permissive paymaster it moves no sponsorship funds, so the served testnets may carry it (R-29 is
+ * about the permissive paymaster); `deployTesting` deploys it together with that paymaster.
+ */
+export async function deployTestToken(
 	ctx: DeployContext,
 	release: Release,
-	params: TestingParams,
+	holder: Address,
 ): Promise<void> {
-	const c = release.contracts;
 	record(
 		ctx,
 		"testErc20",
@@ -399,12 +403,22 @@ export async function deployTesting(
 			label: LABELS.testErc20,
 			release: release.version,
 			contract: CONTRACT_OF.testErc20,
-			initCode: withArgs(c.PrivateERC20.creationCode, "uint256, address", [
-				100_000_000_000_000n * 10n ** 18n,
-				params.holder,
-			]),
+			initCode: withArgs(
+				release.contracts.PrivateERC20.creationCode,
+				"uint256, address",
+				[100_000_000_000_000n * 10n ** 18n, holder],
+			),
 		}),
 	);
+}
+
+export async function deployTesting(
+	ctx: DeployContext,
+	release: Release,
+	params: TestingParams,
+): Promise<void> {
+	const c = release.contracts;
+	await deployTestToken(ctx, release, params.holder);
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
 		release: release.version,
