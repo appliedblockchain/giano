@@ -96,7 +96,7 @@ export async function httpFetchJson(url) {
 /** Releases of an npm package. */
 export async function npmReleases(fetchJson, name) {
 	const doc = await fetchJson(
-		`https://registry.npmjs.org/${name.replace("/", "%2F")}`,
+		`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`,
 	);
 	return Object.entries(doc?.time ?? {})
 		.filter(([version]) => parseVersion(version))
