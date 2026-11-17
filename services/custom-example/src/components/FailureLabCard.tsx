@@ -105,8 +105,11 @@ export function FailureLabCard() {
 				noBalances: true,
 			},
 			async () => {
+				const otherWalletUrl = config.otherWalletUrl;
+				if (!otherWalletUrl)
+					throw new Error("GIANO_OTHER_WALLET_URL is not set");
 				const foreign = registry.foreignProvider(
-					config.otherWalletUrl!,
+					otherWalletUrl,
 					selected.chainId,
 				);
 				try {
@@ -234,11 +237,12 @@ export function FailureLabCard() {
 				expected: true,
 			},
 			async (api) => {
+				if (!account) throw new Error("no connected account");
 				// Precondition the dApp CAN check: the account must hold nothing on this chain, or the
 				// operation would simply be paid for. The one it cannot check — whether the wallet serves
 				// this chain unsponsored (G1) — is attributed from the receipt afterwards instead.
 				const balance = await api.entry.publicClient.getBalance({
-					address: account!,
+					address: account,
 				});
 				if (balance > 0n) {
 					api.update({
@@ -248,7 +252,7 @@ export function FailureLabCard() {
 						`account balance is ${balance.toString()} wei, not zero — the self-paid failure needs an empty account`,
 					);
 				}
-				return submitTransaction(api, { to: account!, value: "0x0" });
+				return submitTransaction(api, { to: account, value: "0x0" });
 			},
 		),
 	);

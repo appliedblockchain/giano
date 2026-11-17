@@ -212,11 +212,11 @@ export function ChainCard() {
 				<StatusText
 					tone={served === undefined ? "gray" : served ? "green" : "orange"}
 				>
-					{served === undefined
+					{advertised === undefined
 						? "served by the wallet: unknown until a handshake"
 						: served
 							? "served by the wallet"
-							: `not served by the wallet (it serves ${advertised!.join(", ")})`}
+							: `not served by the wallet (it serves ${advertised.join(", ")})`}
 				</StatusText>
 				<HStack gap="2">
 					<Text fontSize="sm" color="fg.muted">

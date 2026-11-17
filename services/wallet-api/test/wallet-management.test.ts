@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -621,8 +622,8 @@ describe("removal (WM-29…WM-31)", () => {
 		const removedRow = credentials.find(
 			(credential) => credential.credentialId === credentialIdB,
 		);
-		expect(removedRow).toBeDefined();
-		expect(removedRow!.removedAt).not.toBeNull();
+		assert(removedRow, "expected the removed credential to still be listed");
+		expect(removedRow.removedAt).not.toBeNull();
 
 		// options for sign-in no longer offer the removed credential
 		const options = await getOptions("removal-user", "authentication");

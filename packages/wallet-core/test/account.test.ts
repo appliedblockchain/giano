@@ -247,8 +247,10 @@ describe("toGianoSmartAccount — stub signature & gas", () => {
 			factoryAddress: FACTORY_ADDRESS,
 			address: WALLET_ADDRESS,
 		});
+		if (!webAuthnAccount.userOperation?.estimateGas)
+			throw new Error("the account defines no estimateGas hook");
 		expect(
-			await webAuthnAccount.userOperation!.estimateGas!({
+			await webAuthnAccount.userOperation.estimateGas({
 				verificationGasLimit: 1n,
 			} as never),
 		).toEqual({ verificationGasLimit: 800_000n });
@@ -259,8 +261,10 @@ describe("toGianoSmartAccount — stub signature & gas", () => {
 			factoryAddress: FACTORY_ADDRESS,
 			address: WALLET_ADDRESS,
 		});
+		if (!addressAccount.userOperation?.estimateGas)
+			throw new Error("the account defines no estimateGas hook");
 		expect(
-			await addressAccount.userOperation!.estimateGas!({} as never),
+			await addressAccount.userOperation.estimateGas({} as never),
 		).toBeUndefined();
 	});
 });

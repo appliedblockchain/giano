@@ -10,6 +10,7 @@ import {
 	toRpcError,
 } from "../src/requests";
 import type { WalletRuntime } from "../src/runtimes";
+import { pendingOf } from "./helpers";
 
 const input = (
 	overrides: Partial<Omit<PendingRequest, "approve" | "reject">> = {},
@@ -34,7 +35,7 @@ describe("the single-slot consent queue (WK-10)", () => {
 		expect(store.current?.kind).toBe("connect");
 		expect(store.current?.chainName).toBe("Devnet");
 
-		store.current!.approve();
+		pendingOf(store).approve();
 		await expect(consent).resolves.toBeUndefined();
 		expect(store.current).toBeNull();
 		expect(seen).toEqual([
@@ -47,7 +48,7 @@ describe("the single-slot consent queue (WK-10)", () => {
 	it("maps a rejection to EIP-1193 4001 (WK-09)", async () => {
 		const store = createRequestStore();
 		const consent = store.requestConsent(input());
-		store.current!.reject();
+		pendingOf(store).reject();
 		await expect(consent).rejects.toMatchObject({
 			code: RPC_ERRORS.USER_REJECTED,
 		});
@@ -56,7 +57,7 @@ describe("the single-slot consent queue (WK-10)", () => {
 	it("answers a request whose session ended with 4100, not 4001 (G5)", async () => {
 		const store = createRequestStore();
 		const consent = store.requestConsent(input({ kind: "transaction" }));
-		store.current!.sessionEnded();
+		pendingOf(store).sessionEnded();
 		await expect(consent).rejects.toMatchObject({
 			code: RPC_ERRORS.UNAUTHORIZED,
 		});
@@ -73,7 +74,7 @@ describe("the single-slot consent queue (WK-10)", () => {
 		).rejects.toMatchObject({
 			code: RPC_ERRORS.INTERNAL,
 		});
-		store.current!.approve();
+		pendingOf(store).approve();
 		await first;
 	});
 });

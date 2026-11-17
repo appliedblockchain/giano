@@ -4,6 +4,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { credentials, walletManagementLog } from "../db/schema.js";
+import { requireSessionOf } from "../plugins/auth.js";
 import { ApiError } from "../plugins/error-handler.js";
 import type { ChainRegistry } from "../services/chains.js";
 import { isOwnerPublicKeyOnChain } from "../services/owner-check.js";
@@ -52,14 +53,20 @@ export default async function credentialRoutes(
 			},
 		},
 		async (request) => {
-			const session = request.session!;
+			const session = requireSessionOf(request);
 			const credential = await db.query.credentials.findFirst({
 				where: eq(credentials.id, session.credentialId),
 			});
+			// A session references its credential by foreign key, so the row exists.
+			if (!credential) {
+				throw new Error(
+					`credential ${session.credentialId} of the session is missing`,
+				);
+			}
 			return {
 				externalUserId: session.externalUserId,
 				walletAddress: session.walletAddress,
-				credentialId: credential!.credentialId,
+				credentialId: credential.credentialId,
 			};
 		},
 	);
@@ -88,7 +95,7 @@ export default async function credentialRoutes(
 					removedAt: credentials.removedAt,
 				})
 				.from(credentials)
-				.where(eq(credentials.userId, request.session!.userId));
+				.where(eq(credentials.userId, requireSessionOf(request).userId));
 			return {
 				credentials: rows.map((row) => ({
 					...row,
@@ -112,7 +119,7 @@ export default async function credentialRoutes(
 		async (request) => {
 			const row = await db.query.credentials.findFirst({
 				where: and(
-					eq(credentials.userId, request.session!.userId),
+					eq(credentials.userId, requireSessionOf(request).userId),
 					eq(credentials.credentialId, request.params.credentialId),
 				),
 			});
@@ -147,7 +154,7 @@ export default async function credentialRoutes(
 				.set({ name: request.body.name })
 				.where(
 					and(
-						eq(credentials.userId, request.session!.userId),
+						eq(credentials.userId, requireSessionOf(request).userId),
 						eq(credentials.credentialId, request.params.credentialId),
 					),
 				)
@@ -190,7 +197,7 @@ export default async function credentialRoutes(
 			},
 		},
 		async (request) => {
-			const session = request.session!;
+			const session = requireSessionOf(request);
 			const row = await db.query.credentials.findFirst({
 				where: and(
 					eq(credentials.userId, session.userId),
@@ -276,7 +283,7 @@ export default async function credentialRoutes(
 			},
 		},
 		async (request) => {
-			await sessions.revoke(request.session!.sessionId);
+			await sessions.revoke(requireSessionOf(request).sessionId);
 			return { ok: true as const };
 		},
 	);
@@ -295,7 +302,7 @@ export default async function credentialRoutes(
 			},
 		},
 		async (request) => {
-			const { tenantId, userId } = request.session!;
+			const { tenantId, userId } = requireSessionOf(request);
 			const revoked = await sessions.revokeAllForUser(tenantId, userId);
 			return { ok: true as const, revoked };
 		},

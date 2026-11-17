@@ -188,7 +188,9 @@ const templates = [
 
 const bySelector = new Map<string, Mapping>();
 for (const template of templates) {
-	for (const key of Object.keys(template.display!.formats!))
+	const formats = template.display?.formats;
+	if (!formats) throw new Error("built-in template without display formats");
+	for (const key of Object.keys(formats))
 		bySelector.set(functionSelector(key), template);
 }
 
@@ -203,12 +205,14 @@ export function bindBuiltin(
 	chainId: number,
 	contract: string,
 ): Mapping {
+	const contractContext = template.context?.contract;
+	if (!contractContext) throw new Error("built-in template without a contract");
 	return {
 		...template,
 		context: {
 			...template.context,
 			contract: {
-				...template.context!.contract!,
+				...contractContext,
 				deployments: [{ chainId, address: contract.toLowerCase() }],
 			},
 		},

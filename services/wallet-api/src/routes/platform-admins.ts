@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { requirePlatformAdminOf } from "../plugins/auth.js";
 import {
 	type PlatformAdmin,
 	type PlatformAdminService,
@@ -128,7 +129,7 @@ export default async function platformAdminRoutes(
 			try {
 				const rows = await opts.admins.sessions(
 					request.params.id,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				return {
 					sessions: rows.map((row) => ({
@@ -163,7 +164,7 @@ export default async function platformAdminRoutes(
 			try {
 				await opts.admins.endSession(
 					request.params.sessionId,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				request.log.info(
 					{ sessionId: request.params.sessionId },
@@ -189,7 +190,10 @@ export default async function platformAdminRoutes(
 		},
 		async (request, reply) => {
 			try {
-				const row = await opts.admins.add(request.body, request.platformAdmin!);
+				const row = await opts.admins.add(
+					request.body,
+					requirePlatformAdminOf(request),
+				);
 				request.log.info({ adminId: row.id }, "platform admin added");
 				return reply.code(201).send(adminView(row));
 			} catch (error) {
@@ -212,7 +216,10 @@ export default async function platformAdminRoutes(
 		},
 		async (request, reply) => {
 			try {
-				await opts.admins.remove(request.params.id, request.platformAdmin!);
+				await opts.admins.remove(
+					request.params.id,
+					requirePlatformAdminOf(request),
+				);
 				request.log.info(
 					{ adminId: request.params.id },
 					"platform admin removed",

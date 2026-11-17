@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { and, eq } from "drizzle-orm";
 import type { PublicClient } from "viem";
 import {
@@ -353,8 +354,12 @@ describe("GET /v1/platform/drift", () => {
 		const rows = await ctx.db
 			.select({ id: tenants.id, slug: tenants.slug })
 			.from(tenants);
-		idA = rows.find((row) => row.slug === TENANT_A.slug)!.id;
-		idB = rows.find((row) => row.slug === TENANT_B.slug)!.id;
+		const rowA = rows.find((row) => row.slug === TENANT_A.slug);
+		const rowB = rows.find((row) => row.slug === TENANT_B.slug);
+		assert(rowA, "expected tenant A to exist");
+		assert(rowB, "expected tenant B to exist");
+		idA = rowA.id;
+		idB = rowB.id;
 		// both registered and funded on chain; the watcher has synced both to block 90
 		for (const id of [idA, idB]) {
 			ctx.paymasterState.registered.add(bytes16(id));
@@ -476,9 +481,10 @@ describe("GET /v1/platform/drift", () => {
 
 	it("answers for each chain on its own: one that cannot be read is an error for that chain", async () => {
 		const token = await platformSignIn(ctx.app, ADMIN);
-		const chain = ctx.app.chains.get(31337);
+		const { paymaster } = ctx.app.chains.get(31337);
+		assert(paymaster, "expected the chain to have a paymaster");
 		const roster = vi
-			.spyOn(chain.paymaster!, "roster")
+			.spyOn(paymaster, "roster")
 			.mockRejectedValue(
 				new Error("HTTP request failed. URL: http://node/v2/key"),
 			);
@@ -679,9 +685,10 @@ describe("GET /v1/platform/drift", () => {
 	});
 
 	it("says which tenants it could not compare, rather than guessing, through the endpoint too", async () => {
-		const chain = ctx.app.chains.get(31337);
+		const { paymaster } = ctx.app.chains.get(31337);
+		assert(paymaster, "expected the chain to have a paymaster");
 		const tenantAt = vi
-			.spyOn(chain.paymaster!, "tenantAt")
+			.spyOn(paymaster, "tenantAt")
 			.mockRejectedValue(new Error("missing trie node"));
 		try {
 			const token = await platformSignIn(ctx.app, ADMIN);

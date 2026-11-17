@@ -13,7 +13,9 @@ import {
 	pendingAdditions,
 	walletManagementLog,
 } from "../db/schema.js";
+import { requireSessionOf } from "../plugins/auth.js";
 import { ApiError } from "../plugins/error-handler.js";
+import { requireTenantOf } from "../plugins/tenant.js";
 import type { ChainRegistry } from "../services/chains.js";
 import type { ChallengeService } from "../services/challenges.js";
 import { isOwnerPublicKeyOnChain } from "../services/owner-check.js";
@@ -159,12 +161,31 @@ export default async function walletManagementRoutes(
 		);
 	};
 
+	/**
+	 * The key deposited into a filled slot. The fill step writes all four fields with the "filled"
+	 * status in one update, so a filled slot without them is a broken row, never a client error.
+	 */
+	const depositedKeyOf = (slot: PendingRow) => {
+		const { credentialId, cosePublicKey, publicKeyX, publicKeyY } = slot;
+		if (
+			credentialId === null ||
+			cosePublicKey === null ||
+			publicKeyX === null ||
+			publicKeyY === null
+		) {
+			throw new Error(
+				`pending addition ${slot.id} is filled but holds no deposited key`,
+			);
+		}
+		return { credentialId, cosePublicKey, publicKeyX, publicKeyY };
+	};
+
 	/** Resolves a slot owned by the calling session; unknown and foreign are indistinguishable (no oracle). */
 	const ownSlot = async (
 		request: FastifyRequest,
 		id: string,
 	): Promise<PendingRow> => {
-		const session = request.session!;
+		const session = requireSessionOf(request);
 		const slot = await db.query.pendingAdditions.findFirst({
 			where: eq(pendingAdditions.id, id),
 		});
@@ -210,7 +231,7 @@ export default async function walletManagementRoutes(
 			},
 		},
 		async (request, reply) => {
-			const session = request.session!;
+			const session = requireSessionOf(request);
 			// WM-19's per-user rate limit, as a cap on concurrently open slots: a claim code is
 			// guessable in proportion to how many are outstanding, so the bound is on that.
 			const [{ value: openCount }] = await db
@@ -308,7 +329,7 @@ export default async function walletManagementRoutes(
 				.set({ status: "declined" })
 				.where(eq(pendingAdditions.id, slot.id));
 			await audit(
-				request.session!,
+				requireSessionOf(request),
 				slot.walletAddress,
 				"pending-declined",
 				"ok",
@@ -357,7 +378,7 @@ export default async function walletManagementRoutes(
 			},
 		},
 		async (request, reply) => {
-			const session = request.session!;
+			const session = requireSessionOf(request);
 			const slot = await ownSlot(request, request.params.id);
 			if (slot.status === "open") {
 				throw new ApiError(
@@ -367,6 +388,7 @@ export default async function walletManagementRoutes(
 				);
 			}
 			if (slot.status !== "filled") refuseDead(slot);
+			const deposited = depositedKeyOf(slot);
 
 			const served = registry.servedChainIds();
 			const unknown = request.body.chainIds.filter(
@@ -387,8 +409,8 @@ export default async function walletManagementRoutes(
 				const isOwner = await isOwnerPublicKeyOnChain(
 					chain.publicClient,
 					session.walletAddress as `0x${string}`,
-					slot.publicKeyX as `0x${string}`,
-					slot.publicKeyY as `0x${string}`,
+					deposited.publicKeyX as `0x${string}`,
+					deposited.publicKeyY as `0x${string}`,
 				);
 				if (isOwner === true) {
 					confirmed = true;
@@ -420,11 +442,11 @@ export default async function walletManagementRoutes(
 					.values({
 						tenantId: session.tenantId,
 						userId: session.userId,
-						rpId: request.tenant!.rpId,
-						credentialId: slot.credentialId!,
-						cosePublicKey: slot.cosePublicKey!,
-						publicKeyX: slot.publicKeyX!,
-						publicKeyY: slot.publicKeyY!,
+						rpId: requireTenantOf(request).rpId,
+						credentialId: deposited.credentialId,
+						cosePublicKey: deposited.cosePublicKey,
+						publicKeyX: deposited.publicKeyX,
+						publicKeyY: deposited.publicKeyY,
 						transports: slot.transports ?? [],
 						// WM-15: BOUND to the wallet the session already controls — never derived from
 						// the new key, which would name a different wallet.
@@ -481,7 +503,7 @@ export default async function walletManagementRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.tenant!;
+			const tenant = requireTenantOf(request);
 			const code = normaliseClaimCode(request.body.claimCode);
 			let slot = await db.query.pendingAdditions.findFirst({
 				where: and(
@@ -556,7 +578,7 @@ export default async function walletManagementRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.tenant!;
+			const tenant = requireTenantOf(request);
 			const code = normaliseClaimCode(request.body.claimCode);
 			let slot = await db.query.pendingAdditions.findFirst({
 				where: and(
@@ -702,7 +724,7 @@ export default async function walletManagementRoutes(
 			},
 		},
 		async (request) => {
-			const session = request.session!;
+			const session = requireSessionOf(request);
 			const { action, ownerKind, owner, chainIds, detail } = request.body;
 			await audit(
 				session,

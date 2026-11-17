@@ -299,14 +299,15 @@ export async function runPreflight(
 		at: new Date().toISOString(),
 		durationMs: Date.now() - started,
 		checks,
-		wrongNetworkChainIds: chainChecks
-			.filter(
-				(check) =>
-					check.id.startsWith("rpc-") &&
-					check.state === "fail" &&
-					/configured/.test(check.detail),
-			)
-			.map((check) => check.chainId!),
+		// Every rpc-* check carries its chainId, so the undefined test only narrows the type.
+		wrongNetworkChainIds: chainChecks.flatMap((check) =>
+			check.id.startsWith("rpc-") &&
+			check.state === "fail" &&
+			/configured/.test(check.detail) &&
+			check.chainId !== undefined
+				? [check.chainId]
+				: [],
+		),
 		receiptsAtRisk: wallet.corsFailed,
 		walletApiVersion: wallet.apiVersion,
 	};

@@ -71,6 +71,17 @@ export type ResolvedChain = {
 };
 
 /**
+ * For a value the envSchema validation guarantees before its transform runs. Zod runs the
+ * transform only on a config with no issues, so this throws only if the validation and the
+ * transform disagree — a bug in this file, never an operator error.
+ */
+function unresolvedConfig(message: string): never {
+	throw new Error(
+		`config validation passed but the chain list cannot be built: ${message}`,
+	);
+}
+
+/**
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
  * rows, written by Giano's platform admins at runtime — see
@@ -762,6 +773,47 @@ const envSchema = z
 			),
 		});
 
+		// The single-chain shorthand as one chain. The validation above guarantees every field it reads.
+		const singleChain = (): ResolvedChain => {
+			const { CHAIN_ID, RPC_URL, BUNDLER_URL } = env;
+			if (
+				CHAIN_ID === undefined ||
+				RPC_URL === undefined ||
+				BUNDLER_URL === undefined
+			) {
+				return unresolvedConfig(
+					"the single-chain shorthand needs all of CHAIN_ID, RPC_URL and BUNDLER_URL",
+				);
+			}
+			const deployment = gianoAddresses[CHAIN_ID];
+			return {
+				chainId: CHAIN_ID,
+				name: defaultChainName(CHAIN_ID),
+				rpcUrl: RPC_URL,
+				bundlerUrl: BUNDLER_URL,
+				entryPoint: (env.ENTRYPOINT_ADDRESS ??
+					deployment?.entryPoint ??
+					unresolvedConfig(
+						`chain ${CHAIN_ID} has no entryPoint`,
+					)) as `0x${string}`,
+				factory: (env.FACTORY_ADDRESS ??
+					deployment?.factory ??
+					unresolvedConfig(
+						`chain ${CHAIN_ID} has no factory`,
+					)) as `0x${string}`,
+				implementation: (env.IMPLEMENTATION_ADDRESS ??
+					(env.FACTORY_ADDRESS ? undefined : deployment?.implementation)) as
+					| `0x${string}`
+					| undefined,
+				sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
+					deployment?.sponsorshipPaymaster) as `0x${string}` | undefined,
+				policy: resolvePolicy({
+					allowedTargets: env.USEROP_ALLOWED_TARGETS as `0x${string}`[],
+					allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS as `0x${string}`[],
+				}),
+			};
+		};
+
 		// Single-chain scalars normalise into a one-entry list (MC-132): single-chain is the
 		// degenerate case of N, not a separate mode.
 		const CHAINS: ResolvedChain[] = env.GIANO_CHAINS
@@ -776,8 +828,15 @@ const envSchema = z
 							walletApi.bundlerUrl ??
 							`${env.BUNDLER_BASE_URL}/${descriptor.chainId}`,
 						entryPoint: (descriptor.entryPoint ??
-							registry!.entryPoint) as `0x${string}`,
-						factory: (walletApi.factory ?? registry!.factory) as `0x${string}`,
+							registry?.entryPoint ??
+							unresolvedConfig(
+								`chain ${descriptor.chainId} has no entryPoint`,
+							)) as `0x${string}`,
+						factory: (walletApi.factory ??
+							registry?.factory ??
+							unresolvedConfig(
+								`chain ${descriptor.chainId} has no factory`,
+							)) as `0x${string}`,
 						// The registry's implementation pairs with the registry's factory only. A custom
 						// factory without an explicit implementation is checked against the one it reports.
 						implementation: (walletApi.implementation ??
@@ -789,33 +848,7 @@ const envSchema = z
 						policy: resolvePolicy(walletApi.policy),
 					};
 				})
-			: [
-					{
-						chainId: env.CHAIN_ID!,
-						name: defaultChainName(env.CHAIN_ID!),
-						rpcUrl: env.RPC_URL!,
-						bundlerUrl: env.BUNDLER_URL!,
-						entryPoint: (env.ENTRYPOINT_ADDRESS ??
-							gianoAddresses[env.CHAIN_ID!]!.entryPoint) as `0x${string}`,
-						factory: (env.FACTORY_ADDRESS ??
-							gianoAddresses[env.CHAIN_ID!]!.factory) as `0x${string}`,
-						implementation: (env.IMPLEMENTATION_ADDRESS ??
-							(env.FACTORY_ADDRESS
-								? undefined
-								: gianoAddresses[env.CHAIN_ID!]?.implementation)) as
-							| `0x${string}`
-							| undefined,
-						sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
-							gianoAddresses[env.CHAIN_ID!]?.sponsorshipPaymaster) as
-							| `0x${string}`
-							| undefined,
-						policy: resolvePolicy({
-							allowedTargets: env.USEROP_ALLOWED_TARGETS as `0x${string}`[],
-							allowedPaymasters:
-								env.USEROP_ALLOWED_PAYMASTERS as `0x${string}`[],
-						}),
-					},
-				];
+			: [singleChain()];
 
 		return {
 			...env,

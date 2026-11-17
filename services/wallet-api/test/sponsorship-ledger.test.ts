@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import {
 	PostgreSqlContainer,
 	type StartedPostgreSqlContainer,
@@ -64,8 +65,12 @@ describe("reservation ledger", () => {
 				},
 			])
 			.returning({ id: tenants.id, slug: tenants.slug });
-		tenantA = rows.find((r) => r.slug === "ledger-a")!.id;
-		tenantB = rows.find((r) => r.slug === "ledger-b")!.id;
+		const rowA = rows.find((r) => r.slug === "ledger-a");
+		const rowB = rows.find((r) => r.slug === "ledger-b");
+		assert(rowA, "tenant ledger-a was not inserted");
+		assert(rowB, "tenant ledger-b was not inserted");
+		tenantA = rowA.id;
+		tenantB = rowB.id;
 	}, 120_000);
 
 	afterAll(async () => {
@@ -382,11 +387,12 @@ describe("reservation ledger", () => {
 				useropHash: "0xdef",
 			});
 			expect(settled).toBe((result as { id: string }).id);
+			assert(settled, "settle matched no reservation");
 
 			const [row] = await db
 				.select()
 				.from(sponsorshipReservations)
-				.where(eq(sponsorshipReservations.id, settled!));
+				.where(eq(sponsorshipReservations.id, settled));
 			expect(row.state).toBe("settled");
 			expect(row.useropHash).toBe("0xdef");
 		});

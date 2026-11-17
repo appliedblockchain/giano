@@ -144,7 +144,8 @@ function harness({
 					if (chain.unreachable) throw new Error("chain unreachable");
 					if (functionName === "nextOwnerIndex")
 						return BigInt(chain.owners.length);
-					return chain.owners[Number(args![0])] ?? "0x";
+					if (!args) throw new Error(`${functionName} called without args`);
+					return chain.owners[Number(args[0])] ?? "0x";
 				},
 			},
 			isAccountDeployed: async () => chain.deployed,
@@ -487,7 +488,8 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 		await h.controller.load();
 		const target = h.controller.state.owners.find(
 			(owner) => owner.ownerBytes === bytesB,
-		)!;
+		);
+		if (!target) throw new Error("no owner matches");
 		h.controller.startRemove(target);
 		(
 			h.controller.flow as Extract<
@@ -527,7 +529,8 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 		await h.controller.load();
 		const target = h.controller.state.owners.find(
 			(owner) => owner.ownerBytes === bytesB,
-		)!;
+		);
+		if (!target) throw new Error("no owner matches");
 		h.controller.startRemove(target);
 		(
 			h.controller.flow as Extract<
@@ -560,7 +563,8 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 		await h.controller.load();
 		const target = h.controller.state.owners.find(
 			(owner) => owner.credentialId === "cred-a",
-		)!;
+		);
+		if (!target) throw new Error("no owner matches");
 		h.controller.startRemove(target);
 		const confirm = h.controller.flow as Extract<
 			ManagementFlow,
@@ -591,7 +595,8 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 		await h.controller.load();
 		const target = h.controller.state.owners.find(
 			(owner) => owner.ownerBytes === bytesB,
-		)!;
+		);
+		if (!target) throw new Error("no owner matches");
 		h.controller.startRemove(target);
 		(
 			h.controller.flow as Extract<

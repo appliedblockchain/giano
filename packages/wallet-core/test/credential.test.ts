@@ -34,9 +34,9 @@ describe("getCredential", () => {
 			challenge: new Uint8Array([2]),
 		});
 		expect(credential).not.toBeNull();
-		expect(
-			getSpy.mock.calls[0][0]!.publicKey!.allowCredentials,
-		).toBeUndefined();
+		const options = getSpy.mock.calls[0][0];
+		if (!options?.publicKey) throw new Error("no publicKey request options");
+		expect(options.publicKey.allowCredentials).toBeUndefined();
 	});
 
 	it("scopes to a single credential id", async () => {
@@ -46,9 +46,9 @@ describe("getCredential", () => {
 			credentialId: new Uint8Array(created.rawId),
 			challenge: new Uint8Array([2]),
 		});
-		expect(getSpy.mock.calls[0][0]!.publicKey!.allowCredentials).toHaveLength(
-			1,
-		);
+		const options = getSpy.mock.calls[0][0];
+		if (!options?.publicKey) throw new Error("no publicKey request options");
+		expect(options.publicKey.allowCredentials).toHaveLength(1);
 	});
 
 	it("scopes to an array of credential ids", async () => {
@@ -58,9 +58,9 @@ describe("getCredential", () => {
 			credentialId: [new Uint8Array(created.rawId), new Uint8Array([9, 9])],
 			challenge: new Uint8Array([2]),
 		});
-		expect(getSpy.mock.calls[0][0]!.publicKey!.allowCredentials).toHaveLength(
-			2,
-		);
+		const options = getSpy.mock.calls[0][0];
+		if (!options?.publicKey) throw new Error("no publicKey request options");
+		expect(options.publicKey.allowCredentials).toHaveLength(2);
 	});
 
 	it("applies the default mediation and user-verification requirements", async () => {
@@ -70,10 +70,10 @@ describe("getCredential", () => {
 			credentialId: "user-pick",
 			challenge: new Uint8Array([2]),
 		});
-		expect(getSpy.mock.calls[0][0]!.mediation).toBe("optional");
-		expect(getSpy.mock.calls[0][0]!.publicKey!.userVerification).toBe(
-			"required",
-		);
+		const options = getSpy.mock.calls[0][0];
+		if (!options?.publicKey) throw new Error("no publicKey request options");
+		expect(options.mediation).toBe("optional");
+		expect(options.publicKey.userVerification).toBe("required");
 	});
 });
 

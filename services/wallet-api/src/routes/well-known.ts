@@ -4,6 +4,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { rorOrigins } from "../db/schema.js";
+import { requireTenantOf } from "../plugins/tenant.js";
 
 /**
  * Related Origin Requests (ROR): served under the wallet origin so passkeys bound to
@@ -35,7 +36,7 @@ export default async function wellKnownRoutes(
 			const rows = await opts.db
 				.select({ origin: rorOrigins.origin })
 				.from(rorOrigins)
-				.where(eq(rorOrigins.tenantId, request.tenant!.id));
+				.where(eq(rorOrigins.tenantId, requireTenantOf(request).id));
 			return { origins: rows.map((r) => r.origin) };
 		},
 	);

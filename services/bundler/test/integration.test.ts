@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import {
 	type Address,
 	getContractAddress,
@@ -22,7 +23,20 @@ import {
 	startBundler,
 	startDevnet,
 } from "./harness.js";
-import { createOps, stubSignature } from "./ops.js";
+import { createOps, stubSignature, type UserOpReceipt } from "./ops.js";
+
+/** The `giano_executors` answer, as the RPC server builds it. */
+type ExecutorsAnswer = {
+	gasPriceWei: Hex;
+	laneStuckAfterSeconds: Hex;
+	executors: {
+		address: Address;
+		balanceWei: Hex;
+		busy: boolean;
+		busySince: Hex | null;
+		latestNonce: Hex;
+	}[];
+};
 
 /**
  * The bundler end to end against anvil: the same JSON-RPC calls wallet-api makes, an account
@@ -65,7 +79,11 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 	});
 
 	it("reports its executor with the balance and nonces the chain holds", async () => {
-		const { result } = await rpc(bundler.url, "giano_executors");
+		const { result } = await rpc<ExecutorsAnswer>(
+			bundler.url,
+			"giano_executors",
+		);
+		assert(result, "giano_executors returned no result");
 		const [lane] = result.executors;
 		expect(result.executors).toHaveLength(1);
 		expect(lane.address).toBe(executor.address);
@@ -232,7 +250,7 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 			nonce: 1n,
 		});
 		const code = await devnet.client.getCode({ address: senderCreator });
-		expect(code && code !== "0x").toBeTruthy();
+		assert(code && code !== "0x", "the SenderCreator has no code to remove");
 		await devnet.test.setCode({ address: senderCreator, bytecode: "0x" });
 		try {
 			const op = await draft(951n, executeCall(recipient, 0n), false);
@@ -248,7 +266,7 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 			]);
 			expect(estimate.error).toBeUndefined();
 		} finally {
-			await devnet.test.setCode({ address: senderCreator, bytecode: code! });
+			await devnet.test.setCode({ address: senderCreator, bytecode: code });
 		}
 	});
 
@@ -282,10 +300,11 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 		]);
 		expect(otherEntryPoint.error).toMatchObject({ code: -32602 });
 
-		const sent = await rpc(bundler.url, "eth_sendUserOperation", [
+		const sent = await rpc<Hex>(bundler.url, "eth_sendUserOperation", [
 			op,
 			devnet.entryPoint,
 		]);
+		assert(sent.result, "eth_sendUserOperation returned no hash");
 		await waitForReceipt(sent.result);
 		// The same nonce again, now used.
 		const { op: replay } = {
@@ -366,7 +385,11 @@ describe.skipIf(!anvilAvailable)("bundler against anvil", () => {
 			await devnet.test.mine({ blocks: 1 });
 			const receipt = await until(
 				async () =>
-					(await rpc(slow.url, "eth_getUserOperationReceipt", [hash])).result,
+					(
+						await rpc<UserOpReceipt>(slow.url, "eth_getUserOperationReceipt", [
+							hash,
+						])
+					).result,
 			);
 			expect(receipt.success).toBe(true);
 			expect(receipt.receipt.transactionHash).toBe(

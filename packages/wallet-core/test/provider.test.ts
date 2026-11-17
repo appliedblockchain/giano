@@ -563,6 +563,33 @@ describe("chain management", () => {
 		).rejects.toThrow(/Unknown chain/);
 	});
 
+	it("createGianoProvider throws the real error when the initial chain cannot be selected", () => {
+		const { transport } = createMockTransport({ code: "0xabcd" });
+		const { bundler } = createMockBundler();
+		const params = {
+			chains: [testChain],
+			transports: { [TEST_CHAIN_ID]: transport },
+			injection: createMockInjection(mock.authenticator),
+			logger: silentLogger,
+		};
+		expect(() =>
+			createGianoProvider({
+				...params,
+				initialChainId: 9999,
+				bundlers: { [TEST_CHAIN_ID]: bundler },
+				factoryAddresses: { [TEST_CHAIN_ID]: FACTORY_ADDRESS },
+			}),
+		).toThrow("Unknown chain: 9999");
+		expect(() =>
+			createGianoProvider({
+				...params,
+				initialChainId: TEST_CHAIN_ID,
+				bundlers: {},
+				factoryAddresses: { [TEST_CHAIN_ID]: FACTORY_ADDRESS },
+			}),
+		).toThrow(`No bundler for chain ${TEST_CHAIN_ID}`);
+	});
+
 	it("wallet_switchEthereumChain errors when the target chain has no transport", async () => {
 		const { transport } = createMockTransport({ code: "0xabcd" });
 		const otherChain = { ...testChain, id: 999 };
@@ -930,7 +957,8 @@ describe("transactions & user operations", () => {
 		) as unknown as MockInstance;
 		const { provider } = buildProvider(mock.authenticator, { bundler });
 		const sender = await connect(provider);
-		const account = provider.getSmartAccount()!;
+		const account = provider.getSmartAccount();
+		if (!account) throw new Error("not connected");
 		const sign = vi.spyOn(account, "signUserOperation");
 		// Defend against an account attached to either the injected client or caller's payload.
 		Object.assign(bundler, { account });
@@ -1035,8 +1063,8 @@ describe("message signing", () => {
 	it("personal_sign and eth_sign sign the payload the dApp sent, not its hex spelling", async () => {
 		const { provider } = buildProvider(mock.authenticator);
 		const address = await connect(provider);
-		// biome-ignore lint/style/noNonNullAssertion: connected above
-		const account = provider.getSmartAccount()!;
+		const account = provider.getSmartAccount();
+		if (!account) throw new Error("expected a connected smart account");
 		const signMessage = vi.spyOn(account, "signMessage");
 		const signedHash = () =>
 			hashMessage(signMessage.mock.lastCall?.[0].message as SignableMessage);

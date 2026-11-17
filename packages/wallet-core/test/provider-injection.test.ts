@@ -365,7 +365,9 @@ describe("withValidation", () => {
 		await expect(wrapped.onCredentialSignedIn({} as never)).rejects.toThrow(
 			/must return a boolean/,
 		);
-		await expect(wrapped.submitUserOperation!({} as never, 1)).rejects.toThrow(
+		if (!wrapped.submitUserOperation)
+			throw new Error("the wrapped injection has no submitUserOperation");
+		await expect(wrapped.submitUserOperation({} as never, 1)).rejects.toThrow(
 			/User operation hash/,
 		);
 	});
@@ -589,7 +591,9 @@ describe("createWalletApiInjection", () => {
 		const key = await injection.getPublicKeyByCredentialId(created.rawId);
 		expect(key).toEqual({ x, y });
 
-		const hash = await injection.submitUserOperation!(
+		if (!injection.submitUserOperation)
+			throw new Error("the injection has no submitUserOperation");
+		const hash = await injection.submitUserOperation(
 			{
 				sender: ADDR,
 				nonce: 0n,

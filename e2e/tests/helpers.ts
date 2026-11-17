@@ -296,7 +296,7 @@ export function apiCall(
 		body,
 		headers = {},
 	}: { body?: unknown; headers?: Record<string, string> } = {},
-): Promise<{ status: number; json: () => any }> {
+): Promise<{ status: number; json: <T>() => T }> {
 	const url = new URL(path, loopbackOf("api"));
 	const payload = body === undefined ? undefined : JSON.stringify(body);
 	return new Promise((resolve, reject) => {
@@ -337,11 +337,11 @@ export async function platformSignIn(): Promise<string> {
 	});
 	if (challenge.status !== 200)
 		throw new Error(`platform challenge failed: ${challenge.status}`);
-	const { message } = challenge.json();
+	const { message } = challenge.json<{ message: string }>();
 	const verify = await apiCall("POST", "/v1/platform/auth/verify", {
 		body: { message, signature: await admin.signMessage({ message }) },
 	});
 	if (verify.status !== 200)
 		throw new Error(`platform sign-in failed: ${verify.status}`);
-	return verify.json().token;
+	return verify.json<{ token: string }>().token;
 }

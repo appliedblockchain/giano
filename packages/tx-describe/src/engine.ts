@@ -160,7 +160,10 @@ export async function formatCall(input: EngineInput): Promise<EngineResult> {
 			});
 	}
 
-	const intent = model.interpolatedIntent ?? intentText(model.intent!);
+	let intent: string;
+	if (model.interpolatedIntent != null) intent = model.interpolatedIntent;
+	else if (model.intent) intent = intentText(model.intent);
+	else throw new Error("the engine produced no intent");
 	return { ok: true, intent, fields, metadata: pickMetadata(model), warnings };
 }
 

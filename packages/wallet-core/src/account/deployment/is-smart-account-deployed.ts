@@ -49,7 +49,7 @@ export const isSmartAccountDeployed = async (
 	smartAccount: SmartAccount,
 ): Promise<boolean> => {
 	const address = await smartAccount.getAddress();
-	const code = await client!.getCode({ address });
+	const code = await client.getCode({ address });
 
 	return code !== undefined && code !== "0x";
 };

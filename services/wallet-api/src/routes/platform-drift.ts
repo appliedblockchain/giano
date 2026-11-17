@@ -87,16 +87,13 @@ export default async function platformDriftRoutes(
 			},
 		},
 		async (request) => {
-			const sponsoring = opts.registry.all.filter((chain) => chain.paymaster);
+			const sponsoring = opts.registry.all.flatMap(({ chainId, paymaster }) =>
+				paymaster ? [{ chainId, paymaster }] : [],
+			);
 			const results = await Promise.allSettled(
-				sponsoring.map((chain) =>
-					opts.drift.fresh(chain.chainId, maxAgeMs, () =>
-						computeDrift({
-							db: opts.db,
-							chainId: chain.chainId,
-							// biome-ignore lint/style/noNonNullAssertion: filtered to sponsoring chains above
-							paymaster: chain.paymaster!,
-						}),
+				sponsoring.map(({ chainId, paymaster }) =>
+					opts.drift.fresh(chainId, maxAgeMs, () =>
+						computeDrift({ db: opts.db, chainId, paymaster }),
 					),
 				),
 			);

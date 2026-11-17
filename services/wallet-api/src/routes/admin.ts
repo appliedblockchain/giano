@@ -4,6 +4,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { rorOrigins } from "../db/schema.js";
+import { requireAdminKeyIdOf, requireAdminTenantOf } from "../plugins/auth.js";
 import {
 	adminRevocationSchema,
 	type SessionService,
@@ -43,7 +44,7 @@ export default async function adminRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.adminTenant!;
+			const tenant = requireAdminTenantOf(request);
 			const rows = await opts.db
 				.select({ id: rorOrigins.id, origin: rorOrigins.origin })
 				.from(rorOrigins)
@@ -63,7 +64,7 @@ export default async function adminRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.adminTenant!;
+			const tenant = requireAdminTenantOf(request);
 			const [row] = await opts.db
 				.insert(rorOrigins)
 				.values({ tenantId: tenant.id, origin: request.body.origin })
@@ -90,7 +91,7 @@ export default async function adminRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.adminTenant!;
+			const tenant = requireAdminTenantOf(request);
 			// another tenant's row is indistinguishable from a missing one (404, not 403)
 			const deleted = await opts.db
 				.delete(rorOrigins)
@@ -125,9 +126,9 @@ export default async function adminRoutes(
 		async (request) => {
 			// scoped to the key's tenant: a user or wallet of another tenant revokes nothing
 			const revoked = await opts.sessions.revokeAndRecord(
-				request.adminTenant!.id,
+				requireAdminTenantOf(request).id,
 				request.body,
-				{ actor: `tenant-admin-key:${request.adminKeyId!}` },
+				{ actor: `tenant-admin-key:${requireAdminKeyIdOf(request)}` },
 			);
 			return { revoked };
 		},

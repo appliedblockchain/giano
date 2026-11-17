@@ -76,7 +76,8 @@ describe("MockAuthenticator (real crypto)", () => {
 
 		const response = credential.response as AuthenticatorAttestationResponse;
 		// SPKI is a real key WebCrypto can import.
-		const spki = response.getPublicKey()!;
+		const spki = response.getPublicKey();
+		if (!spki) throw new Error("the attestation response has no public key");
 		const imported = await subtle.importKey(
 			"spki",
 			spki,
@@ -112,9 +113,13 @@ describe("MockAuthenticator (real crypto)", () => {
 				pubKeyCredParams: [{ type: "public-key", alg: -7 }],
 			},
 		} as CredentialCreationOptions);
+		const spki = (
+			created.response as AuthenticatorAttestationResponse
+		).getPublicKey();
+		if (!spki) throw new Error("the attestation response has no public key");
 		const publicKey = await subtle.importKey(
 			"spki",
-			(created.response as AuthenticatorAttestationResponse).getPublicKey()!,
+			spki,
 			{ name: "ECDSA", namedCurve: "P-256" },
 			true,
 			["verify"],

@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import {
 	gianoSmartWalletAbi,
 	PAYMASTER_MIN_POST_OP_GAS_LIMIT,
@@ -58,8 +59,12 @@ beforeAll(async () => {
 	const rows = await ctx.db
 		.select({ id: tenants.id, slug: tenants.slug })
 		.from(tenants);
-	tenantAId = rows.find((r) => r.slug === TENANT_A.slug)!.id;
-	tenantBId = rows.find((r) => r.slug === TENANT_B.slug)!.id;
+	const rowA = rows.find((r) => r.slug === TENANT_A.slug);
+	const rowB = rows.find((r) => r.slug === TENANT_B.slug);
+	assert(rowA, "expected tenant A to exist");
+	assert(rowB, "expected tenant B to exist");
+	tenantAId = rowA.id;
+	tenantBId = rowB.id;
 }, 180_000);
 
 afterAll(async () => {
@@ -358,7 +363,8 @@ describe("request validation", () => {
 			}),
 		);
 		expect(body.error).toBeUndefined();
-		expect(BigInt(body.result!.paymasterPostOpGasLimit)).toBe(
+		assert(body.result, "expected paymaster data");
+		expect(BigInt(body.result.paymasterPostOpGasLimit)).toBe(
 			PAYMASTER_MIN_POST_OP_GAS_LIMIT,
 		);
 	});
@@ -450,7 +456,9 @@ describe("rule refusals", () => {
 			"0x15a2075f2407427c5dd0bde9d1966c48bd70e2f2",
 		);
 		// 130 bytes: the fixed header plus a 65-byte ECDSA signature.
-		expect((body.result!.paymasterData.length - 2) / 2).toBe(130);
+		assert(body.result, "expected paymaster data");
+		const { paymasterData } = body.result;
+		expect((paymasterData.length - 2) / 2).toBe(130);
 	});
 
 	it("refuses a contract that is not allow-listed", async () => {
@@ -593,7 +601,8 @@ describe("rule refusals", () => {
 			candidateOp(session.walletAddress, execute(OTHER, TRANSFER)),
 		);
 
-		const rules = body.error!.data!.ruleResults;
+		assert(body.error?.data, "expected the error to carry data");
+		const rules = body.error.data.ruleResults;
 		expect(rules.find((r) => r.rule === "contract-allowlist")?.passed).toBe(
 			false,
 		);
@@ -676,10 +685,12 @@ describe("stub versus data", () => {
 
 		const stub = await rpc(session.token, "pm_getPaymasterStubData", op);
 		const real = await rpc(session.token, "pm_getPaymasterData", op);
-		expect(stub.result!.paymasterData.length).toBe(
-			real.result!.paymasterData.length,
-		);
-		expect(stub.result!.paymasterData).not.toBe(real.result!.paymasterData);
+		assert(stub.result, "expected stub data");
+		assert(real.result, "expected paymaster data");
+		const stubData = stub.result.paymasterData;
+		const realData = real.result.paymasterData;
+		expect(stubData.length).toBe(realData.length);
+		expect(stubData).not.toBe(realData);
 	});
 
 	// The chain enforces one operation per (sender, nonce); the ledger must not reserve twice for it.

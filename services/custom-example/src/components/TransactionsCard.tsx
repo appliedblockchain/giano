@@ -25,6 +25,12 @@ const PRESETS: Array<{ value: Preset; label: string }> = [
 	{ value: "custom", label: "Arbitrary target + calldata" },
 ];
 
+function presetLabel(preset: Preset): string {
+	const option = PRESETS.find((candidate) => candidate.value === preset);
+	if (!option) throw new Error(`unknown preset: ${preset}`);
+	return option.label;
+}
+
 /** A contract no tenant allow-lists, called with a valid-looking selector: reaches the paymaster's allowlist rule and is refused by it. */
 const UNLISTED: Address = "0x000000000000000000000000000000000000dEaD";
 const TRANSFER_SELECTOR: Hex = "0xa9059cbb";
@@ -124,7 +130,7 @@ export function TransactionsCard() {
 			await run(
 				{
 					section: "transactions",
-					label: PRESETS.find((option) => option.value === preset)!.label,
+					label: presetLabel(preset),
 					method: "eth_sendTransaction",
 					params: [tx],
 					account,
@@ -151,9 +157,9 @@ export function TransactionsCard() {
 			},
 			(api) => waitForReceipt(api, hash),
 		);
-	const timedOut = entries.find(
+	const timedOutHash = entries.find(
 		(entry) => entry.status === "timed-out" && entry.userOpHash,
-	);
+	)?.userOpHash;
 
 	return (
 		<SectionCard
@@ -273,7 +279,7 @@ export function TransactionsCard() {
 					a send may succeed but its receipt will not be readable from here.
 				</StatusText>
 			)}
-			{timedOut && (
+			{timedOutHash && (
 				<HStack gap="3">
 					<StatusText tone="orange">
 						A receipt did not arrive within the connector&apos;s deadline.
@@ -281,10 +287,9 @@ export function TransactionsCard() {
 					<Button
 						size="xs"
 						variant="outline"
-						onClick={() => void keepWaiting(timedOut.userOpHash!)}
+						onClick={() => void keepWaiting(timedOutHash)}
 					>
-						<LuRefreshCw /> Keep waiting for {timedOut.userOpHash!.slice(0, 10)}
-						…
+						<LuRefreshCw /> Keep waiting for {timedOutHash.slice(0, 10)}…
 					</Button>
 				</HStack>
 			)}

@@ -10,7 +10,9 @@ import { loadAdminConfig } from "./config";
  * explanation rather than an empty page: an admin console that cannot tell you which chain it is
  * pointed at should not render controls that write to one.
  */
-const root = createRoot(document.getElementById("root")!);
+const container = document.getElementById("root");
+if (!container) throw new Error("index.html has no #root element");
+const root = createRoot(container);
 
 loadAdminConfig()
 	.then(() => {

@@ -4,6 +4,8 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { useropLog } from "../db/schema.js";
+import { requireSessionOf } from "../plugins/auth.js";
+import { requireChainOf } from "../plugins/chain.js";
 import { ApiError } from "../plugins/error-handler.js";
 import type { ChainRegistry } from "../services/chains.js";
 import {
@@ -98,9 +100,9 @@ export default async function useropRoutes(
 		async (request, reply) => {
 			const outcome = await relay.relay(
 				{
-					session: request.session!,
+					session: requireSessionOf(request),
 					tenant: request.tenant,
-					chain: request.chain!,
+					chain: requireChainOf(request),
 					log: request.log,
 				},
 				request.body.userOperation,
@@ -165,8 +167,8 @@ export default async function useropRoutes(
 			});
 			if (
 				!row ||
-				row.userId !== request.session!.userId ||
-				row.tenantId !== request.session!.tenantId
+				row.userId !== requireSessionOf(request).userId ||
+				row.tenantId !== requireSessionOf(request).tenantId
 			) {
 				throw new ApiError(404, "not-found", "user operation not found");
 			}

@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const adminKey = "provisioner-test-admin-key";
@@ -75,7 +76,7 @@ describe("deployable sponsorship provisioner", () => {
 		const fetch = mockApi();
 		await run();
 		expect(fetch).toHaveBeenCalledTimes(7);
-		expect(fetch.mock.calls[0]![0]).toBe("https://wallet.example.test/readyz");
+		expect(fetch.mock.calls[0][0]).toBe("https://wallet.example.test/readyz");
 		for (const [url, init] of fetch.mock.calls) {
 			expect(init?.signal).toBeInstanceOf(AbortSignal);
 			expect(init?.redirect).toBe("error");
@@ -155,11 +156,11 @@ describe("deployable sponsorship provisioner", () => {
 		fetch.mockImplementationOnce(
 			(_url, init) =>
 				new Promise((_resolve, reject) => {
-					init!.signal!.addEventListener(
-						"abort",
-						() => reject(init!.signal!.reason),
-						{ once: true },
-					);
+					const signal = init?.signal;
+					assert(signal, "the request has no abort signal");
+					signal.addEventListener("abort", () => reject(signal.reason), {
+						once: true,
+					});
 				}),
 		);
 		await expect(run()).rejects.toThrow("exit 1");

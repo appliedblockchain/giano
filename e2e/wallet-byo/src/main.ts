@@ -21,7 +21,11 @@ import { render } from "./views";
 const config = walletConfig();
 const runtimes = createWalletRuntimes(config);
 const host = createWalletHost({ runtimes, config, walletVersion: "0.1.0-byo" });
-const root = document.getElementById("view")!;
+const root = (() => {
+	const element = document.getElementById("view");
+	if (!element) throw new Error("#view is missing from the page");
+	return element;
+})();
 
 let busy = false;
 let managing = false;

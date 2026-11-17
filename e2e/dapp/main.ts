@@ -33,7 +33,13 @@ const providerB = createGianoWalletProvider({
 	transport: http(process.env.RPC_B_URL as string),
 });
 
-const out = document.getElementById("out")!;
+function byId(id: string): HTMLElement {
+	const element = document.getElementById(id);
+	if (!element) throw new Error(`#${id} is missing from the page`);
+	return element;
+}
+
+const out = byId("out");
 const log = (label: string, value: unknown) => {
 	out.textContent += `${label}: ${typeof value === "string" ? value : JSON.stringify(value)}\n`;
 };
@@ -54,7 +60,7 @@ provider.on("accountsChanged", (accounts) =>
 );
 provider.on("disconnect", () => log("event:disconnect", ""));
 
-document.getElementById("connect")!.addEventListener("click", async () => {
+byId("connect").addEventListener("click", async () => {
 	try {
 		const accounts = await provider.request<string[]>({
 			method: "eth_requestAccounts",
@@ -96,7 +102,7 @@ async function sendToSelf(via: typeof provider, chainId: number) {
 	});
 }
 
-document.getElementById("send")!.addEventListener("click", async () => {
+byId("send").addEventListener("click", async () => {
 	try {
 		await sendToSelf(provider, chain.id);
 	} catch (error) {
@@ -109,25 +115,23 @@ document.getElementById("send")!.addEventListener("click", async () => {
 	}
 });
 
-document
-	.getElementById("connect-chain-b")!
-	.addEventListener("click", async () => {
-		try {
-			const accounts = await providerB.request<string[]>({
-				method: "eth_requestAccounts",
-			});
-			log("accountsB", accounts);
-		} catch (error) {
-			log(
-				"connectB:error",
-				error instanceof TransportRpcError
-					? `rpc:${error.code} ${error.message}`
-					: (error as Error).message,
-			);
-		}
-	});
+byId("connect-chain-b").addEventListener("click", async () => {
+	try {
+		const accounts = await providerB.request<string[]>({
+			method: "eth_requestAccounts",
+		});
+		log("accountsB", accounts);
+	} catch (error) {
+		log(
+			"connectB:error",
+			error instanceof TransportRpcError
+				? `rpc:${error.code} ${error.message}`
+				: (error as Error).message,
+		);
+	}
+});
 
-document.getElementById("send-chain-b")!.addEventListener("click", async () => {
+byId("send-chain-b").addEventListener("click", async () => {
 	try {
 		await sendToSelf(providerB, chainB.id);
 	} catch (error) {
@@ -141,42 +145,40 @@ document.getElementById("send-chain-b")!.addEventListener("click", async () => {
 });
 
 /** A chain the wallet origin does not serve: the connection itself must be refused (MC-109). */
-document
-	.getElementById("connect-unserved")!
-	.addEventListener("click", async () => {
-		const unserved = defineChain({
-			id: 99_999,
-			name: "unserved",
-			nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-			rpcUrls: { default: { http: [process.env.RPC_URL as string] } },
-		});
-		const doomed = createGianoWalletProvider({
-			walletUrl: process.env.WALLET_URL as string,
-			chain: unserved,
-			transport: http(process.env.RPC_URL as string),
-		});
-		try {
-			await doomed.request({ method: "eth_requestAccounts" });
-			log("unserved:error", "connection unexpectedly SUCCEEDED");
-		} catch (error) {
-			if (error instanceof UnsupportedChainError) {
-				log("unserved:refused", {
-					code: error.code,
-					requestedChainId: error.requestedChainId,
-					supportedChainIds: error.supportedChainIds,
-				});
-			} else {
-				log("unserved:error", (error as Error).message);
-			}
-		}
+byId("connect-unserved").addEventListener("click", async () => {
+	const unserved = defineChain({
+		id: 99_999,
+		name: "unserved",
+		nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+		rpcUrls: { default: { http: [process.env.RPC_URL as string] } },
 	});
+	const doomed = createGianoWalletProvider({
+		walletUrl: process.env.WALLET_URL as string,
+		chain: unserved,
+		transport: http(process.env.RPC_URL as string),
+	});
+	try {
+		await doomed.request({ method: "eth_requestAccounts" });
+		log("unserved:error", "connection unexpectedly SUCCEEDED");
+	} catch (error) {
+		if (error instanceof UnsupportedChainError) {
+			log("unserved:refused", {
+				code: error.code,
+				requestedChainId: error.requestedChainId,
+				supportedChainIds: error.supportedChainIds,
+			});
+		} else {
+			log("unserved:error", (error as Error).message);
+		}
+	}
+});
 
 /**
  * A transfer of the demo ERC-20 — an ordinary allow-listed contract call, which is what the
  * sponsored path looks like for a real application. `#send` is a self-call, which the sponsorship
  * rules classify as wallet management, so it cannot stand in for this.
  */
-document.getElementById("send-erc20")!.addEventListener("click", async () => {
+byId("send-erc20").addEventListener("click", async () => {
 	try {
 		const [account] = await provider.request<string[]>({
 			method: "eth_accounts",
@@ -206,32 +208,30 @@ document.getElementById("send-erc20")!.addEventListener("click", async () => {
 });
 
 /** A call to a contract no tenant allow-lists — the sponsorship refusal path. */
-document
-	.getElementById("send-unlisted")!
-	.addEventListener("click", async () => {
-		try {
-			const hash = await provider.request<string>({
-				method: "eth_sendTransaction",
-				params: [
-					{
-						to: "0x000000000000000000000000000000000000dEaD",
-						value: "0x0",
-						data: "0xa9059cbb",
-					},
-				],
-			});
-			log("userOpHash", hash);
-		} catch (error) {
-			log(
-				"send:error",
-				error instanceof TransportRpcError
-					? `rpc:${error.code}`
-					: (error as Error).message,
-			);
-		}
-	});
+byId("send-unlisted").addEventListener("click", async () => {
+	try {
+		const hash = await provider.request<string>({
+			method: "eth_sendTransaction",
+			params: [
+				{
+					to: "0x000000000000000000000000000000000000dEaD",
+					value: "0x0",
+					data: "0xa9059cbb",
+				},
+			],
+		});
+		log("userOpHash", hash);
+	} catch (error) {
+		log(
+			"send:error",
+			error instanceof TransportRpcError
+				? `rpc:${error.code}`
+				: (error as Error).message,
+		);
+	}
+});
 
-document.getElementById("sign")!.addEventListener("click", async () => {
+byId("sign").addEventListener("click", async () => {
 	try {
 		const [account] = await provider.request<string[]>({
 			method: "eth_accounts",
@@ -254,7 +254,7 @@ document.getElementById("sign")!.addEventListener("click", async () => {
 	}
 });
 
-document.getElementById("sign-typed")!.addEventListener("click", async () => {
+byId("sign-typed").addEventListener("click", async () => {
 	try {
 		const [account] = await provider.request<string[]>({
 			method: "eth_accounts",
@@ -286,7 +286,7 @@ document.getElementById("sign-typed")!.addEventListener("click", async () => {
  * construction (WM-65). The outcome written here is only that the view closed: the wallet
  * returns no owner data to the application (WM-40).
  */
-document.getElementById("manage")!.addEventListener("click", async () => {
+byId("manage").addEventListener("click", async () => {
 	try {
 		const result = (await provider.openWalletManagement()) as unknown;
 		log(
@@ -305,7 +305,7 @@ document.getElementById("manage")!.addEventListener("click", async () => {
 	}
 });
 
-document.getElementById("disconnect")!.addEventListener("click", () => {
+byId("disconnect").addEventListener("click", () => {
 	provider.disconnect();
 	log("disconnected", "");
 });

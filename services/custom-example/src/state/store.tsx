@@ -347,8 +347,10 @@ export function DemoProvider({
 
 	const referenceAccount = useMemo(() => {
 		const ordered = Object.values(state.sessions)
-			.filter((session) => session.account && session.connectedAt)
-			.sort((a, b) => (a.connectedAt! < b.connectedAt! ? -1 : 1));
+			.flatMap(({ account, connectedAt }) =>
+				account && connectedAt ? [{ account, connectedAt }] : [],
+			)
+			.sort((a, b) => (a.connectedAt < b.connectedAt ? -1 : 1));
 		return (
 			ordered[0]?.account ??
 			Object.values(state.sessions).find((session) => session.account)?.account

@@ -374,7 +374,11 @@ export async function checkOriginClaims(
 	const origin = claims.find(
 		(claim) =>
 			claim === row.walletOrigin || row.expectedOrigins.includes(claim),
-	)!;
+	);
+	// The query matched this row on one of the claims, so one of them is always found.
+	if (origin === undefined) {
+		throw new Error(`tenant ${row.slug} matched none of the claimed origins`);
+	}
 	return { origin, slug: row.slug, status: row.status };
 }
 

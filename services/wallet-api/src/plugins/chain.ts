@@ -15,6 +15,19 @@ declare module "fastify" {
 	}
 }
 
+/**
+ * The chain set by requireChain. A route reads it only after that guard ran, so a missing
+ * value is a programming error (a route without its guard): this throws instead of continuing.
+ */
+export function requireChainOf(request: FastifyRequest): ChainServices {
+	if (!request.chain) {
+		throw new Error(
+			"request.chain is not set: the route is missing its requireChain guard",
+		);
+	}
+	return request.chain;
+}
+
 /** Reads the chain a request NAMES (path, body, ERC-7677 params[2], or query) — a request, never an instruction. */
 function extractChainId(request: FastifyRequest): number | undefined {
 	// A bundler client carries no chain in its calls, so the bundler relay puts it in the path.

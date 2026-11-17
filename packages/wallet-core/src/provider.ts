@@ -206,6 +206,14 @@ export type GianoProvider = EIP1193Provider & {
 	getSmartAccount: () => SmartAccount<GianoSmartAccountImplementation> | null;
 };
 
+/**
+ * What eth_signUserOperation accepts: the account's own signing parameters. `sender` is optional,
+ * and `chainId` is accepted only to be checked against the connected chain.
+ */
+type SignUserOperationRequest = Parameters<
+	SmartAccount<GianoSmartAccountImplementation>["signUserOperation"]
+>[0];
+
 export type FeeValues = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
 
 /** Fee precedence: explicit request > bundler-prepared > fallback estimation. */
@@ -322,6 +330,27 @@ export const createGianoProvider = (
 	};
 	const eventListeners: Partial<EventListeners> = {};
 
+	// The chain-bound state is set by the initial selectChain call below and replaced as one unit
+	// on every switch. createGianoProvider throws if that call fails, so after construction these
+	// accessors only throw if the provider is used while it is being built.
+	const requireChain = (): Chain => {
+		if (!chain) throw new GianoError("Giano not connected: no chain selected");
+		return chain;
+	};
+	const requireClient = (): PublicClient => {
+		if (!client) throw new GianoError("Giano not connected: no chain client");
+		return client;
+	};
+	const requireBundler = (): BundlerClient => {
+		if (!bundler) throw new GianoError("Giano not connected: no bundler");
+		return bundler;
+	};
+	const requireFactoryAddress = (): Address => {
+		if (!factoryAddress)
+			throw new GianoError("Giano not connected: no factory address");
+		return factoryAddress;
+	};
+
 	const submitUserOperation = async (
 		userOpRequest: SendUserOperationParameters<
 			SmartAccount<GianoSmartAccountImplementation>,
@@ -332,7 +361,7 @@ export const createGianoProvider = (
 		},
 	) => {
 		if (injection.submitUserOperation === undefined) {
-			return await bundler!.sendUserOperation(userOpRequest);
+			return await requireBundler().sendUserOperation(userOpRequest);
 		}
 		// Hook provided: prepare complete user operation, sign it, and use backend validation and submission
 
@@ -351,7 +380,7 @@ export const createGianoProvider = (
 		const fees = resolveUserOpFees(
 			userOpRequest,
 			{},
-			await estimateFeesPerGas(chain!.id),
+			await estimateFeesPerGas(requireChain().id),
 		);
 		const requestWithFees = { ...userOpRequest, ...fees };
 
@@ -365,7 +394,8 @@ export const createGianoProvider = (
 		 * ever submitted. The unused one holds the tenant's funds until its TTL expires, so a tenant's
 		 * effective available balance is silently halved.
 		 */
-		const prepared = await bundler!.prepareUserOperation(requestWithFees);
+		const prepared =
+			await requireBundler().prepareUserOperation(requestWithFees);
 		if (!prepared) {
 			throw new Error("Could not prepare user operation");
 		}
@@ -395,7 +425,7 @@ export const createGianoProvider = (
 
 		// The chain the operation was hashed and signed for travels with the submission: the
 		// injection is chain-agnostic, and the backend refuses to guess (MC-53).
-		return await injection.submitUserOperation(signedUserOp, chain!.id);
+		return await injection.submitUserOperation(signedUserOp, requireChain().id);
 	};
 
 	const emit = <E extends keyof EIP1193EventMap>(
@@ -405,6 +435,49 @@ export const createGianoProvider = (
 		eventListeners[event]?.forEach((listener) => {
 			listener(payload);
 		});
+	};
+
+	// Synchronous, so the constructor can select the initial chain directly: a misconfigured
+	// initial chain then throws its real error (unknown chain, no bundler, …) from
+	// createGianoProvider, instead of an unhandled rejection followed by "no chain client".
+	const selectChain = (chainId: number): void => {
+		if (chainId === chain?.id) {
+			return;
+		}
+		const newChain = chains.find((chain) => chain.id === chainId);
+		if (!newChain) {
+			throw new Error(`Unknown chain: ${chainId}`);
+		}
+		const newTransport = transports?.[newChain.id];
+		if (!newTransport) {
+			throw new Error("No transport for chain");
+		}
+		// Throwing rather than falling back is deliberate: a chain configured for reads but
+		// not for submission is a misconfiguration, and silently keeping the previous chain's
+		// bundler is exactly the defect this closes (MC-113) — a "switched" provider would
+		// keep submitting user operations to the OLD chain's bundler and deriving addresses
+		// from the OLD chain's factory.
+		const newBundler = bundlers[newChain.id];
+		if (!newBundler) {
+			throw new Error(`No bundler for chain ${chainId}`);
+		}
+		const newFactory = factoryAddresses[newChain.id];
+		if (!newFactory) {
+			throw new Error(`No factory address for chain ${chainId}`);
+		}
+		smartAccount = null;
+		// The cached authenticated-read signature was produced against a specific account on a
+		// specific chain, with a lifetime read from that account. Carrying it across a chain
+		// change would present a signature from one chain to a contract on another.
+		clearStaticSignatures();
+		staticSignatureLifetime = 0n;
+		chain = newChain;
+		transport = newTransport;
+		client = createPublicClient({ transport, chain });
+		bundler = newBundler;
+		factoryAddress = newFactory;
+
+		emit("chainChanged", `0x${chainId.toString(16)}`);
 	};
 
 	const methods = {
@@ -443,7 +516,7 @@ export const createGianoProvider = (
 				}
 
 				smartAccount = await connectGianoSmartAccount({
-					client: client!,
+					client: requireClient(),
 					owner: toWebAuthnAccount({
 						getFn,
 						credential: {
@@ -451,12 +524,12 @@ export const createGianoProvider = (
 							publicKey: concatHex([x, y]),
 						},
 					}),
-					factoryAddress: factoryAddress!,
+					factoryAddress: requireFactoryAddress(),
 					address: credentialInfo.address,
 				});
 
 				const smartAccountAddress = await smartAccount.getAddress();
-				emit("connect", { chainId: `0x${chain!.id.toString(16)}` });
+				emit("connect", { chainId: `0x${requireChain().id.toString(16)}` });
 				emit("accountsChanged", [smartAccountAddress]);
 				return [smartAccountAddress];
 			} catch (error) {
@@ -473,12 +546,12 @@ export const createGianoProvider = (
 			}
 		},
 		eth_chainId: async () => {
-			return `0x${chain!.id.toString(16)}`;
+			return `0x${requireChain().id.toString(16)}`;
 		},
 		eth_call: async (params) => {
 			logger.debug("eth_call", params);
 
-			return client!.request({ method: "eth_call", params });
+			return requireClient().request({ method: "eth_call", params });
 		},
 		signed_eth_call: async (params) => {
 			// Check if smartAccount is available before proceeding with authenticated calls
@@ -486,13 +559,13 @@ export const createGianoProvider = (
 				logger.warn(
 					"Smart account not available, falling back to regular call",
 				);
-				return client!.request({ method: "eth_call", params });
+				return requireClient().request({ method: "eth_call", params });
 			}
 
 			// The session this read belongs to. A disconnect, a chain switch or a new account
 			// ends it, and the read must not sign, cache or send anything after that.
 			const account = smartAccount;
-			const readClient = client!;
+			const readClient = requireClient();
 			const generation = staticSignatureGeneration;
 			const isCurrent = () =>
 				generation === staticSignatureGeneration &&
@@ -673,44 +746,7 @@ export const createGianoProvider = (
 			return null;
 		},
 		wallet_switchEthereumChain: async ([{ chainId: chainIdHex }]) => {
-			const chainId = parseInt(chainIdHex, 16);
-			if (chainId === chain?.id) {
-				return null;
-			}
-			const newChain = chains.find((chain) => chain.id === chainId);
-			if (!newChain) {
-				throw new Error(`Unknown chain: ${chainId}`);
-			}
-			const newTransport = transports?.[newChain.id];
-			if (!newTransport) {
-				throw new Error("No transport for chain");
-			}
-			// Throwing rather than falling back is deliberate: a chain configured for reads but
-			// not for submission is a misconfiguration, and silently keeping the previous chain's
-			// bundler is exactly the defect this closes (MC-113) — a "switched" provider would
-			// keep submitting user operations to the OLD chain's bundler and deriving addresses
-			// from the OLD chain's factory.
-			const newBundler = bundlers[newChain.id];
-			if (!newBundler) {
-				throw new Error(`No bundler for chain ${chainId}`);
-			}
-			const newFactory = factoryAddresses[newChain.id];
-			if (!newFactory) {
-				throw new Error(`No factory address for chain ${chainId}`);
-			}
-			smartAccount = null;
-			// The cached authenticated-read signature was produced against a specific account on a
-			// specific chain, with a lifetime read from that account. Carrying it across a chain
-			// change would present a signature from one chain to a contract on another.
-			clearStaticSignatures();
-			staticSignatureLifetime = 0n;
-			chain = newChain;
-			transport = newTransport;
-			client = createPublicClient({ transport, chain });
-			bundler = newBundler;
-			factoryAddress = newFactory;
-
-			emit("chainChanged", `0x${chainId.toString(16)}`);
+			selectChain(parseInt(chainIdHex, 16));
 			return null;
 		},
 		eth_requestAccounts: async () => {
@@ -730,21 +766,21 @@ export const createGianoProvider = (
 					throw new Error("Invalid credential");
 				}
 				smartAccount = await connectGianoSmartAccount({
-					client: client!,
+					client: requireClient(),
 					owner: webAuthnAccount,
-					factoryAddress: factoryAddress!,
+					factoryAddress: requireFactoryAddress(),
 					address: credentialInfo.address,
 				});
 				const smartAccountAddress = await smartAccount.getAddress();
 
-				emit("connect", { chainId: `0x${chain!.id.toString(16)}` });
+				emit("connect", { chainId: `0x${requireChain().id.toString(16)}` });
 				emit("accountsChanged", [smartAccountAddress]);
 
 				return [smartAccountAddress];
 			}
 
 			const credentialName = await injection.getNameForCredential();
-			const chainId = `0x${chain!.id.toString(16)}`;
+			const chainId = `0x${requireChain().id.toString(16)}`;
 			const residentKey =
 				credentialInfo.residentKey ?? DEFAULT_RESIDENT_KEY_REQUIREMENT;
 			const userVerification =
@@ -759,7 +795,7 @@ export const createGianoProvider = (
 					// valid on every chain the deployment serves, and the handle can never be rewritten.
 					id: await injection.encodeUserId(
 						uuidv4().replace(/-/g, ""),
-						factoryAddress!,
+						requireFactoryAddress(),
 						ChainType.EVM,
 					),
 				},
@@ -783,10 +819,10 @@ export const createGianoProvider = (
 
 			if (handlerCreatedAddress) {
 				smartAccount = await toGianoSmartAccount({
-					client: client!,
+					client: requireClient(),
 					owners: [toWebAuthnAccount({ getFn, credential })],
 					address: handlerCreatedAddress,
-					factoryAddress: factoryAddress!,
+					factoryAddress: requireFactoryAddress(),
 				});
 
 				emit("connect", { chainId });
@@ -795,9 +831,9 @@ export const createGianoProvider = (
 			}
 
 			smartAccount = await toGianoSmartAccount({
-				client: client!,
+				client: requireClient(),
 				owners: [toWebAuthnAccount({ getFn, credential })],
-				factoryAddress: factoryAddress!,
+				factoryAddress: requireFactoryAddress(),
 			});
 
 			// NOTE: it is needed to deploy the smart account if we want to
@@ -806,7 +842,7 @@ export const createGianoProvider = (
 			try {
 				await ensureSmartAccountIsDeployed(
 					smartAccount,
-					client!,
+					requireClient(),
 					methods.eth_sendTransaction,
 				);
 			} catch (error) {
@@ -818,7 +854,7 @@ export const createGianoProvider = (
 
 			const smartAccountAddress = await smartAccount.getAddress();
 
-			emit("connect", { chainId: `0x${chain!.id.toString(16)}` });
+			emit("connect", { chainId: `0x${requireChain().id.toString(16)}` });
 			emit("accountsChanged", [smartAccountAddress]);
 			return [smartAccountAddress];
 		},
@@ -843,7 +879,7 @@ export const createGianoProvider = (
 			return await submitUserOperation({ calls, account: smartAccount });
 		},
 		waitForUserOperationReceipt: async ([hash]: [Hash]) => {
-			return bundler!.waitForUserOperationReceipt({ hash });
+			return requireBundler().waitForUserOperationReceipt({ hash });
 		},
 		personal_sign: async ([message, address]: [string, Address]) => {
 			if (!smartAccount) {
@@ -886,7 +922,7 @@ export const createGianoProvider = (
 				typeof typedData === "string" ? JSON.parse(typedData) : typedData;
 			return smartAccount.signTypedData(parsedTypedData);
 		},
-		eth_signUserOperation: async ([userOp]: [any]) => {
+		eth_signUserOperation: async ([userOp]: [SignUserOperationRequest]) => {
 			logger.debug("eth_signUserOperation", { userOp });
 			// Check and sign with one account instance. A restore or login can replace
 			// `smartAccount` during the await below, and the new account would sign as itself.
@@ -931,12 +967,12 @@ export const createGianoProvider = (
 						...signedUserOp,
 						account: { entryPoint: { address: GianoEntryPointAddress } },
 					} as Parameters<NonNullable<typeof injection.submitUserOperation>>[0],
-					chain!.id,
+					requireChain().id,
 				);
 			}
 			// viem prepares again when either the request or client supplies an account.
 			return sendUserOperation(
-				{ ...bundler!, account: undefined },
+				{ ...requireBundler(), account: undefined },
 				{
 					...signedUserOp,
 					account: undefined,
@@ -958,9 +994,9 @@ export const createGianoProvider = (
 			const fees = resolveUserOpFees(
 				options,
 				{},
-				await estimateFeesPerGas(chain!.id),
+				await estimateFeesPerGas(requireChain().id),
 			);
-			const prepared = await bundler!.prepareUserOperation({
+			const prepared = await requireBundler().prepareUserOperation({
 				account: smartAccount,
 				...op,
 				...fees,
@@ -977,9 +1013,7 @@ export const createGianoProvider = (
 		},
 	} satisfies GianoProviderMethodsMap;
 
-	methods.wallet_switchEthereumChain([
-		{ chainId: initialChainId.toString(16) },
-	]);
+	selectChain(initialChainId);
 
 	const provider: GianoProvider = {
 		getSmartAccount: () => smartAccount,
@@ -987,7 +1021,9 @@ export const createGianoProvider = (
 			const { method, params } = args;
 
 			if (!(method in methods)) {
-				return client!.request({ ...args } as any);
+				return requireClient().request({ ...args } as Parameters<
+					PublicClient["request"]
+				>[0]);
 			}
 			try {
 				const handler = (
@@ -1004,10 +1040,12 @@ export const createGianoProvider = (
 			event: E,
 			listener: EventHandler<E>,
 		) => {
-			if (!eventListeners[event]) {
-				eventListeners[event] = new Set();
+			let listeners = eventListeners[event];
+			if (!listeners) {
+				listeners = new Set();
+				eventListeners[event] = listeners;
 			}
-			eventListeners[event]!.add(listener);
+			listeners.add(listener);
 			return provider;
 		},
 		removeListener: <E extends keyof EIP1193EventMap>(
@@ -1020,7 +1058,7 @@ export const createGianoProvider = (
 	};
 
 	return <const>{
-		gianoClient: client!,
+		gianoClient: requireClient(),
 		gianoProvider: provider,
 	};
 };

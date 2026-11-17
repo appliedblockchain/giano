@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
+import { requireChainOf } from "../plugins/chain.js";
+import { requireTenantOf } from "../plugins/tenant.js";
 import { createTxMappingService } from "../services/tx-mappings.js";
 
 /**
@@ -69,8 +71,8 @@ export default async function txMappingRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.tenant!;
-			const chainId = request.chain!.chainId;
+			const tenant = requireTenantOf(request);
+			const chainId = requireChainOf(request).chainId;
 			const served = await mappings.listForServing(tenant.id, chainId);
 			for (const contract of served.invalid) {
 				request.log.warn(

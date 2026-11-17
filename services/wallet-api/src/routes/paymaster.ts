@@ -4,6 +4,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Address, Hex } from "viem";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { requireSessionOf } from "../plugins/auth.js";
 import type { ChainRegistry } from "../services/chains.js";
 import type {
 	SponsorshipRefusalReason,
@@ -193,7 +194,7 @@ export default async function paymasterRoutes(
 			},
 		},
 		async (request) => {
-			const session = request.session!;
+			const session = requireSessionOf(request);
 			const { id, method, params } = request.body;
 			const [op, entryPoint, chainIdHex, rawContext] = params as [
 				z.infer<typeof candidateOpSchema>,

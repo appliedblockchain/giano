@@ -10,6 +10,7 @@ import { createConnectionGrants } from "../src/grants";
 import { createHostRequestHandler } from "../src/host";
 import { createRequestStore } from "../src/requests";
 import type { WalletRuntime, WalletRuntimes } from "../src/runtimes";
+import { pendingOf } from "./helpers";
 
 const ACCOUNT: Address = "0x1111111111111111111111111111111111111111";
 const DAPP_CONTRACT: Address = "0x2222222222222222222222222222222222222222";
@@ -173,7 +174,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			chainName: "Chain 31337",
 			dappOrigin: "https://app.test",
 		});
-		requests.current!.approve();
+		pendingOf(requests).approve();
 		await expect(call).resolves.toEqual(["0xabc"]);
 	});
 
@@ -181,7 +182,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 		const { handler, requests, calls, context } = harness();
 		const call = handler("eth_sendTransaction", [{}], context);
 		await Promise.resolve();
-		requests.current!.reject();
+		pendingOf(requests).reject();
 		await expect(call).rejects.toMatchObject({
 			code: RPC_ERRORS.USER_REJECTED,
 		});
@@ -198,7 +199,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 		// wait for the async restore to run before consent appears
 		await vi.waitFor(() => expect(requests.current).not.toBeNull());
 		expect(calls[0]).toMatchObject({ method: "giano_restoreAccount" });
-		requests.current!.approve();
+		pendingOf(requests).approve();
 		await expect(call).resolves.toBe("result:personal_sign");
 	});
 
@@ -212,7 +213,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
 			expect(calls[0]).toMatchObject({ method: "giano_restoreAccount" });
 			expect(requests.current).toMatchObject({ kind: "sign", method });
-			requests.current!.reject();
+			pendingOf(requests).reject();
 			await expect(call).rejects.toMatchObject({
 				code: RPC_ERRORS.USER_REJECTED,
 			});
@@ -470,7 +471,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
 			// While the user decides, the dApp gets the provider onto another account.
 			setAccount(OTHER);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).rejects.toMatchObject({
 				code: RPC_ERRORS.UNAUTHORIZED,
 			});
@@ -486,7 +487,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
 			// The consent screen shows what the dApp sent.
 			expect(requests.current?.params).toEqual([operation]);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).resolves.toBe("result:eth_signUserOperation");
 			// The provider gets the sender, so it refuses if its account changes before it signs.
 			const forwarded = calls.find(
@@ -529,7 +530,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			);
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
 			setAccount(null);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).rejects.toMatchObject({
 				code: RPC_ERRORS.DISCONNECTED,
 			});
@@ -574,7 +575,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			const call = handler(method, params, context);
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
 			expect(requests.current).toMatchObject({ kind, method });
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).resolves.toBe(`result:${method}`);
 		});
 	});
@@ -669,7 +670,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				connected: false,
 			});
 			const call = handler("eth_requestAccounts", [], context);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).resolves.toEqual(["0xabc"]);
 			expect(grants.has(DAPP)).toBe(true);
 
@@ -689,7 +690,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				connected: false,
 			});
 			const call = handler("eth_requestAccounts", [], context);
-			requests.current!.reject();
+			pendingOf(requests).reject();
 			await expect(call).rejects.toMatchObject({
 				code: RPC_ERRORS.USER_REJECTED,
 			});
@@ -702,7 +703,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				connectResult: [],
 			});
 			const call = handler("eth_requestAccounts", [], context);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).resolves.toEqual([]);
 			expect(grants.has(DAPP)).toBe(false);
 		});
@@ -779,7 +780,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			const call = handler("personal_sign", ["0x68690a", ACCOUNT], context);
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
 			grants.revoke(DAPP);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			const error = await call.catch((caught: unknown) => caught);
 			expect(isNotConnectedError(error)).toBe(true);
 			expect(calls.map((entry) => entry.method)).not.toContain("personal_sign");
@@ -810,7 +811,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			const context = { dappOrigin: DAPP, chainId: 31337 };
 			const call = handler("eth_requestAccounts", [], context);
 			await vi.waitFor(() => expect(requests.current).not.toBeNull());
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).rejects.toMatchObject({ code: RPC_ERRORS.INTERNAL });
 			expect(grants.has(DAPP)).toBe(false);
 			emit("accountsChanged", ["0xabc"]);
@@ -829,7 +830,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 			// Sign in from the management view: the provider emits the address.
 			emit("accountsChanged", ["0xabc"]);
 			emit("chainChanged", "0x7a69");
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).resolves.toBeNull();
 			expect(sendEvent).not.toHaveBeenCalledWith(
 				"accountsChanged",
@@ -843,7 +844,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				connected: false,
 			});
 			const call = handler("eth_requestAccounts", [], context);
-			requests.current!.approve();
+			pendingOf(requests).approve();
 			await expect(call).resolves.toEqual(["0xabc"]);
 			// The connect emitted before the grant existed, so that event was dropped.
 			expect(sendEvent).not.toHaveBeenCalled();
@@ -880,7 +881,7 @@ describe("the host request handler (WK-08…WK-12)", () => {
 				kind: "manage",
 				params: undefined,
 			});
-			requests.current!.approve(); // the user closed the management view
+			pendingOf(requests).approve(); // the user closed the management view
 			await expect(call).resolves.toBeNull();
 		});
 	});

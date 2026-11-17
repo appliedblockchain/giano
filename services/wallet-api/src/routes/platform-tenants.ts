@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
+import { requirePlatformAdminOf } from "../plugins/auth.js";
 import type { ChainRegistry } from "../services/chains.js";
 import {
 	adminRevocationSchema,
@@ -240,7 +241,7 @@ export default async function platformTenantRoutes(
 			try {
 				const created = await admin.create(
 					request.body,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				request.log.info(
 					{ slug: created.tenant.slug },
@@ -314,7 +315,7 @@ export default async function platformTenantRoutes(
 					request.params.slug,
 					patch,
 					version,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				return reply
 					.header("etag", `"${updated.version}"`)
@@ -343,7 +344,7 @@ export default async function platformTenantRoutes(
 				const tenant = await admin.suspend(
 					request.params.slug,
 					request.body.reason,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				request.log.warn(
 					{ slug: tenant.slug, reason: request.body.reason },
@@ -373,7 +374,7 @@ export default async function platformTenantRoutes(
 			try {
 				const tenant = await admin.resume(
 					request.params.slug,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				request.log.info(
 					{ slug: tenant.slug },
@@ -420,11 +421,15 @@ export default async function platformTenantRoutes(
 				),
 			);
 			try {
-				await admin.remove(request.params.slug, request.platformAdmin!, {
-					sponsoringChainIds: sponsoring.map((chain) => chain.chainId),
-					heads,
-					maxLagBlocks: opts.config.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS,
-				});
+				await admin.remove(
+					request.params.slug,
+					requirePlatformAdminOf(request),
+					{
+						sponsoringChainIds: sponsoring.map((chain) => chain.chainId),
+						heads,
+						maxLagBlocks: opts.config.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS,
+					},
+				);
 				request.log.warn(
 					{ slug: request.params.slug },
 					"tenant deleted by platform admin",
@@ -459,7 +464,7 @@ export default async function platformTenantRoutes(
 						await admin.issueAdminKey(
 							request.params.slug,
 							request.body.label,
-							request.platformAdmin!,
+							requirePlatformAdminOf(request),
 						),
 					);
 			} catch (error) {
@@ -485,7 +490,7 @@ export default async function platformTenantRoutes(
 				await admin.revokeAdminKey(
 					request.params.slug,
 					request.params.keyId,
-					request.platformAdmin!,
+					requirePlatformAdminOf(request),
 				);
 				return reply.code(204).send(null);
 			} catch (error) {
@@ -511,7 +516,7 @@ export default async function platformTenantRoutes(
 			try {
 				// suspended tenants are allowed: revoking is still worth doing before a resume. The
 				// tenant is locked and checked in the revocation's transaction, so a delete cannot slip in.
-				const platformAdmin = request.platformAdmin!;
+				const platformAdmin = requirePlatformAdminOf(request);
 				const revoked = await opts.sessions.revokeAndRecord(
 					async (tx) =>
 						(await admin.lockForSessionRevocation(tx, request.params.slug)).id,

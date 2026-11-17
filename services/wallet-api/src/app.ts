@@ -225,16 +225,32 @@ export async function buildApp({
 	const drift = createDriftStore();
 	app.decorate("drift", drift);
 
-	const sponsoringChains = registry.all.filter((chain) => chain.sponsorship);
+	// The registry wires a chain's paymaster and sponsorship service together, and only with a signer.
+	const sponsoringChains = registry.all.flatMap((chain) =>
+		chain.paymaster && chain.sponsorship
+			? [
+					{
+						chainId: chain.chainId,
+						paymaster: chain.paymaster,
+						sponsorship: chain.sponsorship,
+					},
+				]
+			: [],
+	);
 	if (sponsoringChains.length > 0) {
+		if (!signer) {
+			throw new Error(
+				"a chain has gas sponsorship but no sponsorship signer was built",
+			);
+		}
 		app.log.info(
 			{
 				chains: sponsoringChains.map((chain) => ({
 					chainId: chain.chainId,
-					paymaster: chain.paymaster!.address,
+					paymaster: chain.paymaster.address,
 				})),
 				signerKind: config.SPONSORSHIP_SIGNER_KIND,
-				keyId: signer!.keyId,
+				keyId: signer.keyId,
 			},
 			"gas sponsorship enabled",
 		);
@@ -251,7 +267,7 @@ export async function buildApp({
 		// shared, so asking any sponsoring chain answers for all of them (MC-72).
 		sponsorshipHealth:
 			sponsoringChains.length > 0
-				? () => sponsoringChains[0].sponsorship!.health()
+				? () => sponsoringChains[0].sponsorship.health()
 				: undefined,
 	});
 	await app.register(wellKnownRoutes, { db });
@@ -320,7 +336,7 @@ export async function buildApp({
 			registry,
 			signerHealth:
 				sponsoringChains.length > 0
-					? () => sponsoringChains[0].sponsorship!.health()
+					? () => sponsoringChains[0].sponsorship.health()
 					: undefined,
 		});
 	}

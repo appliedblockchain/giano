@@ -46,6 +46,54 @@ export const PLATFORM_UNAUTHORIZED = {
 	message: "platform admin session required",
 } as const;
 
+/**
+ * Accessors for the fields the guards below set. A route reads them only after its guard ran,
+ * so a missing value is a programming error (a route without its guard), never a client error:
+ * each accessor throws instead of letting the route continue without the value.
+ */
+
+/** The session set by requireSession. */
+export function requireSessionOf(request: FastifyRequest): SessionContext {
+	if (!request.session) {
+		throw new Error(
+			"request.session is not set: the route is missing its requireSession guard",
+		);
+	}
+	return request.session;
+}
+
+/** The tenant whose admin key authorized the request, set by requireAdmin. */
+export function requireAdminTenantOf(request: FastifyRequest): Tenant {
+	if (!request.adminTenant) {
+		throw new Error(
+			"request.adminTenant is not set: the route is missing its requireAdmin guard",
+		);
+	}
+	return request.adminTenant;
+}
+
+/** The id of the admin key that authorized the request, set by requireAdmin. */
+export function requireAdminKeyIdOf(request: FastifyRequest): string {
+	if (request.adminKeyId === null) {
+		throw new Error(
+			"request.adminKeyId is not set: the route is missing its requireAdmin guard",
+		);
+	}
+	return request.adminKeyId;
+}
+
+/** The platform admin whose session authorized the request, set by requirePlatformAdmin. */
+export function requirePlatformAdminOf(
+	request: FastifyRequest,
+): PlatformAdminContext {
+	if (!request.platformAdmin) {
+		throw new Error(
+			"request.platformAdmin is not set: the route is missing its requirePlatformAdmin guard",
+		);
+	}
+	return request.platformAdmin;
+}
+
 export function bearerToken(request: FastifyRequest): string | null {
 	const header = request.headers.authorization;
 	if (!header?.startsWith("Bearer ")) return null;

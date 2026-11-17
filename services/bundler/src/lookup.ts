@@ -96,7 +96,12 @@ export function createLookup(options: {
 			// UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster,
 			//                    uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)
 			const word = (n: number) => sliceHex(event.data, n * 32, n * 32 + 32);
-			const paymaster = getAddress(sliceHex(event.topics[3]!, 12));
+			const [, , senderTopic, paymasterTopic] = event.topics;
+			if (!senderTopic || !paymasterTopic)
+				throw new Error(
+					`UserOperationEvent for ${hash} has no indexed sender or paymaster topic`,
+				);
+			const paymaster = getAddress(sliceHex(paymasterTopic, 12));
 			const revert = ownLogs.find(
 				(log) =>
 					isEntryPointEvent(log, USER_OPERATION_REVERT_REASON) &&
@@ -106,7 +111,7 @@ export function createLookup(options: {
 			return {
 				userOpHash: hash,
 				entryPoint: event.address,
-				sender: getAddress(sliceHex(event.topics[2]!, 12)),
+				sender: getAddress(sliceHex(senderTopic, 12)),
 				nonce: numberToHex(hexToBigInt(word(0))),
 				...(paymaster === "0x0000000000000000000000000000000000000000"
 					? {}

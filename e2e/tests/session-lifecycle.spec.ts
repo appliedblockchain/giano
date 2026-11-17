@@ -73,7 +73,7 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 		headers: { authorization: `Bearer ${tenant.adminKey}` },
 	});
 	expect(revoked.status).toBe(200);
-	expect(revoked.json().revoked).toBeGreaterThanOrEqual(1);
+	expect(revoked.json<{ revoked: number }>().revoked).toBeGreaterThanOrEqual(1);
 
 	await rename(popup, "after revocation");
 	await expect(popup.getByTestId("manage-notice")).toHaveText(
@@ -99,15 +99,19 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 		{ headers: { authorization: `Bearer ${token}` } },
 	);
 	expect(history.status).toBe(200);
+	type HistoryEntry = { action: string; detail: { value?: string } | null };
 	const entry = history
-		.json()
+		.json<{ entries: HistoryEntry[] }>()
 		.entries.find(
-			(row: { action: string; detail: { value?: string } | null }) =>
+			(row: HistoryEntry) =>
 				row.action === "user-sessions-revoke" &&
 				row.detail?.value === externalUserId,
 		);
 	expect(entry).toMatchObject({
 		actor: expect.stringMatching(/^tenant-admin-key:/),
-		detail: { selector: "externalUserId", revoked: revoked.json().revoked },
+		detail: {
+			selector: "externalUserId",
+			revoked: revoked.json<{ revoked: number }>().revoked,
+		},
 	});
 });

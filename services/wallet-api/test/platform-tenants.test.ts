@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
@@ -265,9 +266,9 @@ describe("create", () => {
 			op("POST", "/v1/platform/tenants", { payload: payload("two") }),
 		]);
 		expect(results.map((res) => res.statusCode).sort()).toEqual([201, 409]);
-		expect(results.find((res) => res.statusCode === 409)!.json().error).toBe(
-			"origin-claimed",
-		);
+		const conflict = results.find((res) => res.statusCode === 409);
+		assert(conflict, "expected a 409 response");
+		expect(conflict.json().error).toBe("origin-claimed");
 	});
 
 	it("lets two tenants share a CORS origin", async () => {

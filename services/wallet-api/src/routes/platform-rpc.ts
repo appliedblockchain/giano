@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { requirePlatformAdminOf } from "../plugins/auth.js";
+import { requireChainOf } from "../plugins/chain.js";
 import {
 	boundedLogsGuard,
 	createReadRelay,
@@ -73,9 +75,9 @@ export default async function platformRpcRoutes(
 		(request) =>
 			relay.handle({
 				body: request.body,
-				chain: request.chain!,
+				chain: requireChainOf(request),
 				// requirePlatformAdmin ran first (an instance hook), so the session is known here
-				key: request.platformAdmin!.sessionId,
+				key: requirePlatformAdminOf(request).sessionId,
 				log: request.log,
 				labels: {},
 			}),
