@@ -83,6 +83,7 @@ describe("readImplementationSlot on an RPC that refuses eth_getStorageAt", () =>
 				return from <= UPGRADED_AT && UPGRADED_AT <= to
 					? [
 							{
+								blockNumber: `0x${UPGRADED_AT.toString(16)}`,
 								topics: [
 									UPGRADED_TOPIC,
 									`0x${"0".repeat(24)}${IMPLEMENTATION.slice(2).toLowerCase()}`,
@@ -105,13 +106,13 @@ describe("readImplementationSlot on an RPC that refuses eth_getStorageAt", () =>
 		for (const { from, to } of spans)
 			expect(to - from + 1n).toBeLessThanOrEqual(9_000n);
 
-		// A read on every block (the console's health check) does not repeat the walk: the same
-		// head sends nothing, and a newer one reads only the blocks since.
+		// A read on every block (the console's health check) does not repeat the walk: it reads only
+		// the blocks after the checkpoint, 64 blocks behind the head, in one request.
 		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
-		expect(spans).toHaveLength(2);
+		expect(spans.slice(2)).toEqual([{ from: 24_937n, to: 25_000n }]);
 		head = 25_002n;
 		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
-		expect(spans.slice(2)).toEqual([{ from: 25_001n, to: 25_002n }]);
+		expect(spans.slice(3)).toEqual([{ from: 24_937n, to: 25_002n }]);
 	});
 });
 

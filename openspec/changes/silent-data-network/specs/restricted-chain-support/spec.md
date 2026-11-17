@@ -23,11 +23,13 @@ When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHA
 
 #### Scenario: Walk limit reached
 - **WHEN** the storage read is refused and the walk sends its maximum number of log queries without finding an `Upgraded` event
-- **THEN** the read fails with an error that names the blocks searched and says to pass the proxy's deployment block, and no further log query is sent
+- **THEN** the read fails with an error that names the blocks searched, and no further log query is sent in that read
+- **AND** the next read through the same client continues the search further back from where the last one stopped
 
 #### Scenario: Repeated read through the same client
 - **WHEN** the storage read is refused and the implementation is read again through the same client
-- **THEN** the reader queries only the blocks after the last block it read, and returns the implementation of a newer `Upgraded` event when one is there
+- **THEN** the reader queries only the blocks after its checkpoint, 64 blocks behind the head, and returns the implementation of a newer `Upgraded` event when one is there
+- **AND** an `Upgraded` event newer than the checkpoint is not kept, so a reorganisation that removes it is seen on the next read
 
 #### Scenario: Other storage-read failure
 - **WHEN** the storage read fails with a timeout, a rate limit or any error other than a refusal of the method

@@ -715,6 +715,41 @@ describe("verifyChain", () => {
 		]);
 	});
 
+	it("a paymaster implementation read from Upgraded logs is a warning, not a failure", async () => {
+		const sponsored = {
+			...descriptor,
+			sponsorshipPaymaster:
+				"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96" as `0x${string}`,
+		};
+		const fromSlot = await verifyChain(sponsored, fakeClient({}), fakeRelease);
+		expect(fromSlot.paymasterImplementationUnverified).toBeUndefined();
+
+		// An RPC that refuses eth_getStorageAt (Silent Data): the latest Upgraded event instead.
+		const refusing = {
+			...fakeClient({}),
+			async getStorageAt() {
+				throw new Error("JSON RPC method not whitelisted");
+			},
+			async getBlockNumber() {
+				return 3n;
+			},
+			async request() {
+				return [
+					{
+						blockNumber: "0x1",
+						topics: [
+							"0x",
+							`0x${PAYMASTER_IMPLEMENTATION.slice(2).padStart(64, "0")}`,
+						],
+					},
+				];
+			},
+		} as unknown as PublicClient;
+		const fromLogs = await verifyChain(sponsored, refusing, fakeRelease);
+		expect(fromLogs.failures).toEqual([]);
+		expect(fromLogs.paymasterImplementationUnverified).toBe(true);
+	});
+
 	it("a paymaster initialised with another EntryPoint is FATAL", async () => {
 		const paymaster = "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96";
 		const v07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";

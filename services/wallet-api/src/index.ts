@@ -89,6 +89,11 @@ const servedProbes = new Map<number, string>();
 				{ chainId: chain.chainId },
 				`chain ${chain.chainId}: no wallet implementation configured (walletApi.implementation, IMPLEMENTATION_ADDRESS) or registered — the factory's implementation was checked for release code and EntryPoint, but not compared with the chain's own`,
 			);
+		if (verification.paymasterImplementationUnverified)
+			app.log.warn(
+				{ chainId: chain.chainId },
+				`chain ${chain.chainId}: the paymaster implementation was read from Upgraded logs, not verified against the implementation slot — the RPC refuses eth_getStorageAt, and the code the proxy delegates to can emit an Upgraded event that names another address`,
+			);
 		if (
 			verification.failures.some((failure) => failure.kind === "unreachable")
 		) {

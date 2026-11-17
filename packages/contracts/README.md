@@ -223,14 +223,25 @@ const implementation = await proxyImplementation(publicClient, paymasterProxy);
   wallet-api's platform read relay may be set as low as 9,000 (`PLATFORM_RPC_MAX_LOG_BLOCKS`). It
   stops at the first span that holds an event.
 - The walk is bounded. It stops at `options.fromBlock` (default 0), for example the proxy's
-  deployment block. After `options.maxChunks` requests (default `UPGRADED_LOG_MAX_CHUNKS`, 1,000,
-  that is 9,000,000 blocks) without an event, it throws an error that says to pass `fromBlock`.
-  When it reaches `fromBlock` without an event, it returns null.
-- The result is kept per client object and per proxy. The next read on the same client walks only
-  the blocks after the last one it read, so a caller that reads on every block sends one
-  `eth_getLogs` request each time. A walk that gave up is not repeated either.
+  deployment block. One read sends at most `options.maxChunks` requests (default
+  `UPGRADED_LOG_MAX_CHUNKS`, 1,000, that is 9,000,000 blocks). `maxChunks` must be a non-negative
+  safe integer; any other value throws before any request. When a read reaches the limit without
+  an event, it throws, and the next read through the same client continues the search further
+  back from where the last one stopped. When the search reaches `fromBlock` without an event, it
+  returns null.
+- The result is kept per client object, per proxy and per `fromBlock`, up to a checkpoint 64
+  blocks behind the head. Each read searches the blocks after the checkpoint again, so a caller
+  that reads on every block normally sends one `eth_getLogs` request each time. An upgrade newer
+  than the checkpoint is returned but not kept, so a reorganisation cannot leave a removed upgrade
+  behind. A head below the checkpoint starts the walk again. The head is read uncached
+  (`cacheTime: 0`), and concurrent reads of the same proxy through the same client share one walk.
 - The fallback needs `getBlockNumber` and `request` on the client. Without them, the call raises
   the original storage-read error.
+- `proxyImplementationWithSource(client, proxy, options?)` returns
+  `{ implementation, source }`, where `source` is `"slot"` or `"logs"`. A `"logs"` answer is not
+  verified against the implementation slot: the code the proxy delegates to, such as an
+  implementation an upgrade installs, can emit an `Upgraded` event that names another address.
+  wallet-api's chain check and `giano-doctor` report such an answer as a warning.
 - `implementationFromUpgradedLogs(getLogs, latest, options?)` is the log walk alone, without the
   per-client memory, for a caller with its own log reader. `implementationFromSlot(word)` decodes a
   raw slot word.

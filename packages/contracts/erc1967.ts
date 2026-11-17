@@ -31,18 +31,67 @@ export const UPGRADED_LOG_MAX_CHUNKS = 1_000;
 export type UpgradedLogWalkOptions = {
 	/** The lowest block to search, such as the proxy's deployment block. Default 0. */
 	fromBlock?: bigint;
-	/** The most `eth_getLogs` requests the walk sends. Default {@link UPGRADED_LOG_MAX_CHUNKS}. */
+	/**
+	 * The most `eth_getLogs` requests one read sends, a non-negative safe integer. Default
+	 * {@link UPGRADED_LOG_MAX_CHUNKS}.
+	 */
 	maxChunks?: number;
 };
 
+/**
+ * The depth, in blocks, below which a reorganisation is not expected. The per-client memory keeps
+ * only what it found this far behind the head, and every read searches the newer blocks again.
+ */
+const UPGRADED_LOG_CONFIRMATIONS = 64n;
+
 /** The walk sent `maxChunks` requests, did not reach `fromBlock`, and found no `Upgraded` event. */
 class UpgradedLogWalkLimitError extends Error {
-	constructor(fromBlock: bigint, toBlock: bigint, maxChunks: number) {
+	constructor(
+		fromBlock: bigint,
+		toBlock: bigint,
+		maxChunks: number,
+		recovery: string,
+	) {
 		super(
-			`no Upgraded event in blocks ${fromBlock}-${toBlock}, and the walk stops after ${maxChunks} eth_getLogs requests. Pass fromBlock (the proxy's deployment block) or a larger maxChunks to search further back`,
+			`no Upgraded event in blocks ${fromBlock}-${toBlock}, and the walk stops after ${maxChunks} eth_getLogs requests. ${recovery}`,
 		);
 		this.name = "UpgradedLogWalkLimitError";
 	}
+}
+
+/** Refuses a `maxChunks` that would not bound the walk: only a non-negative safe integer does. */
+function checkMaxChunks(maxChunks: number): void {
+	if (!Number.isSafeInteger(maxChunks) || maxChunks < 0)
+		throw new RangeError(
+			`maxChunks must be a non-negative integer, not ${maxChunks}`,
+		);
+}
+
+/**
+ * Walks back from `to` to `floor` in chunks of {@link UPGRADED_LOG_CHUNK} blocks, newest first, and
+ * stops at the first chunk that holds a log, or after `maxChunks` requests. Returns that chunk's
+ * logs (none when it found none), the lowest block searched, and the number of requests sent. A
+ * `low` above `floor` with no logs means the walk stopped at the limit.
+ */
+async function walkBack<Log>(
+	getLogs: (fromBlock: bigint, toBlock: bigint) => Promise<readonly Log[]>,
+	to: bigint,
+	floor: bigint,
+	maxChunks: number,
+): Promise<{ logs: readonly Log[]; low: bigint; requests: number }> {
+	let low = to + 1n;
+	let requests = 0;
+	while (low > floor && requests < maxChunks) {
+		const high = low - 1n;
+		low =
+			high - floor >= UPGRADED_LOG_CHUNK - 1n
+				? high - UPGRADED_LOG_CHUNK + 1n
+				: floor;
+		requests++;
+		const logs = await getLogs(low, high);
+		if (logs.length > 0) return { logs, low, requests };
+	}
+	return { logs: [], low, requests };
 }
 
 /**
@@ -62,7 +111,7 @@ export function implementationFromSlot(
  * between `fromBlock` and `latest`. For an RPC that refuses `eth_getStorageAt` (Silent Data): walks
  * back from `latest` in chunks of {@link UPGRADED_LOG_CHUNK} blocks and stops at the first chunk that
  * holds an upgrade. After `maxChunks` requests without one, it throws instead of walking further.
- * `getLogs` returns the topics of the proxy's `Upgraded` logs in [fromBlock, toBlock], oldest first.
+ * `maxChunks` must be a non-negative safe integer. `getLogs` returns the topics of the proxy's `Upgraded` logs in [fromBlock, toBlock], oldest first.
  */
 export async function implementationFromUpgradedLogs(
 	getLogs: (
@@ -75,19 +124,17 @@ export async function implementationFromUpgradedLogs(
 		maxChunks = UPGRADED_LOG_MAX_CHUNKS,
 	}: UpgradedLogWalkOptions = {},
 ): Promise<Address | null> {
-	let chunks = 0;
-	for (let to = latest; to >= fromBlock; to -= UPGRADED_LOG_CHUNK) {
-		if (chunks === maxChunks)
-			throw new UpgradedLogWalkLimitError(to + 1n, latest, maxChunks);
-		chunks++;
-		const from =
-			to - fromBlock >= UPGRADED_LOG_CHUNK - 1n
-				? to - UPGRADED_LOG_CHUNK + 1n
-				: fromBlock;
-		const logs = await getLogs(from, to);
-		const last = logs.at(-1);
-		if (last) return implementationFromSlot(last.topics[1]);
-	}
+	checkMaxChunks(maxChunks);
+	const { logs, low } = await walkBack(getLogs, latest, fromBlock, maxChunks);
+	const last = logs.at(-1);
+	if (last) return implementationFromSlot(last.topics[1]);
+	if (low > fromBlock)
+		throw new UpgradedLogWalkLimitError(
+			low,
+			latest,
+			maxChunks,
+			"Pass a larger maxChunks to search further back",
+		);
 	return null;
 }
 
@@ -144,62 +191,128 @@ export function isMethodRefusedError(error: unknown): boolean {
 	return false;
 }
 
-/** What the last log walk for a proxy found, up to which block. */
-type Walked = {
-	block: bigint;
-	implementation: Address | null;
-	/** The walk gave up. Raised again until a newer block holds an upgrade. */
-	limit?: UpgradedLogWalkLimitError;
+/** One `Upgraded` log as `eth_getLogs` returns it. */
+type UpgradedLog = {
+	topics: readonly (string | null)[];
+	blockNumber?: string | null;
 };
 
 /**
- * Per client, then per proxy: the result of the last log walk. A later read walks only the blocks
- * after it, so a caller that reads on every block (the console's health check) sends one
- * `eth_getLogs`, not the whole walk again. Keyed by the client object, so it lives as long as the
- * client does.
+ * What the log walks for one proxy and `fromBlock` found, through one client. Every block from `low`
+ * to `checkpoint` was searched. The checkpoint stays {@link UPGRADED_LOG_CONFIRMATIONS} blocks
+ * behind the head, so a reorganisation does not reach what is kept.
  */
-const walks = new WeakMap<object, Map<Address, Walked>>();
+type Walk = {
+	checkpoint: bigint;
+	/** The newest upgrade at or below the checkpoint; null when none was found down to `low`. */
+	implementation: Address | null;
+	/** Where the search back stopped: `fromBlock` once it is complete, higher when it hit the limit. */
+	low: bigint;
+};
+
+/** The memory for one proxy and `fromBlock`, and the read in progress, which concurrent reads share. */
+type WalkEntry = { walk?: Walk; reading?: Promise<Address | null> };
 
 /**
- * The implementation the ERC-1967 proxy at `proxy` delegates to, or null when its slot is empty.
- * Reads the slot. When the RPC refuses that method and the client can read logs, it falls back to
- * the latest `Upgraded` event, bounded by `options`. Any other storage-read error is raised
- * unchanged. When the fallback fails too, the error names both failures, with the storage-read
- * error as `cause`.
+ * Per client, then per proxy and `fromBlock`: what the log walks found. A later read searches only
+ * the blocks after the checkpoint, so a caller that reads on every block (the console's health
+ * check) normally sends one `eth_getLogs`, not the whole walk again. Keyed by the client object, so
+ * it lives as long as the client does.
  */
-export async function proxyImplementation(
+const walks = new WeakMap<object, Map<string, WalkEntry>>();
+
+/** This client's memory for one proxy and `fromBlock`. */
+function walkEntry(client: object, key: string): WalkEntry {
+	let byKey = walks.get(client);
+	if (!byKey) {
+		byKey = new Map();
+		walks.set(client, byKey);
+	}
+	let entry = byKey.get(key);
+	if (!entry) {
+		entry = {};
+		byKey.set(key, entry);
+	}
+	return entry;
+}
+
+/**
+ * The read in progress for `entry`, or a new one from `start`. One read at a time per entry: a
+ * concurrent read shares the one in progress, and each read starts from what the previous one
+ * kept, so an older read never overwrites a newer checkpoint.
+ */
+function sharedRead(
+	entry: WalkEntry,
+	start: () => Promise<Address | null>,
+): Promise<Address | null> {
+	if (entry.reading) return entry.reading;
+	const reading = start();
+	entry.reading = reading;
+	const done = () => {
+		if (entry.reading === reading) entry.reading = undefined;
+	};
+	reading.then(done, done);
+	return reading;
+}
+
+/**
+ * The implementation the ERC-1967 proxy at `proxy` delegates to, or null when its slot is empty,
+ * and where the answer came from. Reads the slot (`source: "slot"`). When the RPC refuses that
+ * method and the client can read logs, it falls back to the latest `Upgraded` event, bounded by
+ * `options` (`source: "logs"`). Any other storage-read error is raised unchanged. When the fallback
+ * fails too, the error names both failures, with the storage-read error as `cause`.
+ *
+ * A `"logs"` answer is not verified against the slot: code the proxy delegates to, such as an
+ * implementation an upgrade installs, can emit an `Upgraded` event that names another address.
+ * When the walk hits `maxChunks`, it throws, and the next read through the same client continues
+ * the search further back.
+ */
+export async function proxyImplementationWithSource(
 	client: Pick<PublicClient, "getStorageAt"> &
 		Partial<Pick<PublicClient, "getBlockNumber" | "request">>,
 	proxy: Address,
 	options: UpgradedLogWalkOptions = {},
-): Promise<Address | null> {
+): Promise<{ implementation: Address | null; source: "slot" | "logs" }> {
+	const { fromBlock = 0n, maxChunks = UPGRADED_LOG_MAX_CHUNKS } = options;
+	checkMaxChunks(maxChunks);
 	try {
-		return implementationFromSlot(
-			await client.getStorageAt({ address: proxy, slot: IMPLEMENTATION_SLOT }),
-		);
+		return {
+			implementation: implementationFromSlot(
+				await client.getStorageAt({
+					address: proxy,
+					slot: IMPLEMENTATION_SLOT,
+				}),
+			),
+			source: "slot",
+		};
 	} catch (storageError) {
 		const { getBlockNumber, request } = client;
 		if (!getBlockNumber || !request || !isMethodRefusedError(storageError))
 			throw storageError;
 		try {
-			return await implementationSinceLastWalk(
-				client,
-				proxy,
-				options,
-				await getBlockNumber(),
-				(fromBlock, toBlock) =>
-					request({
-						method: "eth_getLogs",
-						params: [
-							{
-								address: proxy,
-								topics: [UPGRADED_TOPIC],
-								fromBlock: `0x${fromBlock.toString(16)}`,
-								toBlock: `0x${toBlock.toString(16)}`,
-							},
-						],
-					}) as Promise<readonly { topics: readonly (string | null)[] }[]>,
+			const entry = walkEntry(client, `${getAddress(proxy)}:${fromBlock}`);
+			const implementation = await sharedRead(entry, async () =>
+				implementationSinceCheckpoint(
+					entry,
+					// viem caches the block number; an upgrade in the newest block must not be missed.
+					await getBlockNumber({ cacheTime: 0 }),
+					fromBlock,
+					maxChunks,
+					(from, to) =>
+						request({
+							method: "eth_getLogs",
+							params: [
+								{
+									address: proxy,
+									topics: [UPGRADED_TOPIC],
+									fromBlock: `0x${from.toString(16)}`,
+									toBlock: `0x${to.toString(16)}`,
+								},
+							],
+						}) as Promise<readonly UpgradedLog[]>,
+				),
 			);
+			return { implementation, source: "logs" };
 		} catch (logError) {
 			throw new Error(
 				`could not read the implementation of ${proxy}: the RPC refused eth_getStorageAt, and reading its Upgraded logs failed: ${logError instanceof Error ? logError.message : String(logError)}`,
@@ -209,45 +322,98 @@ export async function proxyImplementation(
 	}
 }
 
-/** The log walk, from the block after this client's last walk for `proxy` when there was one. */
-async function implementationSinceLastWalk(
-	client: object,
+/**
+ * The implementation the ERC-1967 proxy at `proxy` delegates to, or null when its slot is empty.
+ * {@link proxyImplementationWithSource} without the source: the slot, or, when the RPC refuses
+ * `eth_getStorageAt`, the latest `Upgraded` event.
+ */
+export async function proxyImplementation(
+	client: Pick<PublicClient, "getStorageAt"> &
+		Partial<Pick<PublicClient, "getBlockNumber" | "request">>,
 	proxy: Address,
-	options: UpgradedLogWalkOptions,
-	latest: bigint,
-	getLogs: Parameters<typeof implementationFromUpgradedLogs>[0],
+	options: UpgradedLogWalkOptions = {},
 ): Promise<Address | null> {
-	let byProxy = walks.get(client);
-	if (!byProxy) {
-		byProxy = new Map();
-		walks.set(client, byProxy);
-	}
-	const key = getAddress(proxy);
-	let walked = byProxy.get(key);
+	return (await proxyImplementationWithSource(client, proxy, options))
+		.implementation;
+}
 
-	if (!walked || latest > walked.block) {
-		const floor = options.fromBlock ?? 0n;
-		const next =
-			walked && walked.block + 1n > floor ? walked.block + 1n : floor;
-		let found: Address | null;
-		try {
-			found = await implementationFromUpgradedLogs(getLogs, latest, {
-				...options,
-				fromBlock: next,
-			});
-		} catch (error) {
-			if (error instanceof UpgradedLogWalkLimitError)
-				byProxy.set(key, { block: latest, implementation: null, limit: error });
-			throw error;
-		}
-		// No upgrade in the new blocks: the last walk's answer stands. An Upgraded event never names
-		// the zero address, as ERC-1967 refuses an implementation without code.
-		walked =
-			found === null && walked
-				? { ...walked, block: latest }
-				: { block: latest, implementation: found };
-		byProxy.set(key, walked);
+/**
+ * One log read through the memory in `entry`. It searches the blocks after the checkpoint, newest
+ * first, and keeps only what lies at or below the new checkpoint. When no upgrade is there and the
+ * search back is not complete, it continues from where the last read stopped. It sends at most
+ * `maxChunks` requests.
+ */
+async function implementationSinceCheckpoint(
+	entry: WalkEntry,
+	latest: bigint,
+	fromBlock: bigint,
+	maxChunks: number,
+	getLogs: (
+		fromBlock: bigint,
+		toBlock: bigint,
+	) => Promise<readonly UpgradedLog[]>,
+): Promise<Address | null> {
+	// A head below the checkpoint: a reorganisation deeper than the confirmation depth, or a node far
+	// behind. Nothing kept is trusted; the walk starts again.
+	const walk =
+		entry.walk && latest >= entry.walk.checkpoint ? entry.walk : undefined;
+	const previous = walk ? walk.checkpoint : fromBlock - 1n;
+	// The checkpoint never moves back while the head stays at or above it.
+	let checkpoint = latest - UPGRADED_LOG_CONFIRMATIONS;
+	if (checkpoint < previous) checkpoint = previous;
+	const floor = previous + 1n;
+
+	const recent = await walkBack(getLogs, latest, floor, maxChunks);
+	let kept: UpgradedLog | undefined;
+	for (const log of recent.logs)
+		if (log.blockNumber != null && BigInt(log.blockNumber) <= checkpoint)
+			kept = log;
+	if (kept)
+		entry.walk = {
+			checkpoint,
+			implementation: implementationFromSlot(kept.topics[1]),
+			low: fromBlock,
+		};
+	else if (recent.low <= floor)
+		entry.walk = walk
+			? { ...walk, checkpoint }
+			: { checkpoint, implementation: null, low: fromBlock };
+	// The search stopped above the old checkpoint: what lies between is unknown, so the search goes
+	// on back from here.
+	else
+		entry.walk = {
+			checkpoint,
+			implementation: null,
+			low: recent.low > checkpoint ? checkpoint + 1n : recent.low,
+		};
+	// The newest upgrade, even one that a reorganisation can still remove: it is not kept.
+	const newest = recent.logs.at(-1);
+	if (newest) return implementationFromSlot(newest.topics[1]);
+
+	// No upgrade in the new blocks: the kept answer stands, unless the search back is not complete.
+	const { low } = entry.walk;
+	if (low > fromBlock) {
+		const older = await walkBack(
+			getLogs,
+			low - 1n,
+			fromBlock,
+			maxChunks - recent.requests,
+		);
+		const found = older.logs.at(-1);
+		entry.walk = found
+			? {
+					checkpoint,
+					implementation: implementationFromSlot(found.topics[1]),
+					low: fromBlock,
+				}
+			: { checkpoint, implementation: null, low: older.low };
+		if (!found && older.low > fromBlock)
+			throw new UpgradedLogWalkLimitError(
+				older.low,
+				latest,
+				maxChunks,
+				"Read again through the same client to continue the search further back",
+			);
 	}
-	if (walked.limit) throw walked.limit;
-	return walked.implementation;
+	return entry.walk.implementation;
 }

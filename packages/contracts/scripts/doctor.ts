@@ -401,6 +401,7 @@ async function checkSponsorshipPaymaster(
 	try {
 		// The proxy's code proves nothing about what it delegates to: the slot must hold paymaster
 		// release code.
+		let fromLogs = false;
 		const impl = await provider
 			.getStorage(address, IMPLEMENTATION_SLOT)
 			.then(implementationFromSlot)
@@ -409,7 +410,7 @@ async function checkSponsorshipPaymaster(
 			.catch(async (storageError: unknown) => {
 				if (!isMethodRefusedError(storageError)) throw storageError;
 				try {
-					return await implementationFromUpgradedLogs(
+					const found = await implementationFromUpgradedLogs(
 						(fromBlock, toBlock) =>
 							provider.getLogs({
 								address,
@@ -419,6 +420,8 @@ async function checkSponsorshipPaymaster(
 							}),
 						BigInt(await provider.getBlockNumber()),
 					);
+					fromLogs = true;
+					return found;
 				} catch (logError) {
 					throw new Error(
 						`the RPC refused eth_getStorageAt, and reading the proxy's Upgraded logs failed: ${(logError as Error).message}`,
@@ -426,6 +429,13 @@ async function checkSponsorshipPaymaster(
 					);
 				}
 			});
+		// The code the proxy delegates to can emit an Upgraded event that names another address.
+		if (fromLogs)
+			report(
+				"warn",
+				"implementation source",
+				"read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt)",
+			);
 		if (!impl)
 			report(
 				"fail",

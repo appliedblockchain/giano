@@ -6,6 +6,7 @@ import {
 	implementationFromUpgradedLogs,
 	isMethodRefusedError,
 	proxyImplementation,
+	proxyImplementationWithSource,
 	UPGRADED_LOG_CHUNK,
 	UPGRADED_LOG_MAX_CHUNKS,
 } from "../erc1967";
@@ -89,7 +90,7 @@ test("a walk that finds no upgrade gives up after maxChunks requests, with an er
 			100_000_000n,
 			{ maxChunks: 3 },
 		),
-		/no Upgraded event in blocks 99973001-100000000.*after 3 eth_getLogs requests.*fromBlock/,
+		/no Upgraded event in blocks 99973001-100000000.*after 3 eth_getLogs requests.*larger maxChunks/,
 	);
 	assert.equal(requests, 3);
 	// The default stops a non-proxy far above block 0 on a long chain.
@@ -111,11 +112,16 @@ function refusingClient(
 	refusal: unknown = new Error("JSON RPC method not whitelisted"),
 ) {
 	const requests: [bigint, bigint][] = [];
+	/** The arguments of each getBlockNumber call. */
+	const heads: unknown[] = [];
 	const client = {
 		getStorageAt: async () => {
 			throw refusal;
 		},
-		getBlockNumber: async () => head.block,
+		getBlockNumber: async (args?: unknown) => {
+			heads.push(args);
+			return head.block;
+		},
 		request: async ({
 			params: [filter],
 		}: {
@@ -127,10 +133,13 @@ function refusingClient(
 			return [...upgrades]
 				.filter(([block]) => from <= block && block <= to)
 				.sort(([a], [b]) => (a < b ? -1 : 1))
-				.map(([, address]) => ({ topics: ["0x", pad(address)] }));
+				.map(([block, address]) => ({
+					blockNumber: `0x${block.toString(16)}`,
+					topics: ["0x", pad(address)],
+				}));
 		},
 	};
-	return { client: client as never, requests };
+	return { client: client as never, requests, heads };
 }
 
 test("proxyImplementation falls back to the Upgraded logs when eth_getStorageAt is refused", async () => {
@@ -204,7 +213,7 @@ test("when the fallback fails too, its error names both failures and keeps the s
 	});
 });
 
-test("proxyImplementation walks only the blocks after its last walk, per client and proxy", async () => {
+test("proxyImplementation reads only the blocks after its checkpoint, per client and proxy", async () => {
 	const upgraded = getAddress("0x44ef48a4bead5571b3b13b81400ea7930e5810d6");
 	const upgrades = new Map<bigint, Hex>([[1_000n, implementation]]);
 	const head = { block: 50_000n };
@@ -214,20 +223,20 @@ test("proxyImplementation walks only the blocks after its last walk, per client 
 	const firstWalk = requests.length;
 	assert.equal(firstWalk, 6);
 
-	// Same head: no request at all.
+	// Same head: one request over the blocks after the checkpoint, 64 blocks behind the head.
 	assert.equal(await proxyImplementation(client, proxy), implementation);
-	assert.equal(requests.length, firstWalk);
+	assert.deepEqual(requests.slice(firstWalk), [[49_937n, 50_000n]]);
 
-	// Ten new blocks, no upgrade in them: one request over those blocks only.
+	// Ten new blocks, no upgrade in them: one request from the checkpoint to the head.
 	head.block = 50_010n;
 	assert.equal(await proxyImplementation(client, proxy), implementation);
-	assert.deepEqual(requests.slice(firstWalk), [[50_001n, 50_010n]]);
+	assert.deepEqual(requests.slice(firstWalk + 1), [[49_937n, 50_010n]]);
 
 	// An upgrade in the new blocks is picked up.
 	upgrades.set(50_015n, upgraded);
 	head.block = 50_020n;
 	assert.equal(await proxyImplementation(client, proxy), upgraded);
-	assert.deepEqual(requests.at(-1), [50_011n, 50_020n]);
+	assert.deepEqual(requests.at(-1), [49_947n, 50_020n]);
 
 	// Another client, or another proxy, walks on its own.
 	const other = refusingClient(upgrades, head);
@@ -235,25 +244,171 @@ test("proxyImplementation walks only the blocks after its last walk, per client 
 	assert.equal(other.requests.length, 1);
 });
 
-test("a walk that gave up is not repeated on the next read", async () => {
+test("proxyImplementationWithSource says whether the answer came from the slot or from the logs", async () => {
+	const slotClient = {
+		getStorageAt: async () => pad(implementation),
+	} as never;
+	assert.deepEqual(await proxyImplementationWithSource(slotClient, proxy), {
+		implementation,
+		source: "slot",
+	});
+	const { client } = refusingClient(new Map([[1n, implementation]]), {
+		block: 3n,
+	});
+	assert.deepEqual(await proxyImplementationWithSource(client, proxy), {
+		implementation,
+		source: "logs",
+	});
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+});
+
+test("an upgrade a reorganisation removes is not kept, and a head below the checkpoint starts the walk again", async () => {
+	const orphaned = getAddress("0x44ef48a4bead5571b3b13b81400ea7930e5810d6");
+	const upgrades = new Map<bigint, Hex>([[1_000n, implementation]]);
+	const head = { block: 50_000n };
+	const { client, requests } = refusingClient(upgrades, head);
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+
+	// An upgrade within 64 blocks of the head is returned, but not kept.
+	upgrades.set(49_990n, orphaned);
+	assert.equal(await proxyImplementation(client, proxy), orphaned);
+	// A reorganisation removes it: the next read, at the same head or a newer one, does not return it.
+	upgrades.delete(49_990n);
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+	head.block = 50_001n;
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+
+	// The head falls below the checkpoint (49,937): nothing kept is trusted, and the walk starts
+	// again from the new head.
+	head.block = 49_000n;
+	const before = requests.length;
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+	assert.deepEqual(requests[before], [40_001n, 49_000n]);
+	assert.equal(requests.length - before, 6);
+});
+
+test("a walk that hits maxChunks continues back on the next read through the same client", async () => {
 	const head = { block: 100_000n };
-	const { client, requests } = refusingClient(new Map(), head);
+	const { client, requests } = refusingClient(
+		new Map([[60_000n, implementation]]),
+		head,
+	);
 	await assert.rejects(
-		proxyImplementation(client, proxy, { maxChunks: 2 }),
+		proxyImplementation(client, proxy, { maxChunks: 3 }),
+		/no Upgraded event in blocks 73001-100000.*Read again through the same client to continue the search further back/,
+	);
+	assert.deepEqual(requests, [
+		[91_001n, 100_000n],
+		[82_001n, 91_000n],
+		[73_001n, 82_000n],
+	]);
+	// The next read checks the newest blocks, then goes on back from block 73,000.
+	assert.equal(
+		await proxyImplementation(client, proxy, { maxChunks: 3 }),
+		implementation,
+	);
+	assert.deepEqual(requests.slice(3), [
+		[99_937n, 100_000n],
+		[64_001n, 73_000n],
+		[55_001n, 64_000n],
+	]);
+	// Complete now: one request for the newest blocks.
+	assert.equal(
+		await proxyImplementation(client, proxy, { maxChunks: 3 }),
+		implementation,
+	);
+	assert.deepEqual(requests.slice(6), [[99_937n, 100_000n]]);
+});
+
+test("maxChunks must be a non-negative safe integer, checked before any request", async () => {
+	for (const maxChunks of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+		let walkRequests = 0;
+		await assert.rejects(
+			implementationFromUpgradedLogs(
+				async () => {
+					walkRequests++;
+					return [];
+				},
+				100n,
+				{ maxChunks },
+			),
+			/maxChunks must be a non-negative integer/,
+			String(maxChunks),
+		);
+		assert.equal(walkRequests, 0);
+		let storageReads = 0;
+		const { client, requests } = refusingClient(new Map(), { block: 100n });
+		await assert.rejects(
+			proxyImplementation(
+				{
+					...(client as object),
+					getStorageAt: async () => {
+						storageReads++;
+						throw new Error("JSON RPC method not whitelisted");
+					},
+				} as never,
+				proxy,
+				{ maxChunks },
+			),
+			/maxChunks must be a non-negative integer/,
+		);
+		assert.deepEqual([storageReads, requests.length], [0, 0]);
+	}
+	// Zero is a valid limit: no request at all.
+	await assert.rejects(
+		implementationFromUpgradedLogs(async () => [], 100n, { maxChunks: 0 }),
+		/after 0 eth_getLogs requests/,
+	);
+});
+
+test("the head is read uncached, so an upgrade in the newest block is not missed", async () => {
+	const { client, heads } = refusingClient(new Map([[1n, implementation]]), {
+		block: 3n,
+	});
+	await proxyImplementation(client, proxy);
+	assert.deepEqual(heads, [{ cacheTime: 0 }]);
+});
+
+test("concurrent reads on the same client and proxy share one walk", async () => {
+	const head = { block: 50_000n };
+	const { client, requests, heads } = refusingClient(
+		new Map([[1_000n, implementation]]),
+		head,
+	);
+	assert.deepEqual(
+		await Promise.all([
+			proxyImplementation(client, proxy),
+			proxyImplementation(client, proxy),
+		]),
+		[implementation, implementation],
+	);
+	assert.equal(heads.length, 1);
+	assert.equal(requests.length, 6);
+	// The shared walk kept its checkpoint: the next read starts from it.
+	head.block = 50_010n;
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+	assert.deepEqual(requests.slice(6), [[49_937n, 50_010n]]);
+});
+
+test("the memory is kept per fromBlock, and a retry with a larger maxChunks searches further", async () => {
+	const head = { block: 50_000n };
+	const { client } = refusingClient(new Map([[1_000n, implementation]]), head);
+	// No upgrade since block 40,000; a lower floor still finds the older one.
+	assert.equal(
+		await proxyImplementation(client, proxy, { fromBlock: 40_000n }),
+		null,
+	);
+	assert.equal(await proxyImplementation(client, proxy), implementation);
+
+	const other = refusingClient(new Map([[1_000n, implementation]]), head);
+	await assert.rejects(
+		proxyImplementation(other.client, proxy, { maxChunks: 2 }),
 		/no Upgraded event/,
 	);
-	assert.equal(requests.length, 2);
-	await assert.rejects(
-		proxyImplementation(client, proxy, { maxChunks: 2 }),
-		/no Upgraded event/,
+	assert.equal(
+		await proxyImplementation(other.client, proxy, { maxChunks: 10 }),
+		implementation,
 	);
-	assert.equal(requests.length, 2);
-	head.block = 100_005n;
-	await assert.rejects(
-		proxyImplementation(client, proxy, { maxChunks: 2 }),
-		/no Upgraded event/,
-	);
-	assert.deepEqual(requests.slice(2), [[100_001n, 100_005n]]);
 });
 
 test("isMethodRefusedError matches refusals of the method, and nothing else", () => {

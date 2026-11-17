@@ -5,7 +5,7 @@ import {
 	gianoSmartWalletFactoryAbi,
 	isCanonicalEntryPointCode,
 	isEntryPointAddress,
-	proxyImplementation,
+	proxyImplementationWithSource,
 	type ReleaseContractName,
 	releaseOf,
 } from "@appliedblockchain/giano-contracts";
@@ -98,6 +98,13 @@ export type ChainVerification = {
 	 */
 	implementationUnchecked?: boolean;
 	paymasterPresent?: boolean;
+	/**
+	 * True when the paymaster proxy's implementation was read from its `Upgraded` logs, because the
+	 * RPC refuses `eth_getStorageAt`. The code the proxy delegates to can emit an `Upgraded` event
+	 * that names another address, so the release check ran against an address the slot did not
+	 * confirm. A warning, not a failure: the chain is still served.
+	 */
+	paymasterImplementationUnverified?: boolean;
 	/** The address the chain's own factory derives for the probe owner (MC-22). */
 	probeAddress?: `0x${string}`;
 	failures: ChainVerificationFailure[];
@@ -287,8 +294,10 @@ export async function verifyChain(
 				// A stock ERC1967Proxy proves nothing about what it delegates to: the implementation
 				// slot must hold paymaster release code.
 				// An empty slot delegates to nothing: reported as no release code at the zero address.
-				const implementation =
-					(await proxyImplementation(client, paymaster)) ?? zeroAddress;
+				const read = await proxyImplementationWithSource(client, paymaster);
+				if (read.source === "logs")
+					result.paymasterImplementationUnverified = true;
+				const implementation = read.implementation ?? zeroAddress;
 				if (
 					releaseAt(
 						"paymaster-implementation",
