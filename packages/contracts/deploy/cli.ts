@@ -130,6 +130,7 @@ import {
 	handOffProblems,
 	handOffScanStart,
 	isContractAccount,
+	scanStartProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -590,9 +591,7 @@ function release(local: boolean, target?: Network): Release {
 }
 
 function save(ctx: DeployContext): void {
-	log(
-		`recorded in ${writeRecord(ctx.record, values["record-dir"] ?? deploymentsDir())}`,
-	);
+	log(`recorded in ${writeRecord(ctx.record, values["record-dir"])}`);
 }
 
 async function main(): Promise<void> {
@@ -828,9 +827,7 @@ async function main(): Promise<void> {
 				executors: params.executors,
 				delays: params.delays,
 			};
-			log(
-				`recorded in ${writeRecord(record, values["record-dir"] ?? deploymentsDir())}`,
-			);
+			log(`recorded in ${writeRecord(record, values["record-dir"])}`);
 			log(
 				`Next: \`handoff --timelock ${deployed.address}\` gives it the timelocked roles; then run doctor chain --timelock ${deployed.address}.`,
 			);
@@ -890,17 +887,27 @@ async function main(): Promise<void> {
 					: undefined,
 				fromBlock: values["from-block"],
 			});
-			const problems = await handOffProblems(publicClient, {
-				network: target.network,
-				proxy,
-				timelock,
-				published: {
-					proposers: published.proposers,
-					executors: published.executors,
-					delays: published.delays as Partial<TimelockDelays>,
-					fromBlock: deployedIn,
-				},
-			});
+			// A --from-block start is checked against the chain itself: the timelock had no code before
+			// it. With only the profile naming the timelock, nothing else bounds it.
+			const startProblem =
+				values["from-block"] !== undefined && deployedIn !== undefined
+					? await scanStartProblem(publicClient, timelock, deployedIn)
+					: undefined;
+			const problems = [
+				...(startProblem ? [startProblem] : []),
+				...(await handOffProblems(publicClient, {
+					network: target.network,
+					proxy,
+					timelock,
+					published: {
+						proposers: published.proposers,
+						executors: published.executors,
+						delays: published.delays as Partial<TimelockDelays>,
+						fromBlock: deployedIn,
+						recordedTransaction: Boolean(recorded?.transactionHash),
+					},
+				})),
+			];
 			if (problems.length)
 				throw new Error(
 					`refusing to hand ${proxy} to ${timelock}:\n  ${problems.join("\n  ")}`,

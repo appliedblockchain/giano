@@ -39,6 +39,11 @@ import {
 	Wallet,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
+import { isMainnetChain } from "../deploy/config";
+import {
+	mainnetRoleProblems,
+	unstakeDelaySeconds,
+} from "../deploy/provision-rules";
 import { gianoPaymasterAbi, iEntryPointAbi } from "../generated";
 
 /** Anvil's first account. Deterministic, funded, and never used anywhere real. */
@@ -91,20 +96,6 @@ function ether(what: string, value: string): bigint {
 	} catch {
 		throw new Error(`${what} is not an ETH amount: ${value}`);
 	}
-}
-
-/**
- * `value` as an EntryPoint unstake delay: whole seconds, above zero, within uint32 (`addStake`'s
- * type). Checked with the other arguments, so a typo such as `1d` stops the run before the signer
- * or anything else has gone out (G42 R6).
- */
-function unstakeDelaySeconds(value: string): number {
-	const seconds = /^\d+$/.test(value) ? Number(value) : Number.NaN;
-	if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 0xffffffff)
-		throw new Error(
-			`--unstake-delay is a whole number of seconds between 1 and ${0xffffffff}, got: ${value}`,
-		);
-	return seconds;
 }
 
 function log(message: string): void {
@@ -233,6 +224,19 @@ async function main(): Promise<void> {
 		if (!isAddress(holder))
 			throw new Error(`role holder for ${flag} is not an address: ${holder}`);
 	}
+	// The mainnet rules, here as well as in the operator wrapper, so running this script directly does
+	// not skip them (#298 review).
+	const mainnet = isMainnetChain(chainId);
+	const roleProblems = mainnetRoleProblems({
+		mainnet,
+		grantAllTo,
+		holders: Object.fromEntries(
+			namedHolders.map((flag) => [flag, flags[`role-holder-${flag}`]]),
+		),
+		operator: wallet.address,
+	});
+	if (roleProblems.length)
+		throw new Error(`refusing to provision:\n  ${roleProblems.join("\n  ")}`);
 	for (const signer of repeated.signer ?? [])
 		if (!isAddress(signer))
 			throw new Error(`--signer is not an address: ${signer}`);
@@ -241,7 +245,9 @@ async function main(): Promise<void> {
 		stakeEth && stakeEth !== "true"
 			? ether("--stake-eth", stakeEth)
 			: undefined;
-	const unstakeDelay = unstakeDelaySeconds(flags["unstake-delay"] ?? "86400");
+	const unstakeDelay = unstakeDelaySeconds(flags["unstake-delay"] ?? "86400", {
+		mainnet,
+	});
 	const tenants = (repeated.tenant ?? []).map(parseTenant);
 	for (const tenant of tenants)
 		ether(`tenant ${tenant.slug}'s funding`, tenant.fundEth);

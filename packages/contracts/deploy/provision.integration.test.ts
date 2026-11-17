@@ -172,14 +172,11 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			nonce,
 		);
 
-		// So is an unstake delay that is not whole seconds: before, it failed at addStake, after the
+		// So is an unstake delay that is not a duration: before, it failed at addStake, after the
 		// signer transaction had gone out (G42 R6).
-		const delayTypo = provision({ extra: ["--unstake-delay", "1d"] });
+		const delayTypo = provision({ extra: ["--unstake-delay", "1x"] });
 		assert.notEqual(delayTypo.status, 0);
-		assert.match(
-			delayTypo.stderr,
-			/--unstake-delay is a whole number of seconds .*got: 1d/,
-		);
+		assert.match(delayTypo.stderr, /--unstake-delay is not a duration.*: 1x/);
 		assert.equal(
 			await client.getTransactionCount({ address: operator }),
 			nonce,

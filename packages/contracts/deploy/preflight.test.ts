@@ -22,6 +22,7 @@ import {
 	inspectDeployment,
 	profileCoreConfig,
 	roleAdmin,
+	scanStartProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -505,6 +506,32 @@ test("a hand-off goes only to the published timelock: the profile's, else the re
 	assert.match(
 		timelockMismatch(other, {}) ?? "",
 		/no published timelock address to check --timelock 0x0+71e2 against/i,
+	);
+});
+
+test("a --from-block start needs the timelock to have had no code before it (G42 R5, #298 review)", async () => {
+	const timelock = getAddress("0x00000000000000000000000000000000000071e1");
+	const deployedAt = 100n;
+	const chain = {
+		getCode: async ({ blockNumber }: { blockNumber?: bigint }) =>
+			blockNumber !== undefined && blockNumber >= deployedAt ? "0x6001" : "0x",
+	} as unknown as PublicClient;
+	assert.equal(await scanStartProblem(chain, timelock, 0n), undefined);
+	assert.equal(await scanStartProblem(chain, timelock, 90n), undefined);
+	assert.equal(await scanStartProblem(chain, timelock, deployedAt), undefined);
+	assert.match(
+		(await scanStartProblem(chain, timelock, deployedAt + 1n)) ?? "",
+		/--from-block 101 is after the timelock's deployment: .* already has code at block 100/,
+	);
+	// An RPC without historical state cannot vouch for the start: refused.
+	const pruned = {
+		getCode: async () => {
+			throw new Error("missing trie node");
+		},
+	} as unknown as PublicClient;
+	assert.match(
+		(await scanStartProblem(pruned, timelock, 50n)) ?? "",
+		/needs an RPC that serves historical state/,
 	);
 });
 

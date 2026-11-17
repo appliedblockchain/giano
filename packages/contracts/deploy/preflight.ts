@@ -1,20 +1,11 @@
 /** Read-only gates shared by the guided deployer, the operator workflows and their regression tests. */
 import {
 	type Address,
-	ExecutionRevertedError,
 	getAddress,
 	type Hex,
-	HttpRequestError,
-	InvalidParamsRpcError,
 	keccak256,
-	LimitExceededRpcError,
-	MethodNotFoundRpcError,
-	MethodNotSupportedRpcError,
 	type PublicClient,
 	parseEther,
-	ResourceUnavailableRpcError,
-	TimeoutError,
-	WebSocketRequestError,
 	zeroAddress,
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
@@ -205,55 +196,35 @@ export type Check = { ok: boolean; message: string };
  */
 const CANCUN_PROBE: Hex = "0x5f5c505f5f5f5e00";
 
-/** Errors that never reached the EVM: the endpoint, the transport or the request itself failed. */
-const NOT_EXECUTED = [
-	HttpRequestError,
-	TimeoutError,
-	WebSocketRequestError,
-	LimitExceededRpcError,
-	InvalidParamsRpcError,
-	MethodNotFoundRpcError,
-	MethodNotSupportedRpcError,
-	ResourceUnavailableRpcError,
-];
+/**
+ * How nodes report an opcode the chain does not have: geth `invalid opcode: opcode 0x5c not
+ * defined`, anvil/revm `EVM error NotActivated` (measured on `anvil --hardfork shanghai`) or
+ * `InvalidFEOpcode`, Nethermind `BadInstruction`.
+ */
+const MISSING_OPCODE =
+	/invalid opcode|opcode 0x[0-9a-f]+ not defined|NotActivated|InvalidFEOpcode|OpcodeNotFound|bad ?instruction|undefined opcode/i;
 
 /**
- * How nodes report an opcode the chain does not have, or a revert: geth `invalid opcode: opcode 0x5c
- * not defined`, anvil/revm `EVM error NotActivated` (measured on `anvil --hardfork shanghai`) or
- * `InvalidFEOpcode`, Nethermind `BadInstruction`, and `execution reverted`.
+ * Whether a failed `eth_call` says the chain lacks an opcode. Only that means "this chain lacks
+ * Cancun". Anything else is not an answer about the chain's opcodes and is rethrown (G42 R2): a 429, a
+ * timeout or an RPC that rejects the request, and a revert too, since the probe has no REVERT and viem
+ * files "gas required exceeds allowance" as one (#298 review). The node's words are searched along the
+ * whole error chain, so an "invalid opcode" a provider sends inside an HTTP 4xx/5xx body still counts.
  */
-const EXECUTION_FAILURE =
-	/invalid opcode|opcode 0x[0-9a-f]+ not defined|NotActivated|InvalidFEOpcode|OpcodeNotFound|bad ?instruction|undefined opcode|stack underflow|execution reverted/i;
-
-/**
- * Whether a failed `eth_call` failed in the EVM (an opcode the chain lacks, or a revert), rather than
- * on the way to it. Only the first means "this chain lacks Cancun"; a 429, a timeout or an RPC that
- * rejects the request is not an answer about the chain and is rethrown (G42 R2).
- */
-export function isExecutionFailure(error: unknown): boolean {
-	const chain: unknown[] = [];
+export function isMissingOpcode(error: unknown): boolean {
 	for (
-		let e: unknown = error;
-		e && chain.length < 16;
-		e = (e as { cause?: unknown }).cause
+		let e: unknown = error, depth = 0;
+		e && depth < 16;
+		e = (e as { cause?: unknown }).cause, depth++
 	)
-		chain.push(e);
-	if (
-		chain.some(
-			(e) =>
-				NOT_EXECUTED.some((kind) => e instanceof kind) ||
-				(e as { status?: unknown }).status === 429,
+		if (
+			e instanceof Error &&
+			MISSING_OPCODE.test(
+				`${e.message} ${(e as { details?: unknown }).details ?? ""}`,
+			)
 		)
-	)
-		return false;
-	return chain.some(
-		(e) =>
-			e instanceof ExecutionRevertedError ||
-			(e instanceof Error &&
-				EXECUTION_FAILURE.test(
-					`${e.message} ${(e as { details?: unknown }).details ?? ""}`,
-				)),
-	);
+			return true;
+	return false;
 }
 
 /** One requirement a chain must meet before any Giano contract is deployed or served on it. */
@@ -297,7 +268,7 @@ export async function chainPrerequisites(
 	try {
 		await client.call({ data: CANCUN_PROBE });
 	} catch (error) {
-		if (!isExecutionFailure(error)) throw error;
+		if (!isMissingOpcode(error)) throw error;
 		cancun = false;
 	}
 	results.push({
@@ -498,6 +469,31 @@ export function handOffScanStart(options: {
 	return given;
 }
 
+/**
+ * Why `--from-block` cannot start the hand-off's role-grant scan, or undefined when it can: the
+ * timelock must have had no code in the block before it, so every grant made at deployment is at or
+ * after the start. This holds with or without a deployment record; a start that only the chain profile
+ * vouches for would otherwise be unbounded (G42 R5, review of #298). Needs an RPC that serves
+ * historical state; when it cannot, the hand-off refuses rather than trusting the start.
+ */
+export async function scanStartProblem(
+	client: Pick<PublicClient, "getCode">,
+	timelock: Address,
+	fromBlock: bigint,
+): Promise<string | undefined> {
+	if (fromBlock === 0n) return undefined;
+	const before = fromBlock - 1n;
+	let code: Hex | undefined;
+	try {
+		code = await client.getCode({ address: timelock, blockNumber: before });
+	} catch {
+		return `could not read ${timelock}'s code at block ${before} to check --from-block ${fromBlock}: with --from-block the hand-off needs an RPC that serves historical state`;
+	}
+	if (code && code !== "0x")
+		return `--from-block ${fromBlock} is after the timelock's deployment: ${timelock} already has code at block ${before}, so the scan would skip the role grants made at deployment`;
+	return undefined;
+}
+
 /** The timelock configuration a hand-off is checked against: the profile's, else the recorded one. */
 export type PublishedTimelock = {
 	proposers: readonly string[];
@@ -505,6 +501,8 @@ export type PublishedTimelock = {
 	delays: Partial<TimelockDelays>;
 	/** The block the timelock was deployed in, to enumerate its role grants from. */
 	fromBlock?: bigint;
+	/** The record names the timelock's deployment transaction (then `--from-block` cannot replace it). */
+	recordedTransaction?: boolean;
 };
 
 /**
@@ -587,7 +585,9 @@ export async function handOffProblems(
 	]);
 	if (published.fromBlock === undefined)
 		problems.push(
-			"the timelock's deployment block is unknown, so its role grants cannot be listed: record its deployment transaction (deploy:cli timelock), or pass --from-block",
+			published.recordedTransaction
+				? "the timelock's deployment block is unknown: the receipt of its recorded deployment transaction could not be read, so its role grants cannot be listed. Retry once the RPC serves it"
+				: "the timelock's deployment block is unknown, so its role grants cannot be listed: record its deployment transaction (deploy:cli timelock), or pass --from-block",
 		);
 	else
 		try {

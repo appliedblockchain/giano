@@ -125,6 +125,17 @@ test("a mainnet names all six role holders, each on its own address (G42 R1)", (
 		shared.out,
 		new RegExp(`used for more than one role: ${ADDRESS.toLowerCase()}`),
 	);
+	// Nor may a holder be the operator key, which holds ROLE_ADMIN until the hand-off (#298 review).
+	const operator = wrapper({
+		...mainnet,
+		...SIX_HOLDERS,
+		ROLE_HOLDER_PAUSER: ADDRESS.toLowerCase(),
+	});
+	assert.notEqual(operator.code, 0);
+	assert.match(
+		operator.out,
+		new RegExp(`${ADDRESS} is the operator key \\(DEPLOYER_PRIVATE_KEY\\)`),
+	);
 	// A testnet may still name only some of them.
 	assert.doesNotMatch(
 		wrapper({

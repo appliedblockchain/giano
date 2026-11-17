@@ -106,6 +106,14 @@ else
       echo "ERROR: a mainnet gives each immediate role its own holder; used for more than one role: ${DUPLICATES% }" >&2
       exit 1
     fi
+    # The operator key holds ROLE_ADMIN until the hand-off; an immediate role must not sit beside it.
+    OPERATOR_LOWER="$(echo "$DEPLOYER_ADDR" | tr '[:upper:]' '[:lower:]')"
+    for holder in "${HOLDER_ADDRESSES[@]}"; do
+      if [ "$holder" = "$OPERATOR_LOWER" ]; then
+        echo "ERROR: $DEPLOYER_ADDR is the operator key (DEPLOYER_PRIVATE_KEY), which holds ROLE_ADMIN until the hand-off; a mainnet gives every immediate role to another holder" >&2
+        exit 1
+      fi
+    done
   fi
   ROLE_SUMMARY="one holder per role: ${ROLE_ARGS[*]}"
 fi
@@ -149,7 +157,7 @@ echo "    roles      : $ROLE_SUMMARY"
 echo "    signer     : $SIGNER_ADDR"
 echo "    tenants    : $TENANT_SUMMARY"
 echo "    withdraw to: $TENANT_WITHDRAW_ADDRESS"
-echo "    stake      : $STAKE_ETH ETH (unstake delay ${UNSTAKE_DELAY}s)   per-tenant balance: $TENANT_FUND_ETH ETH"
+echo "    stake      : $STAKE_ETH ETH (unstake delay $UNSTAKE_DELAY)   per-tenant balance: $TENANT_FUND_ETH ETH"
 echo
 
 # ROLE_ADMIN stays on the bootstrap key until contracts:handoff moves it, with the other timelocked

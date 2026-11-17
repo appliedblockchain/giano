@@ -46,6 +46,7 @@ import {
 	handOffProblems,
 	inspectDeployment,
 	profileCoreConfig,
+	scanStartProblem,
 	verifyCoreState,
 } from "./preflight";
 import { loadProfile, paymasterParams } from "./profiles";
@@ -273,6 +274,28 @@ test("real CREATE3 release deploy, interrupted checkpoint recovery, verification
 				})
 			).join("; "),
 			/deployment block is unknown/,
+		);
+		// With a recorded deployment transaction whose receipt is unreadable, --from-block is not the
+		// way out, so it is not suggested.
+		const unreadable = (
+			await preflight({
+				published: {
+					...published,
+					fromBlock: undefined,
+					recordedTransaction: true,
+				},
+			})
+		).join("; ");
+		assert.match(unreadable, /Retry once the RPC serves it/);
+		assert.doesNotMatch(unreadable, /--from-block/);
+		// A --from-block start is checked against the chain: no code before it (G42 R5, #298 review).
+		assert.equal(
+			await scanStartProblem(client, timelock.address, deployedIn),
+			undefined,
+		);
+		assert.match(
+			(await scanStartProblem(client, timelock.address, deployedIn + 1n)) ?? "",
+			/is after the timelock's deployment/,
 		);
 		const noLogs = new Proxy(client, {
 			get: (target, property, receiver) =>

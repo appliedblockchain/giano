@@ -155,13 +155,19 @@ test("Cancun is unavailable only when the EVM itself refused the probe (G42 R2)"
 		),
 		false,
 	);
-	assert.equal(
-		await cancunOf(node({ code: 3, message: "execution reverted" })),
-		false,
-	);
 });
 
-test("a rate limit, a rejected request or a dead endpoint is an RPC failure, not a missing Cancun (G42 R2)", async () => {
+test("a rate limit, a rejected request, a revert or a dead endpoint is an RPC failure, not a missing Cancun (G42 R2)", async () => {
+	// The probe has no REVERT, and viem files "gas required exceeds allowance" as a revert (#298 review).
+	await assert.rejects(
+		chainPrerequisites(node({ code: 3, message: "execution reverted" }), 84532),
+	);
+	await assert.rejects(
+		chainPrerequisites(
+			node({ code: -32000, message: "gas required exceeds allowance (0)" }),
+			84532,
+		),
+	);
 	await assert.rejects(
 		chainPrerequisites(
 			node({ code: -32005, message: "request rate exceeded" }),
@@ -190,6 +196,20 @@ test("a rate limit, a rejected request or a dead endpoint is an RPC failure, not
 			} else if (request.url === "/limited") {
 				response.statusCode = 429;
 				response.end("Too Many Requests");
+			} else if (request.url === "/pre-cancun") {
+				// A provider that sends the node's JSON-RPC error inside an HTTP 500 body.
+				response.statusCode = 500;
+				response.setHeader("content-type", "application/json");
+				response.end(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						error: {
+							code: -32000,
+							message: "invalid opcode: opcode 0x5c not defined",
+						},
+					}),
+				);
 			}
 			// "/silent": no answer at all.
 		});
@@ -206,6 +226,8 @@ test("a rate limit, a rejected request or a dead endpoint is an RPC failure, not
 	try {
 		await assert.rejects(chainPrerequisites(over("/limited"), 84532));
 		await assert.rejects(chainPrerequisites(over("/silent"), 84532));
+		// ...but a missing opcode stays a missing opcode, whatever the HTTP status (#298 review).
+		assert.equal(await cancunOf(over("/pre-cancun")), false);
 	} finally {
 		server.closeAllConnections();
 		server.close();
