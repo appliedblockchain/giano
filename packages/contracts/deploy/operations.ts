@@ -220,6 +220,8 @@ async function main() {
 					),
 				},
 			);
+			for (const check of checks)
+				console.log(`${check.ok ? "OK" : "BLOCKED"}: ${check.message}`);
 			if (checks.some((check) => !check.ok))
 				throw new OperatorError(
 					"Core deployment verification failed; rerun contracts:deploy --plan for the selected profile and resolve its blockers before operator writes.",

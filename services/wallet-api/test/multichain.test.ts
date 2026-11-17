@@ -15,6 +15,7 @@ import { loadConfig } from "../src/config.js";
 import chainPlugin from "../src/plugins/chain.js";
 import {
 	isFatalFailure,
+	PAYMASTER_LOG_REQUESTS_AT_BOOT,
 	PAYMASTER_LOG_REQUESTS_PER_CHECK,
 	probeDivergence,
 	recoveryDivergence,
@@ -751,17 +752,13 @@ describe("verifyChain", () => {
 		expect(fromLogs.paymasterImplementationUnverified).toBe(true);
 	});
 
-	it("one check sends a bounded number of log requests, and the next check continues the search", async () => {
-		const sponsored = {
-			...descriptor,
-			sponsorshipPaymaster:
-				"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96" as `0x${string}`,
-		};
-		// The only Upgraded event is far back: more than one check's requests away from the head.
-		const head = 1_500_000n;
-		const upgradedAt = 1_000n;
-		const ranges: [bigint, bigint][] = [];
-		const refusing = {
+	/** A client that refuses eth_getStorageAt; the only Upgraded event is at `upgradedAt`. */
+	function refusingStorage(
+		head: bigint,
+		upgradedAt: bigint,
+		ranges: [bigint, bigint][],
+	): PublicClient {
+		return {
 			...fakeClient({}),
 			async getStorageAt() {
 				throw new Error("JSON RPC method not whitelisted");
@@ -789,6 +786,17 @@ describe("verifyChain", () => {
 					: [];
 			},
 		} as unknown as PublicClient;
+	}
+	const sponsored = {
+		...descriptor,
+		sponsorshipPaymaster:
+			"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96" as `0x${string}`,
+	};
+
+	it("one check sends a bounded number of log requests, and the next check continues the search", async () => {
+		// The only Upgraded event is far back: more than one check's requests away from the head.
+		const ranges: [bigint, bigint][] = [];
+		const refusing = refusingStorage(1_500_000n, 1_000n, ranges);
 
 		const first = await verifyChain(sponsored, refusing, fakeRelease);
 		expect(ranges).toHaveLength(PAYMASTER_LOG_REQUESTS_PER_CHECK);
@@ -806,9 +814,28 @@ describe("verifyChain", () => {
 		const second = await verifyChain(sponsored, refusing, fakeRelease);
 		expect(second.failures).toEqual([]);
 		expect(second.paymasterImplementationUnverified).toBe(true);
-		expect(ranges.some(([from, to]) => to < lowest && from <= upgradedAt)).toBe(
+		expect(ranges.some(([from, to]) => to < lowest && from <= 1_000n)).toBe(
 			true,
 		);
+	});
+
+	it("the check at boot sends fewer log requests, and the background check continues the search", async () => {
+		const ranges: [bigint, bigint][] = [];
+		const refusing = refusingStorage(500_000n, 1_000n, ranges);
+
+		const boot = await verifyChain(sponsored, refusing, fakeRelease, {
+			logRequests: PAYMASTER_LOG_REQUESTS_AT_BOOT,
+		});
+		expect(ranges).toHaveLength(PAYMASTER_LOG_REQUESTS_AT_BOOT);
+		expect(boot.failures.map((failure) => failure.kind)).toEqual([
+			"unreachable",
+		]);
+
+		// The background probe's check uses the default limit and finds the event.
+		ranges.length = 0;
+		const probe = await verifyChain(sponsored, refusing, fakeRelease);
+		expect(probe.failures).toEqual([]);
+		expect(ranges.length).toBeLessThanOrEqual(PAYMASTER_LOG_REQUESTS_PER_CHECK);
 	});
 
 	it("a paymaster initialised with another EntryPoint is FATAL", async () => {

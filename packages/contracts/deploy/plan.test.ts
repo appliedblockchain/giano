@@ -21,6 +21,7 @@ import { create3Address } from "./create3";
 import {
 	CORE_KEYS,
 	type CoreKey,
+	deploysPaymasterProxy,
 	deviationGate,
 	deviationWarning,
 	fixedAddresses,
@@ -749,7 +750,7 @@ describe("a paymaster implementation read from Upgraded logs", () => {
 		assert.equal(accepted.warnings.length, 1);
 		assert.match(
 			accepted.warnings[0],
-			/read from Upgraded logs, not verified against the implementation slot \(the RPC refuses eth_getStorageAt\); accepted with --accept-unverified-implementation/,
+			/read from Upgraded logs, not verified against the implementation slot \(the RPC refuses eth_getStorageAt\); accepted\./,
 		);
 		assert.ok(
 			formatPlan(accepted).includes(`  ⚠ ${accepted.warnings[0]}`),
@@ -828,6 +829,14 @@ describe("a paymaster implementation read from Upgraded logs", () => {
 		]);
 		assert.deepEqual(accepted.blockers, []);
 		assert.equal(accepted.warnings.length, 1);
+	});
+
+	it("a run that deploys the paymaster proxy needs no flag after the deploy", async () => {
+		assert.equal(deploysPaymasterProxy(await planCore(chain({}), input)), true);
+		assert.equal(
+			deploysPaymasterProxy(await planCore(deployedBy(MAINNET), input)),
+			false,
+		);
 	});
 });
 

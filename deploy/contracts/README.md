@@ -332,7 +332,11 @@ reads the paymaster implementation from the proxy's latest `Upgraded` event, whi
 the code the proxy delegates to can emit an `Upgraded` event that names another address.
 `contracts:deploy`, `deploy:cli core`, `contracts:provision` and `contracts:sponsorship` refuse such
 an implementation, and the plan does not reconcile it, unless you pass
-`--accept-unverified-implementation`. With the flag, they use it and print a warning.
+`--accept-unverified-implementation`. With the flag, they use it and print a warning. The Helm
+deployer Job passes the flag when `deployer.acceptUnverifiedImplementation` is `true`
+(`ACCEPT_UNVERIFIED_IMPLEMENTATION=true` in the deployer image). A paymaster proxy that the same
+`contracts:deploy` run deployed needs no flag: its implementation is the one the run deployed and
+verified.
 
 ## 5. Cut over services and clients together
 

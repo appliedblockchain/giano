@@ -120,11 +120,18 @@ export function unverifiedImplementationWarning(chainId: number): string {
 
 /**
  * At most this many `eth_getLogs` requests per check, when the RPC refuses `eth_getStorageAt` and
- * the paymaster implementation comes from its `Upgraded` logs (Silent Data). Keeps one check short,
- * so boot does not wait for a long search. A check that stops at this limit leaves the chain
- * unavailable, and the background probe's next check continues the search through the same client.
+ * the paymaster implementation comes from its `Upgraded` logs (Silent Data). A check that stops at
+ * this limit leaves the chain unavailable, and the background probe's next check continues the
+ * search through the same client.
  */
 export const PAYMASTER_LOG_REQUESTS_PER_CHECK = 100;
+
+/**
+ * The same limit for the check at boot, which runs before the server listens. Kept small so a long
+ * search cannot delay `/healthz` past the liveness probe: the background probe, which runs after the
+ * server listens, continues the search with {@link PAYMASTER_LOG_REQUESTS_PER_CHECK}.
+ */
+export const PAYMASTER_LOG_REQUESTS_AT_BOOT = 10;
 
 /** True for a failure that must prevent the deployment from serving this chain. */
 export function isFatalFailure(failure: ChainVerificationFailure): boolean {
@@ -152,6 +159,10 @@ export async function verifyChain(
 	descriptor: ResolvedChain,
 	client: PublicClient,
 	releaseCheck: ReleaseCheck = releaseOf,
+	options: {
+		/** At most this many `eth_getLogs` requests for the paymaster implementation. */
+		logRequests?: number;
+	} = {},
 ): Promise<ChainVerification> {
 	const result: ChainVerification = {
 		chainId: descriptor.chainId,
@@ -311,7 +322,7 @@ export async function verifyChain(
 				// slot must hold paymaster release code.
 				// An empty slot delegates to nothing: reported as no release code at the zero address.
 				const read = await proxyImplementationWithSource(client, paymaster, {
-					maxChunks: PAYMASTER_LOG_REQUESTS_PER_CHECK,
+					maxChunks: options.logRequests ?? PAYMASTER_LOG_REQUESTS_PER_CHECK,
 				});
 				if (read.source === "logs")
 					result.paymasterImplementationUnverified = true;

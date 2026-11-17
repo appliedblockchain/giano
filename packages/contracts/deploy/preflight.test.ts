@@ -368,7 +368,7 @@ test("an existing proxy's implementation read from Upgraded logs is refused unle
 			acceptUnverifiedImplementation: true,
 		}),
 		[
-			`paymaster proxy at ${proxy}: implementation ${implementation} read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt); accepted with --accept-unverified-implementation.`,
+			`paymaster proxy at ${proxy}: implementation ${implementation} read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt); accepted.`,
 		],
 	);
 });

@@ -163,7 +163,7 @@ export function unverifiedImplementation(
 	accepted: boolean,
 ): string {
 	return accepted
-		? `paymaster proxy at ${proxy}: implementation ${implementation ?? "(none)"} read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt); accepted with --accept-unverified-implementation.`
+		? `paymaster proxy at ${proxy}: implementation ${implementation ?? "(none)"} read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt); accepted.`
 		: `paymaster proxy at ${proxy}: the RPC refuses eth_getStorageAt, so its implementation ${implementation ?? "(none)"} was read from Upgraded logs and is not verified. The code the proxy delegates to can emit an Upgraded event that names another address. Check the implementation slot through an RPC that allows eth_getStorageAt, or rerun with --accept-unverified-implementation to accept it.`;
 }
 
@@ -518,6 +518,17 @@ export function fixedAddresses(plan: Plan): Partial<Record<CoreKey, Address>> {
 			fixed[c.key] = c.actual;
 	}
 	return fixed;
+}
+
+/**
+ * True when executing `plan` deploys the paymaster proxy: it has no code yet. After such a run, the
+ * proxy's only `Upgraded` event is the one its constructor emitted for the implementation the run
+ * deployed, so a log answer needs no `--accept-unverified-implementation`.
+ */
+export function deploysPaymasterProxy(plan: Plan): boolean {
+	return plan.contracts.some(
+		(c) => c.key === "paymasterProxy" && c.code.state === "empty",
+	);
 }
 
 function describeCode(code: CodeState): string {

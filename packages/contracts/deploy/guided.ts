@@ -23,6 +23,7 @@ import {
 import { deployCore } from "./deploy";
 import {
 	CORE_KEYS,
+	deploysPaymasterProxy,
 	deviationGate,
 	deviationWarning,
 	fixedAddresses,
@@ -362,19 +363,31 @@ async function main() {
 					`Post-deployment code verification failed for ${key}. Do not serve this chain.`,
 				);
 		}
+		// A paymaster proxy this run deployed points at the implementation this run deployed and
+		// verified above, so its Upgraded log is the run's own: accept it on an RPC that refuses
+		// eth_getStorageAt. An existing proxy still needs --accept-unverified-implementation.
+		const acceptAfter =
+			acceptUnverifiedImplementation || deploysPaymasterProxy(fresh.plan);
+		if (acceptAfter && !acceptUnverifiedImplementation)
+			console.log(
+				"This run deployed the paymaster proxy, so an implementation read from its Upgraded logs is the one it deployed.",
+			);
 		const after: Plan = await planCore(client, {
 			network: profile.network,
 			signer,
 			overrides: profile.addresses,
 			record,
-			acceptUnverifiedImplementation,
+			acceptUnverifiedImplementation: acceptAfter,
 		});
 		for (const warning of await verifyCoreState(
 			client,
 			admin,
 			profileCoreConfig(profile),
 			after,
-			{ timelock: profile.timelock?.address, acceptUnverifiedImplementation },
+			{
+				timelock: profile.timelock?.address,
+				acceptUnverifiedImplementation: acceptAfter,
+			},
 		))
 			console.warn(`⚠ ${warning}`);
 		writeRecord(record);

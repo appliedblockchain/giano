@@ -12,6 +12,7 @@ import {
 import {
 	describeFailure,
 	isFatalFailure,
+	PAYMASTER_LOG_REQUESTS_AT_BOOT,
 	probeDivergence,
 	recoveryVerified,
 	unverifiedImplementationWarning,
@@ -75,6 +76,8 @@ const servedProbes = new Map<number, string>();
 		const verification = await verifyChain(
 			chain.descriptor,
 			chain.publicClient,
+			undefined,
+			{ logRequests: PAYMASTER_LOG_REQUESTS_AT_BOOT },
 		);
 		for (const failure of verification.failures) {
 			const line = describeFailure(chain.chainId, failure);
