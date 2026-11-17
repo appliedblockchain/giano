@@ -2,17 +2,20 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	actionPins,
-	coerceVersion,
+	compareVersions,
 	deferralFor,
+	githubReleases,
+	httpFetchJson,
+	isBehind,
 	newestQualifying,
 	npmPins,
 	npmReleases,
 	parseDeferrals,
+	parsePin,
 	renderReport,
 	staleRows,
 	TOOLS,
 	toolPins,
-	unversionedActionPins,
 	updateType,
 } from "./check-stale-pins.mjs";
 
@@ -36,8 +39,16 @@ const npmDoc = (times, versions = {}) => ({
 });
 const NPM = (name) =>
 	`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`;
-const GH = (repo) =>
-	`https://api.github.com/repos/${repo}/releases?per_page=100`;
+const GH = (repo, page = 1) =>
+	`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`;
+const ghRelease = (version, days, prerelease = false) => ({
+	tag_name: `v${version}`,
+	published_at: ago(days),
+	draft: false,
+	prerelease,
+});
+/** Built at run time, so `git grep` for a pinned Foundry image never finds this file. */
+const FOUNDRY_DIGEST = `ghcr.io/foundry-rs/foundry@sha256:${"0".repeat(64)}`;
 
 const DEFERRALS_HEADER =
 	"| Name | Held version | Reason | Owner | Review-by |\n|---|---|---|---|---|\n";
@@ -49,10 +60,24 @@ describe("versions", () => {
 		assert.equal(updateType("1.2.3", "1.2.4"), "patch");
 	});
 
-	it("pads an .nvmrc version", () => {
-		assert.equal(coerceVersion("v24.22"), "24.22.0");
-		assert.equal(coerceVersion("24"), "24.0.0");
-		assert.equal(coerceVersion("latest"), null);
+	it("reads a partial .nvmrc version as a range of releases", () => {
+		assert.equal(parsePin("v24.22").precision, 2);
+		assert.equal(parsePin("24").precision, 1);
+		assert.equal(parsePin("latest"), null);
+		assert.equal(isBehind("24.22", "24.22.9"), false);
+		assert.equal(isBehind("24.22", "24.23.0"), true);
+		assert.equal(isBehind("24", "24.99.0"), false);
+		assert.equal(isBehind("24", "25.0.0"), true);
+		assert.equal(updateType("24.22", "24.23.1"), "minor");
+	});
+
+	it("ranks a pre-release below its release", () => {
+		assert.ok(compareVersions("2.0.0-rc.1", "2.0.0") < 0);
+		assert.ok(compareVersions("2.0.0-rc.2", "2.0.0-rc.10") < 0);
+		assert.ok(compareVersions("2.0.0-alpha", "2.0.0-alpha.1") < 0);
+		assert.ok(compareVersions("2.0.0-1", "2.0.0-alpha") < 0);
+		assert.equal(isBehind("2.0.0-rc.1", "2.0.0"), true);
+		assert.equal(isBehind("2.0.0", "2.0.0"), false);
 	});
 
 	it("takes the newest stable release older than the cutoff", () => {
@@ -121,14 +146,15 @@ describe("actionPins", () => {
 			"      - uses: ./.github/actions/local",
 			"      - uses: docker://alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000",
 		].join("\n");
-		assert.deepEqual(actionPins(yml, "w.yml"), [
-			{ name: "actions/checkout", pinned: "7.0.1", where: "w.yml:2" },
-			{ name: "github/codeql-action", pinned: "4.39.1", where: "w.yml:3" },
-		]);
+		assert.deepEqual(actionPins(yml, "w.yml"), {
+			pins: [
+				{ name: "actions/checkout", pinned: "7.0.1", where: "w.yml:2" },
+				{ name: "github/codeql-action", pinned: "4.39.1", where: "w.yml:3" },
+			],
+			problems: [],
+		});
 	});
-});
 
-describe("unversionedActionPins", () => {
 	it("reports a SHA-pinned action without a release comment", () => {
 		const yml = [
 			"      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
@@ -136,7 +162,8 @@ describe("unversionedActionPins", () => {
 			"      - uses: foo/baz/sub@3d3c42e5aac5ba805825da76410c181273ba90b1 # release 1.2",
 			"      - uses: actions/setup-node@v6",
 		].join("\n");
-		const problems = unversionedActionPins(yml, "w.yml");
+		const { pins, problems } = actionPins(yml, "w.yml");
+		assert.equal(pins.length, 1);
 		assert.equal(problems.length, 2);
 		assert.match(problems[0], /^w\.yml:2: `foo\/bar`/);
 		assert.match(problems[1], /^w\.yml:3: `foo\/baz`/);
@@ -145,12 +172,36 @@ describe("unversionedActionPins", () => {
 
 describe("toolPins", () => {
 	const tool = (name, file) =>
-		TOOLS.find((t) => t.name === name && t.files.includes(file));
+		TOOLS.find((t) => t.name === name && t.files?.includes(file));
+	const pinsOf = (...args) => toolPins(...args).pins;
 
-	it("reads Node from .nvmrc", () => {
-		assert.deepEqual(toolPins(tool("node", ".nvmrc"), "v24.22\n", ".nvmrc"), [
-			{ name: "node", pinned: "24.22.0", where: ".nvmrc:1" },
+	it("reads Node from .nvmrc, keeping its precision", () => {
+		assert.deepEqual(pinsOf(tool("node", ".nvmrc"), "v24.22\n", ".nvmrc"), [
+			{ name: "node", pinned: "24.22", where: ".nvmrc:1" },
 		]);
+	});
+
+	it("reads the Foundry image digest with its release on the line or the line above", () => {
+		const image = TOOLS.find((t) => t.anchor);
+		const text = [
+			`    image: ${FOUNDRY_DIGEST} # v1.7.1 — state.json format must match`,
+			`const IMAGE =\n\t"${FOUNDRY_DIGEST}"; // v1.7.1`,
+			"# Foundry v1.7.1, the digest of the compose files.",
+			`FROM ${FOUNDRY_DIGEST}`,
+			"# a comment without a release",
+			`FROM ${FOUNDRY_DIGEST}`,
+		].join("\n");
+		const { pins, problems } = toolPins(image, text, "f");
+		assert.deepEqual(
+			pins.map((p) => [p.pinned, p.where]),
+			[
+				["1.7.1", "f:1"],
+				["1.7.1", "f:3"],
+				["1.7.1", "f:4"],
+			],
+		);
+		assert.equal(problems.length, 1);
+		assert.match(problems[0], /^f:7: `foundry` is pinned without its release/);
 	});
 
 	it("reads the Foundry version below foundry-toolchain, past comment lines", () => {
@@ -167,7 +218,7 @@ describe("toolPins", () => {
 		].join("\n");
 		const workflowTool = tool("foundry", ".github/workflows/*.yml");
 		assert.deepEqual(
-			toolPins(workflowTool, yml, "ci.yml").map((p) => [p.pinned, p.where]),
+			pinsOf(workflowTool, yml, "ci.yml").map((p) => [p.pinned, p.where]),
 			[
 				["1.7.1", "ci.yml:6"],
 				["1.7.1", "ci.yml:9"],
@@ -177,10 +228,10 @@ describe("toolPins", () => {
 
 	it("reads the Anvil pin of both devnet scripts", () => {
 		const tool = TOOLS.find((t) =>
-			t.files.includes("e2e/devnet/upgrade-paymaster.mjs"),
+			t.files?.includes("e2e/devnet/upgrade-paymaster.mjs"),
 		);
 		assert.deepEqual(
-			toolPins(tool, 'const PINNED_ANVIL_VERSION = "1.7.1";', "u.mjs"),
+			toolPins(tool, 'const PINNED_ANVIL_VERSION = "1.7.1";', "u.mjs").pins,
 			[{ name: "foundry", pinned: "1.7.1", where: "u.mjs:1" }],
 		);
 	});
@@ -188,7 +239,7 @@ describe("toolPins", () => {
 	it("reads the pnpm version of packageManager", () => {
 		const json = '{\n\t"packageManager": "pnpm@12.17.0+sha256.abc"\n}';
 		assert.equal(
-			toolPins(tool("pnpm", "package.json"), json, "package.json")[0].pinned,
+			pinsOf(tool("pnpm", "package.json"), json, "package.json")[0].pinned,
 			"12.17.0",
 		);
 	});
@@ -197,7 +248,7 @@ describe("toolPins", () => {
 describe("parseDeferrals", () => {
 	it("reads valid rows and ignores other tables", () => {
 		const text = `| A | B |\n|---|---|\n| x | y |\n\n${DEFERRALS_HEADER}| \`vite\` | 6.x | plugin needs 6 | Dev | 2027-01-01 |\n`;
-		const { rows, errors } = parseDeferrals(text);
+		const { rows, errors } = parseDeferrals(text, "d.md", NOW);
 		assert.deepEqual(errors, []);
 		assert.equal(rows.length, 1);
 		assert.equal(rows[0].Name, "vite");
@@ -206,12 +257,28 @@ describe("parseDeferrals", () => {
 
 	it("reports a row with a missing owner, a bad date or a range", () => {
 		const text = `${DEFERRALS_HEADER}| a | 1.0.0 | r |  | 2027-01-01 |\n| b | 1.0.0 | r | o | soon |\n| c | ^1 | r | o | 2027-01-01 |\n`;
-		const { rows, errors } = parseDeferrals(text, "d.md");
+		const { rows, errors } = parseDeferrals(text, "d.md", NOW);
 		assert.equal(rows.length, 0);
 		assert.equal(errors.length, 3);
 		assert.match(errors[0], /^d\.md:3: .*Owner/);
 		assert.match(errors[1], /Review-by/);
 		assert.match(errors[2], /Held version/);
+	});
+
+	it("rejects an impossible review date and one more than 180 days ahead", () => {
+		const text = `${DEFERRALS_HEADER}| a | 1.0.0 | r | o | 2026-13-45 |\n| b | 1.0.0 | r | o | 2027-02-30 |\n| c | 1.0.0 | r | o | 2099-12-31 |\n| d | 1.0.0 | r | o | 2027-05-16 |\n`;
+		const { rows, errors } = parseDeferrals(text, "d.md", NOW);
+		assert.deepEqual(
+			rows.map((r) => r.Name),
+			["d"],
+		);
+		assert.equal(errors.length, 3);
+		assert.match(errors[0], /^d\.md:3: Review-by must be a date/);
+		assert.match(errors[1], /^d\.md:4: Review-by must be a date/);
+		assert.match(
+			errors[2],
+			/^d\.md:5: .*at most 180 days ahead \(2027-05-16\)/,
+		);
 	});
 
 	it("matches a held major only for pins in that major", () => {
@@ -220,6 +287,9 @@ describe("parseDeferrals", () => {
 		assert.equal(
 			deferralFor(rows, "actions/upload-artifact", "7.0.2"),
 			undefined,
+		);
+		assert.ok(
+			deferralFor([{ Name: "node", "Held version": "24.x" }], "node", "24.22"),
 		);
 	});
 });
@@ -236,6 +306,83 @@ describe("npmReleases", () => {
 			releases.map((r) => r.version),
 			["1.0.0"],
 		);
+	});
+});
+
+describe("githubReleases", () => {
+	it("reads every page", async () => {
+		const page1 = Array.from({ length: 100 }, (_, i) =>
+			ghRelease(`2.0.0-nightly.${i}`, 1, true),
+		);
+		const releases = await githubReleases(
+			fakeFetch({
+				[GH("o/r")]: page1,
+				[GH("o/r", 2)]: [ghRelease("1.0.0", 30)],
+			}),
+			"o/r",
+		);
+		assert.deepEqual(
+			releases.map((r) => r.version),
+			["1.0.0"],
+		);
+	});
+});
+
+describe("httpFetchJson", () => {
+	const respond = (status, body = {}) => ({
+		ok: status < 400,
+		status,
+		json: async () => body,
+	});
+	const sleep = async () => {};
+
+	it("retries a network error and a 5xx, then answers", async () => {
+		const answers = [
+			() => {
+				throw new Error("ECONNRESET");
+			},
+			() => respond(503),
+			() => respond(200, { ok: 1 }),
+		];
+		const fetchImpl = async () => answers.shift()();
+		assert.deepEqual(await httpFetchJson("https://x", { fetchImpl, sleep }), {
+			ok: 1,
+		});
+	});
+
+	it("gives up after the retries, and does not retry a 404", async () => {
+		let calls = 0;
+		const failing = async () => {
+			calls++;
+			throw new Error("The operation was aborted due to timeout");
+		};
+		await assert.rejects(
+			httpFetchJson("https://x", { fetchImpl: failing, sleep }),
+			/https:\/\/x: The operation was aborted due to timeout/,
+		);
+		assert.equal(calls, 3);
+		calls = 0;
+		const notFound = async () => {
+			calls++;
+			return respond(404);
+		};
+		await assert.rejects(
+			httpFetchJson("https://x", { fetchImpl: notFound, sleep }),
+			/HTTP 404/,
+		);
+		assert.equal(calls, 1);
+	});
+
+	it("passes a timeout signal", async () => {
+		let signal;
+		await httpFetchJson("https://x", {
+			fetchImpl: async (_url, init) => {
+				signal = init.signal;
+				return respond(200);
+			},
+			sleep,
+		});
+		assert.ok(signal instanceof AbortSignal);
 	});
 });
 
@@ -333,6 +480,55 @@ describe("staleRows", () => {
 		assert.equal(held.latest, "7.0.0");
 	});
 
+	it("reports a held major as not checked when no release in it can be found", async () => {
+		const responses = {
+			[NPM("a")]: npmDoc({ "7.0.0": ago(20) }), // 4.x missing from the answer
+		};
+		const deferrals = [
+			{ Name: "a", "Held version": "4.x", "Review-by": "2027-01-01" },
+		];
+		const [row] = await run([npm("a", "4.0.0")], { responses, deferrals });
+		assert.equal(row.status, "error");
+		assert.match(row.note, /4\.x/);
+	});
+
+	it("reports a pre-release pin once its release qualifies", async () => {
+		const [row] = await run([npm("a", "2.0.0-rc.1")], {
+			responses: {
+				[NPM("a")]: npmDoc({ "2.0.0-rc.1": ago(30), "2.0.0": ago(8) }),
+			},
+		});
+		assert.equal(row.status, "stale");
+		assert.equal(row.latest, "2.0.0");
+	});
+
+	it("keeps a partial Node pin current while it covers the newest patch, and holds it by major", async () => {
+		const node = (pinned) => ({
+			kind: "tool",
+			name: "node",
+			pinned,
+			where: ".nvmrc:1",
+			source: { type: "npm", package: "node-fake" },
+		});
+		const responses = {
+			[NPM("node-fake")]: npmDoc({
+				"24.22.0": ago(60),
+				"24.22.2": ago(10),
+				"24.23.0": ago(9),
+			}),
+		};
+		const [patch] = await run([node("24.23")], { responses });
+		assert.equal(patch.status, "current");
+		const [minor] = await run([node("24.22")], { responses });
+		assert.equal(minor.status, "stale");
+		assert.equal(minor.latest, "24.23.0");
+		const deferrals = [
+			{ Name: "node", "Held version": "24.x", "Review-by": "2027-01-01" },
+		];
+		const [held] = await run([node("24.23")], { responses, deferrals });
+		assert.equal(held.status, "current");
+	});
+
 	it("compares our own package with the workspace version, without the registry", async () => {
 		const pin = { ...npm("@appliedblockchain/x", "6.0.0"), own: true };
 		const [row] = await run([pin], {
@@ -355,24 +551,9 @@ describe("staleRows", () => {
 			{
 				responses: {
 					[GH("o/r")]: [
-						{
-							tag_name: "v1.0.0",
-							published_at: ago(90),
-							draft: false,
-							prerelease: false,
-						},
-						{
-							tag_name: "v1.1.0",
-							published_at: ago(10),
-							draft: false,
-							prerelease: false,
-						},
-						{
-							tag_name: "v2.0.0",
-							published_at: ago(10),
-							draft: false,
-							prerelease: true,
-						},
+						ghRelease("1.0.0", 90),
+						ghRelease("1.1.0", 10),
+						ghRelease("2.0.0", 10, true),
 					],
 					"https://api.github.com/repos/o/r/commits/v1.1.0": {
 						sha: "a".repeat(40),

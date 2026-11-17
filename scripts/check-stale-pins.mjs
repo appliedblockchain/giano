@@ -19,7 +19,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MIN_RELEASE_AGE_MINUTES } from "./check-release-age.mjs";
+import { EXACT, manifests } from "./check-pinned-versions.mjs";
+import { MIN_RELEASE_AGE_MINUTES, registryUrl } from "./check-release-age.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DEFERRALS_FILE = "docs/version-deferrals.md";
@@ -41,22 +42,68 @@ export function parseVersion(v) {
 /** A stable release: full semver with no pre-release part. */
 export const isStable = (v) => parseVersion(v)?.pre === null;
 
-/** `major.minor` or `major` alone, padded to a full version (`.nvmrc` style `v24.22`). */
-export function coerceVersion(v) {
-	const m = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(String(v).trim());
-	return m ? `${m[1]}.${m[2] ?? 0}.${m[3] ?? 0}` : null;
+/**
+ * A pin, which may be partial: `.nvmrc` holds `v24.22`, and setup-node installs the newest
+ * 24.22.x. `precision` is the number of parts given (3 for a full version), or null.
+ */
+export function parsePin(v) {
+	const full = parseVersion(v);
+	if (full) return { ...full, precision: 3 };
+	const m = /^v?(\d+)(?:\.(\d+))?$/.exec(String(v).trim());
+	if (!m) return null;
+	return {
+		major: +m[1],
+		minor: +(m[2] ?? 0),
+		patch: 0,
+		pre: null,
+		precision: m[2] === undefined ? 1 : 2,
+	};
 }
 
-/** Compares two stable versions. */
+/** Semver pre-release precedence; a release without one ranks above its pre-releases. */
+function comparePre(a, b) {
+	if (a === b) return 0;
+	if (a === null) return 1;
+	if (b === null) return -1;
+	const x = a.split(".");
+	const y = b.split(".");
+	for (let i = 0; i < Math.max(x.length, y.length); i++) {
+		if (x[i] === undefined) return -1;
+		if (y[i] === undefined) return 1;
+		const nx = /^\d+$/.test(x[i]);
+		const ny = /^\d+$/.test(y[i]);
+		if (nx && ny && Number(x[i]) !== Number(y[i]))
+			return Number(x[i]) - Number(y[i]);
+		if (nx !== ny) return nx ? -1 : 1;
+		if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+	}
+	return 0;
+}
+
+/** Compares two full versions, pre-releases included. */
 export function compareVersions(a, b) {
 	const x = parseVersion(a);
 	const y = parseVersion(b);
-	return x.major - y.major || x.minor - y.minor || x.patch - y.patch;
+	return (
+		x.major - y.major ||
+		x.minor - y.minor ||
+		x.patch - y.patch ||
+		comparePre(x.pre, y.pre)
+	);
+}
+
+/** Whether `version` is newer than a pin allows. A partial pin (`24.22`) allows every 24.22.x. */
+export function isBehind(pinned, version) {
+	const p = parsePin(pinned);
+	const v = parseVersion(version);
+	for (const part of ["major", "minor", "patch"].slice(0, p.precision))
+		if (v[part] !== p[part]) return v[part] > p[part];
+	return p.precision === 3 && comparePre(p.pre, v.pre) < 0;
 }
 
 /** `major`, `minor` or `patch`: the size of the step from `pinned` to `latest`. */
 export function updateType(pinned, latest) {
-	const x = parseVersion(pinned);
+	const x = parsePin(pinned);
 	const y = parseVersion(latest);
 	if (!x || !y) return "?";
 	if (x.major !== y.major) return "major";
@@ -77,7 +124,17 @@ export function newestQualifying(releases, cutoff, major) {
 // ---------------------------------------------------------------------------------------------
 // Release sources. `fetchJson(url)` is injected so the tests replay recorded responses.
 
-export async function httpFetchJson(url) {
+const FETCH_TIMEOUT_MS = 30_000;
+/** Waits before each retry of a network error, a timeout, a 5xx or a 429. */
+const RETRY_DELAYS_MS = [2_000, 10_000];
+
+export async function httpFetchJson(
+	url,
+	{
+		fetchImpl = fetch,
+		sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+	} = {},
+) {
 	const headers = {
 		accept: "application/json",
 		"user-agent": "giano-stale-pins",
@@ -85,11 +142,23 @@ export async function httpFetchJson(url) {
 	const token = process.env.GITHUB_TOKEN;
 	if (token && url.startsWith("https://api.github.com/"))
 		headers.authorization = `Bearer ${token}`;
-	for (let attempt = 1; ; attempt++) {
-		const res = await fetch(url, { headers });
-		if (res.ok) return res.json();
-		if (attempt >= 2 || res.status < 500)
-			throw new Error(`${url}: HTTP ${res.status}`);
+	for (let attempt = 0; ; attempt++) {
+		let error;
+		let retryable = true;
+		try {
+			const res = await fetchImpl(url, {
+				headers,
+				signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+			});
+			if (res.ok) return await res.json();
+			error = new Error(`${url}: HTTP ${res.status}`);
+			retryable = res.status >= 500 || res.status === 429;
+		} catch (cause) {
+			// A network error, the timeout or an unreadable body.
+			error = new Error(`${url}: ${cause.message}`);
+		}
+		if (!retryable || attempt >= RETRY_DELAYS_MS.length) throw error;
+		await sleep(RETRY_DELAYS_MS[attempt]);
 	}
 }
 
@@ -98,9 +167,7 @@ export async function httpFetchJson(url) {
  * `versions` count, and a deprecated version is not a release to move to.
  */
 export async function npmReleases(fetchJson, name) {
-	const doc = await fetchJson(
-		`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`,
-	);
+	const doc = await fetchJson(registryUrl(name));
 	const versions = doc?.versions ?? {};
 	return Object.entries(doc?.time ?? {})
 		.filter(
@@ -112,11 +179,24 @@ export async function npmReleases(fetchJson, name) {
 		.map(([version, date]) => ({ version, date }));
 }
 
-/** Releases of a GitHub repository, with `vX.Y.Z` (or `<prefix>X.Y.Z`) tags. */
+const GITHUB_PAGE_SIZE = 100;
+/** codeql-action and foundry publish many non-matching releases; every page is read, up to this. */
+const GITHUB_MAX_PAGES = 30;
+
+/** Releases of a GitHub repository, with `vX.Y.Z` (or `<prefix>X.Y.Z`) tags. Reads every page. */
 export async function githubReleases(fetchJson, repo, tagPrefix = "v") {
-	const releases = await fetchJson(
-		`https://api.github.com/repos/${repo}/releases?per_page=100`,
-	);
+	const releases = [];
+	for (let page = 1; ; page++) {
+		const batch = await fetchJson(
+			`https://api.github.com/repos/${repo}/releases?per_page=${GITHUB_PAGE_SIZE}&page=${page}`,
+		);
+		releases.push(...batch);
+		if (batch.length < GITHUB_PAGE_SIZE) break;
+		if (page === GITHUB_MAX_PAGES)
+			throw new Error(
+				`${repo}: more than ${GITHUB_PAGE_SIZE * GITHUB_MAX_PAGES} releases (raise GITHUB_MAX_PAGES)`,
+			);
+	}
 	return releases
 		.filter(
 			(r) => !r.draft && !r.prerelease && r.tag_name.startsWith(tagPrefix),
@@ -176,7 +256,6 @@ export async function tagCommit(fetchJson, repo, tag) {
 // ---------------------------------------------------------------------------------------------
 // Pins in this repository
 
-const EXACT = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 const NPM_FIELDS = ["dependencies", "devDependencies", "optionalDependencies"];
 
 /**
@@ -200,42 +279,27 @@ export function npmPins(manifests, own) {
 	return pins;
 }
 
-/** Third-party actions pinned as `uses: owner/repo[/path]@<sha> # vX.Y.Z`. */
-export function actionPins(text, file) {
-	const pins = [];
-	const lines = text.split("\n");
-	lines.forEach((line, i) => {
-		const m =
-			/^\s*-?\s*uses:\s*([\w.-]+\/[\w.-]+)(?:\/[^@\s]*)?@([0-9a-f]{40})\s+#\s*(v?\d[\w.+-]*)/.exec(
-				line,
-			);
-		if (m)
-			pins.push({
-				name: m[1],
-				pinned: m[3].replace(/^v/, ""),
-				where: `${file}:${i + 1}`,
-			});
-	});
-	return pins;
-}
+const ACTION_PIN =
+	/^\s*-?\s*uses:\s*([\w.-]+\/[\w.-]+)(?:\/[^@\s]*)?@[0-9a-f]{40}\b(?:\s+#\s*(v?\d[\w.+-]*))?/;
 
 /**
- * Actions pinned to a commit SHA without a `# vX.Y.Z` release comment. They cannot be compared,
- * so they are reported rather than skipped.
+ * Third-party actions pinned as `uses: owner/repo[/path]@<sha> # vX.Y.Z`, as `{ pins, problems }`.
+ * One pinned to a SHA without a release comment cannot be compared, so it is a problem, not skipped.
  */
-export function unversionedActionPins(text, file) {
+export function actionPins(text, file) {
+	const pins = [];
 	const problems = [];
 	text.split("\n").forEach((line, i) => {
-		const sha =
-			/^\s*-?\s*uses:\s*([\w.-]+\/[\w.-]+)(?:\/[^@\s]*)?@[0-9a-f]{40}\b/.exec(
-				line,
-			);
-		if (sha && actionPins(line, file).length === 0)
+		const m = ACTION_PIN.exec(line);
+		if (!m) return;
+		const where = `${file}:${i + 1}`;
+		if (m[2]) pins.push({ name: m[1], pinned: m[2].replace(/^v/, ""), where });
+		else
 			problems.push(
-				`${file}:${i + 1}: \`${sha[1]}\` is pinned to a commit SHA without a \`# vX.Y.Z\` release comment`,
+				`${where}: \`${m[1]}\` is pinned to a commit SHA without a \`# vX.Y.Z\` release comment`,
 			);
 	});
-	return problems;
+	return { pins, problems };
 }
 
 /** Releases a tool pin is compared with. */
@@ -246,10 +310,14 @@ const SOURCES = {
 	"node-lts": (fetchJson, _s, today) => nodeActiveLtsReleases(fetchJson, today),
 };
 
+const FOUNDRY_IMAGE = "foundry-rs/foundry@sha256:[0-9a-f]{64}";
+
 /**
- * Toolchains and CI tools pinned outside npm and actions. `files` are git pathspecs; `pattern`
- * captures the version. Every match is one pin, so a tool pinned in two places is checked in both.
- * An entry that matches nothing is reported: its pin moved or changed shape and is no longer checked.
+ * Toolchains and CI tools pinned outside npm and actions. `files` are git pathspecs, or `grep` is
+ * a regex selecting every tracked file that contains it; `pattern` captures the version (in its
+ * first group that matched). Every match is one pin, so a tool pinned in two places is checked in
+ * both. An entry that matches nothing is reported: its pin moved or changed shape. With `anchor`,
+ * every occurrence of it outside a match is reported too: a copy of the pin with no version.
  */
 export const TOOLS = [
 	{
@@ -272,11 +340,16 @@ export const TOOLS = [
 			/foundry-toolchain@\S+[^\n]*\n(?:[^\n]*\n){0,8}?\s+version:\s*v(\d+\.\d+\.\d+)/,
 		source: { type: "github", repo: "foundry-rs/foundry" },
 	},
+	// The image, pinned by digest wherever it appears, with its release in a `# vX.Y.Z` or
+	// `// vX.Y.Z` comment at the end of the line or on a comment line just above.
 	{
 		name: "foundry",
-		files: ["deploy/*.yml"],
-		pattern:
-			/ghcr\.io\/foundry-rs\/foundry@sha256:[0-9a-f]{64}\s+#\s*v(\d+\.\d+\.\d+)/,
+		grep: FOUNDRY_IMAGE,
+		anchor: new RegExp(FOUNDRY_IMAGE),
+		pattern: new RegExp(
+			`${FOUNDRY_IMAGE}["';,]*[ \\t]*(?:#|//)[ \\t]*v(\\d+\\.\\d+\\.\\d+)|^[ \\t]*(?:#|//)[^\\n]*\\bv(\\d+\\.\\d+\\.\\d+)\\b[^\\n]*\\n[^\\n]*${FOUNDRY_IMAGE}`,
+			"m",
+		),
 		source: { type: "github", repo: "foundry-rs/foundry" },
 	},
 	{
@@ -308,18 +381,31 @@ export const TOOLS = [
 	},
 ];
 
-/** Every match of a tool's pattern in one file, as pins. */
+const lineOf = (text, index) => text.slice(0, index).split("\n").length;
+const globally = (re) =>
+	new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+
+/** Every match of a tool's pattern in one file, as `{ pins, problems }`. */
 export function toolPins(tool, text, file) {
-	const flags = tool.pattern.flags.includes("g")
-		? tool.pattern.flags
-		: `${tool.pattern.flags}g`;
-	return [...text.matchAll(new RegExp(tool.pattern.source, flags))].map(
-		(m) => ({
+	const pins = [];
+	const spans = [];
+	for (const m of text.matchAll(globally(tool.pattern))) {
+		const version = m.slice(1).find((g) => g !== undefined);
+		pins.push({
 			name: tool.name,
-			pinned: coerceVersion(m[1]) ?? m[1],
-			where: `${file}:${text.slice(0, m.index + m[0].indexOf(m[1])).split("\n").length}`,
-		}),
-	);
+			pinned: version,
+			where: `${file}:${lineOf(text, m.index + m[0].indexOf(version))}`,
+		});
+		spans.push([m.index, m.index + m[0].length]);
+	}
+	const problems = [];
+	if (tool.anchor)
+		for (const a of text.matchAll(globally(tool.anchor)))
+			if (!spans.some(([from, to]) => a.index >= from && a.index < to))
+				problems.push(
+					`${file}:${lineOf(text, a.index)}: \`${tool.name}\` is pinned without its release (add a \`# vX.Y.Z\` or \`// vX.Y.Z\` comment on the line or the line above)`,
+				);
+	return { pins, problems };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -333,8 +419,21 @@ const DEFERRAL_COLUMNS = [
 	"Review-by",
 ];
 
+/** The furthest a deferral's review date may be (docs/version-deferrals.md). */
+export const MAX_DEFERRAL_DAYS = 180;
+
+/** A real calendar date written YYYY-MM-DD. */
+function isCalendarDate(s) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+	const t = Date.parse(`${s}T00:00:00Z`);
+	return !Number.isNaN(t) && new Date(t).toISOString().startsWith(s);
+}
+
 /** Rows of the deferral table, and the problems with it (a broken row holds nothing). */
-export function parseDeferrals(text, file = DEFERRALS_FILE) {
+export function parseDeferrals(text, file = DEFERRALS_FILE, now = Date.now()) {
+	const latestReview = new Date(now + MAX_DEFERRAL_DAYS * 86_400_000)
+		.toISOString()
+		.slice(0, 10);
 	const rows = [];
 	const errors = [];
 	let header = null;
@@ -363,8 +462,12 @@ export function parseDeferrals(text, file = DEFERRALS_FILE) {
 			errors.push(
 				`${file}:${i + 1}: deferral row is missing ${missing.join(", ")}`,
 			);
-		} else if (!/^\d{4}-\d{2}-\d{2}$/.test(row["Review-by"])) {
-			errors.push(`${file}:${i + 1}: Review-by must be YYYY-MM-DD`);
+		} else if (!isCalendarDate(row["Review-by"])) {
+			errors.push(`${file}:${i + 1}: Review-by must be a date, YYYY-MM-DD`);
+		} else if (row["Review-by"] > latestReview) {
+			errors.push(
+				`${file}:${i + 1}: Review-by must be at most ${MAX_DEFERRAL_DAYS} days ahead (${latestReview})`,
+			);
 		} else if (!/^(\d+\.x|\d+\.\d+\.\d+)$/.test(row["Held version"])) {
 			errors.push(
 				`${file}:${i + 1}: Held version must be an exact version or N.x`,
@@ -381,7 +484,7 @@ export function deferralFor(deferrals, name, pinned) {
 	return deferrals.find((d) => {
 		if (d.Name !== name) return false;
 		const held = /^(\d+)\.x$/.exec(d["Held version"]);
-		if (held) return parseVersion(pinned)?.major === Number(held[1]);
+		if (held) return parsePin(pinned)?.major === Number(held[1]);
 		return d["Held version"] === pinned;
 	});
 }
@@ -431,6 +534,16 @@ export async function staleRows({
 		return releaseCache.get(key);
 	};
 
+	// The report gives the commit of a newer action release, as actions are pinned by SHA.
+	const withCommit = async (row) => {
+		if (row.kind !== "action" || !row.tag) return row;
+		try {
+			return { ...row, sha: await tagCommit(fetchJson, row.name, row.tag) };
+		} catch {
+			return row; // The version alone is still useful.
+		}
+	};
+
 	const check = async (pin) => {
 		const base = {
 			kind: pin.kind,
@@ -439,7 +552,7 @@ export async function staleRows({
 			where: pin.where,
 		};
 		try {
-			if (!parseVersion(pin.pinned))
+			if (!parsePin(pin.pinned))
 				return {
 					...base,
 					latest: "?",
@@ -468,7 +581,7 @@ export async function staleRows({
 					status: "error",
 					note: "no qualifying release found",
 				};
-			if (compareVersions(pin.pinned, latest.version) >= 0)
+			if (!isBehind(pin.pinned, latest.version))
 				return { ...base, latest: latest.version, status: "current" };
 
 			const row = {
@@ -478,13 +591,14 @@ export async function staleRows({
 				tag: latest.tag,
 			};
 			const deferral = deferralFor(deferrals, pin.name, pin.pinned);
-			if (deferral === undefined) return { ...row, status: "stale" };
+			if (deferral === undefined)
+				return withCommit({ ...row, status: "stale" });
 			if (deferral["Review-by"] < today)
-				return {
+				return withCommit({
 					...row,
 					status: "stale",
 					note: `deferral expired on ${deferral["Review-by"]}`,
-				};
+				});
 			const held = /^(\d+)\.x$/.exec(deferral["Held version"]);
 			if (held) {
 				// A deferral that holds a major still expects the newest release within it.
@@ -493,15 +607,23 @@ export async function staleRows({
 					cutoff,
 					Number(held[1]),
 				);
-				if (inMajor && compareVersions(pin.pinned, inMajor.version) < 0)
+				// The pinned release itself is in that major, so finding none means the lookup failed.
+				if (inMajor === undefined)
 					return {
+						...base,
+						latest: "?",
+						status: "error",
+						note: `no qualifying release found in ${deferral["Held version"]}`,
+					};
+				if (isBehind(pin.pinned, inMajor.version))
+					return withCommit({
 						...row,
 						latest: inMajor.version,
 						update: updateType(pin.pinned, inMajor.version),
 						tag: inMajor.tag,
 						status: "stale",
 						note: `deferred to ${deferral["Held version"]}, but behind within it`,
-					};
+					});
 			}
 			return {
 				...row,
@@ -521,17 +643,6 @@ export async function staleRows({
 		}),
 	);
 
-	// The report gives the commit of each newer action release, as actions are pinned by SHA.
-	for (const row of rows) {
-		if (row.kind === "action" && row.status === "stale" && row.tag) {
-			try {
-				row.sha = await tagCommit(fetchJson, row.name, row.tag);
-			} catch {
-				// The version alone is still useful.
-			}
-		}
-	}
-
 	const order = { npm: 0, action: 1, tool: 2 };
 	return rows.sort(
 		(a, b) =>
@@ -540,8 +651,6 @@ export async function staleRows({
 			a.pinned.localeCompare(b.pinned),
 	);
 }
-
-const KIND_LABEL = { npm: "npm", action: "action", tool: "tool" };
 
 /** The Markdown report. `problems` are pins or deferral rows that could not be read. */
 export function renderReport(rows, problems = []) {
@@ -568,7 +677,7 @@ export function renderReport(rows, problems = []) {
 			const latest = r.sha ? `${r.latest} (\`${r.sha}\`)` : r.latest;
 			const note = r.note ? ` (${r.note})` : "";
 			out.push(
-				`| ${KIND_LABEL[r.kind]} | \`${r.name}\` | ${r.pinned} | ${latest}${note} | ${r.update ?? "?"} | ${where(r)} |`,
+				`| ${r.kind} | \`${r.name}\` | ${r.pinned} | ${latest}${note} | ${r.update ?? "?"} | ${where(r)} |`,
 			);
 		}
 		out.push("");
@@ -577,7 +686,7 @@ export function renderReport(rows, problems = []) {
 		out.push("## Could not check", "");
 		for (const e of problems) out.push(`- ${e}`);
 		for (const r of errors)
-			out.push(`- ${KIND_LABEL[r.kind]} \`${r.name}\` ${r.pinned}: ${r.note}`);
+			out.push(`- ${r.kind} \`${r.name}\` ${r.pinned}: ${r.note}`);
 		out.push("");
 	}
 	if (deferred.length) {
@@ -589,7 +698,7 @@ export function renderReport(rows, problems = []) {
 		);
 		for (const r of deferred)
 			out.push(
-				`| ${KIND_LABEL[r.kind]} | \`${r.name}\` | ${r.pinned} | ${r.latest} | ${r.note} |`,
+				`| ${r.kind} | \`${r.name}\` | ${r.pinned} | ${r.latest} | ${r.note} |`,
 			);
 		out.push("");
 	}
@@ -604,30 +713,38 @@ const git = (...args) =>
 		.split("\n")
 		.filter(Boolean);
 const read = (file) => readFileSync(resolve(ROOT, file), "utf8");
+/** Tracked files containing a match of `regex`, outside vendored code. */
+function grepFiles(regex) {
+	try {
+		return git(
+			"grep",
+			"-lE",
+			regex,
+			"--",
+			".",
+			":!vendor",
+			":!packages/contracts/lib",
+		);
+	} catch (error) {
+		if (error.status === 1) return []; // no match
+		throw error;
+	}
+}
 
 /** Every pin of this repository, with its kind, and the pins that could not be read. */
 export function repositoryPins() {
-	const manifestFiles = git(
-		"ls-files",
-		"package.json",
-		"**/package.json",
-	).filter(
-		(f) =>
-			!/^(vendor|packages\/contracts\/lib)\//.test(f) &&
-			!f.includes("node_modules/"),
-	);
-	const manifests = manifestFiles.map((file) => ({
+	const parsed = manifests().map((file) => ({
 		file,
 		manifest: JSON.parse(read(file)),
 	}));
-	const own = new Set(manifests.map((m) => m.manifest.name).filter(Boolean));
+	const own = new Set(parsed.map((m) => m.manifest.name).filter(Boolean));
 	const ownVersions = new Map(
-		manifests
+		parsed
 			.filter((m) => /^packages\/[^/]+\/package\.json$/.test(m.file))
 			.map((m) => [m.manifest.name, m.manifest.version]),
 	);
 	const pins = [];
-	for (const pin of npmPins(manifests, own)) {
+	for (const pin of npmPins(parsed, own)) {
 		// A pin on one of our packages is checked only where it is a released one (custom-example).
 		if (pin.own && !ownVersions.has(pin.name)) continue;
 		if (pin.own && !pin.where.startsWith("services/custom-example/")) continue;
@@ -639,22 +756,25 @@ export function repositoryPins() {
 		".github/workflows/*.yml",
 		".github/actions/**/action.yml",
 	)) {
-		const text = read(file);
-		for (const pin of actionPins(text, file))
-			pins.push({ ...pin, kind: "action" });
-		problems.push(...unversionedActionPins(text, file));
+		const found = actionPins(read(file), file);
+		for (const pin of found.pins) pins.push({ ...pin, kind: "action" });
+		problems.push(...found.problems);
 	}
 	for (const tool of TOOLS) {
-		let found = 0;
-		for (const file of git("ls-files", ...tool.files)) {
-			for (const pin of toolPins(tool, read(file), file)) {
+		let count = 0;
+		const files = tool.grep
+			? grepFiles(tool.grep)
+			: git("ls-files", ...tool.files);
+		for (const file of files) {
+			const found = toolPins(tool, read(file), file);
+			for (const pin of found.pins)
 				pins.push({ ...pin, kind: "tool", source: tool.source });
-				found++;
-			}
+			problems.push(...found.problems);
+			count += found.pins.length;
 		}
-		if (found === 0)
+		if (count === 0)
 			problems.push(
-				`tool \`${tool.name}\`: no pin found in ${tool.files.join(", ")} (update TOOLS in scripts/check-stale-pins.mjs)`,
+				`tool \`${tool.name}\`: no pin found in ${tool.files?.join(", ") ?? `files matching \`${tool.grep}\``} (update TOOLS in scripts/check-stale-pins.mjs)`,
 			);
 	}
 	return { pins, ownVersions, problems };

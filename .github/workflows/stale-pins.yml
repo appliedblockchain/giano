@@ -24,6 +24,7 @@ jobs:
   report:
     name: Check pins and report in the tracking issue
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     permissions:
       contents: read
       # Open, edit and close the tracking issue, and create its label.
