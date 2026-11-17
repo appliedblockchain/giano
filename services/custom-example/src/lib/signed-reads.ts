@@ -29,6 +29,11 @@ import {
  *    ERC-1271 on the wallet, and runs the call with `from` set to the wallet.
  *
  * Before the ticket expires, the next read asks the wallet for a new approval with a new key.
+ *
+ * Approve before you read: `await reader.approved()` from the click handler, then make the signed
+ * request. The transport signs inside viem's `fetchFn`, which viem runs under the HTTP transport's
+ * timeout (10 s by default). A passkey prompt there can outlast the timeout, and the read fails while
+ * the wallet popup is still open. After `approved()`, the transport only signs in memory.
  */
 
 /** A delegate ticket, exactly as the RPC reads it from `x-delegate`. The wallet signs this JSON, so key order matters. */
@@ -103,8 +108,17 @@ export class SignedReader {
 		);
 	}
 
-	/** A valid delegate: the current one, or a new one after one `personal_sign`. Concurrent reads share one prompt. */
-	private async approved(): Promise<{
+	/**
+	 * A valid delegate: the current one, or a new one after one `personal_sign` (the passkey prompt).
+	 * Await it before each signed read, from the click handler, so the read itself never waits for the
+	 * wallet. Concurrent calls share one prompt.
+	 */
+	async approved(): Promise<Delegate> {
+		return (await this.fresh()).delegate;
+	}
+
+	/** The current delegate and its key, approved now if none is valid. Concurrent calls share one prompt. */
+	private async fresh(): Promise<{
 		delegate: Delegate;
 		key: PrivateKeyAccount;
 	}> {
@@ -133,9 +147,12 @@ export class SignedReader {
 		return this.current;
 	}
 
-	/** The headers that sign `body`, the exact HTTP body of one JSON-RPC request. */
+	/**
+	 * The headers that sign `body`, the exact HTTP body of one JSON-RPC request. Without a valid
+	 * delegate, it asks the wallet first: call {@link approved} before, so this only signs in memory.
+	 */
 	async headers(body: string): Promise<Record<string, string>> {
-		const { delegate, key } = await this.approved();
+		const { delegate, key } = await this.fresh();
 		const timestamp = new Date(this.now()).toISOString();
 		return {
 			"x-signer-swc": this.wallet,
@@ -149,7 +166,13 @@ export class SignedReader {
 		};
 	}
 
-	/** A viem HTTP transport whose every request is signed for the wallet. Use it for private reads only. */
+	/**
+	 * A viem HTTP transport whose every request is signed for the wallet. Use it for private reads only.
+	 *
+	 * Await {@link approved} before each read. Without a valid delegate, the request still asks the
+	 * wallet first, but inside viem's request timeout (10 s by default): a slow passkey prompt fails
+	 * the read while the wallet popup is still open.
+	 */
 	transport(url: string): HttpTransport {
 		return http(url, {
 			// One read, one signed request: a retry would re-sign and could ask the wallet again.

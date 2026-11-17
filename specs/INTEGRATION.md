@@ -443,7 +443,7 @@ import { createPublicClient, erc20Abi } from 'viem';
 // A copy of services/custom-example/src/lib/signed-reads.ts.
 import { SignedReader } from './signed-reads';
 
-// One reader per chain and connected wallet. Its first read asks the wallet for one
+// One reader per chain and connected wallet. Its first approval asks the wallet for one
 // personal_sign (one passkey prompt), which approves a delegate key for 1 hour.
 const reader = new SignedReader({
   chainId: chain.id,
@@ -453,6 +453,9 @@ const reader = new SignedReader({
 });
 const privateClient = createPublicClient({ chain, transport: reader.transport(rpcUrl) });
 
+// In the click handler: approve first, then read. approved() prompts only when no
+// delegate is valid; otherwise it returns at once.
+await reader.approved();
 // The RPC runs this call with `from` set to the wallet, so only the holder gets an answer.
 const balance = await privateClient.readContract({
   address: privateToken, abi: erc20Abi, functionName: 'balanceOf', args: [account], account,
@@ -471,6 +474,11 @@ const balance = await privateClient.readContract({
   cannot sign reads. Its first transaction deploys it.
 - **Expiry.** The RPC refuses a ticket that expires more than 12 hours ahead. The reader uses
   1 hour, and the first read within a minute of the expiry asks the wallet for a new approval.
+- **Approve before the read.** Call `await reader.approved()` before each signed read. The
+  transport signs inside viem's request, which viem cancels after the HTTP transport's timeout
+  (10 s by default). Without a prior approval the transport still asks the wallet, but a user who
+  takes longer than the timeout on the passkey prompt gets a `TimeoutError` while the popup is
+  still open. After `approved()`, the transport only signs in memory.
 - **Start the approval from a click.** The approval opens the wallet's popup, and the browser
   opens it only right after a click. So start a read that may need an approval (the first read,
   or one near the expiry) directly from a click, before any other request. A read that waits for

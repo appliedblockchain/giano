@@ -203,4 +203,50 @@ describe("SignedReader transport", () => {
 		assert.equal(headers.get("x-signer-swc"), WALLET);
 		assert.equal(headers.get("content-type"), "application/json");
 	});
+
+	it("after approved(), the request signs in memory and never waits for the wallet", async () => {
+		const { reader, prompts } = setup();
+		const delegate = await reader.approved();
+		assert.equal(prompts.length, 1);
+		assert.deepEqual(reader.delegate, delegate);
+
+		const sent: Headers[] = [];
+		globalThis.fetch = async (_input, init) => {
+			sent.push(new Headers(init?.headers));
+			const { id } = JSON.parse(String(init?.body)) as { id: number };
+			return new Response(
+				JSON.stringify({ jsonrpc: "2.0", id, result: "0x" }),
+				{ headers: { "content-type": "application/json" } },
+			);
+		};
+		// viem runs the request under its timeout, so the request must not ask the wallet again.
+		const client = createPublicClient({
+			transport: reader.transport("http://rpc.test"),
+		});
+		await client.call({
+			account: WALLET,
+			to: "0x530d79ef28d4c6407B021523b9F8b2333171E3ac",
+			data: "0x70a08231",
+		});
+
+		assert.equal(prompts.length, 1);
+		assert.equal(sent.length, 1);
+		assert.deepEqual(
+			JSON.parse(sent[0].get("x-delegate") ?? "{}"),
+			delegate.ticket,
+		);
+		assert.equal(sent[0].get("x-delegate-signature"), delegate.approval);
+	});
+
+	it("approved() shares one prompt with a concurrent read, and returns at once while valid", async () => {
+		const { reader, prompts } = setup();
+		const [delegate, headers] = await Promise.all([
+			reader.approved(),
+			reader.headers("a"),
+		]);
+		assert.equal(prompts.length, 1);
+		assert.deepEqual(ticketOf(headers), delegate.ticket);
+		assert.equal(await reader.approved(), delegate);
+		assert.equal(prompts.length, 1);
+	});
 });

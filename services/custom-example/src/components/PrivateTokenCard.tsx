@@ -202,6 +202,9 @@ function PrivateTokenSection({ token }: { token: Address }) {
 				noBalances: true,
 			},
 			async (api) => {
+				// Approve the delegate before the request starts: the request runs under viem's timeout,
+				// and a passkey prompt can take longer than that.
+				await reader.approved();
 				const value = await signedClient().readContract({
 					address: token,
 					abi: erc20Abi,
@@ -373,14 +376,17 @@ function PrivateTokenSection({ token }: { token: Address }) {
 						expected: true,
 						expectedError: refusedRead,
 					},
-					() =>
-						signedClient().readContract({
+					async () => {
+						// Approve first, outside viem's request timeout: see readBalance.
+						await reader.approved();
+						return signedClient().readContract({
 							address: token,
 							abi: erc20Abi,
 							functionName: "balanceOf",
 							args: [other],
 							account: wallet,
-						}),
+						});
+					},
 				),
 			);
 
