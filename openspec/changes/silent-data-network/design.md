@@ -56,6 +56,7 @@ With `false`, the bundler returns fixed limits and does not simulate.
 The simulation always prices gas at 1 wei, so the fee only matters at submission.
 
 - *Why:* on a chain with base fee 0, a fee of 0 is the correct fee. The check now reads the latest block's base fee.
+- wallet-api's `pm_getPaymasterData` makes the same check. Without it, the bundler would accept a fee-0 operation that wallet-api then refuses to sponsor. With fee 0 the gas part and the overhead of the maximum charge are 0, so the cap and the balance apply to the tenant fee alone.
 - *Alternative:* a per-chain `gasless` setting. Rejected, because the base fee already says it, and a chain that later starts charging gas is handled without a configuration change.
 
 ### 4. Operator tools sign with the operator key, through `--signed-rpc`

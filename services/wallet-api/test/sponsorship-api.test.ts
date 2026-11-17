@@ -225,6 +225,7 @@ beforeEach(async () => {
 	await ctx.db.delete(paymasterTenants);
 	ctx.paymasterState.unreachable = false;
 	ctx.paymasterState.feeOverrides.clear();
+	ctx.chainState.baseFeePerGas = 1_000_000_000n;
 });
 
 // ── authentication and binding ────────────────────────────────────────────────
@@ -367,6 +368,71 @@ describe("request validation", () => {
 		expect(BigInt(body.result.paymasterPostOpGasLimit)).toBe(
 			PAYMASTER_MIN_POST_OP_GAS_LIMIT,
 		);
+	});
+
+	// H6: giano-bundler accepts a fee of 0 when the latest base fee is 0, and so must this service.
+	describe("a maxFeePerGas of 0", () => {
+		const feeZero = (sender: Address) =>
+			candidateOp(sender, execute(TOKEN, TRANSFER), {
+				maxFeePerGas: "0x0",
+				maxPriorityFeePerGas: "0x0",
+			});
+
+		beforeEach(async () => {
+			await setConfig(ADMIN_KEY, generousConfig);
+			await fund(tenantAId, 10n ** 18n);
+		});
+
+		it("is refused on a chain whose base fee is above 0", async () => {
+			ctx.chainState.baseFeePerGas = 1_000_000_000n;
+			const session = await newSession(`fee0-charging-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error?.code).toBe(-32602);
+			expect(body.error?.message).toBe(
+				"maxFeePerGas is required to authorise sponsorship",
+			);
+			expect(body.result).toBeUndefined();
+			expect(await ctx.db.select().from(sponsorshipReservations)).toEqual([]);
+		});
+
+		it("is sponsored on a gasless chain, reserving the tenant fee alone", async () => {
+			ctx.chainState.baseFeePerGas = 0n;
+			const session = await newSession(`fee0-gasless-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error).toBeUndefined();
+			expect(body.result?.paymaster.toLowerCase()).toBe(
+				"0x15a2075f2407427c5dd0bde9d1966c48bd70e2f2",
+			);
+			const [reservation] = await ctx.db.select().from(sponsorshipReservations);
+			expect(BigInt(reservation.maxCostWei)).toBe(0n);
+			expect(BigInt(reservation.overheadWei)).toBe(0n);
+			expect(BigInt(reservation.totalWei)).toBe(
+				ctx.paymasterState.defaultFeeWei,
+			);
+		});
+
+		it("still applies the cost cap, to the fee, on a gasless chain", async () => {
+			ctx.chainState.baseFeePerGas = 0n;
+			await setConfig(ADMIN_KEY, {
+				...generousConfig,
+				maxCostPerTxWei: (ctx.paymasterState.defaultFeeWei - 1n).toString(),
+			});
+			const session = await newSession(`fee0-cap-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error?.data?.reason).toBe("cost-exceeds-cap");
+		});
 	});
 
 	it("accepts the documented pre-flight hint", async () => {

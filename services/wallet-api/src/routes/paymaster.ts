@@ -327,13 +327,33 @@ export default async function paymasterRoutes(
 				);
 			}
 
-			// A zero fee would make every cost check pass trivially and every reservation zero, so it is
-			// refused rather than defaulted: the wallet is expected to estimate fees from the chain.
+			// A zero fee makes the gas part of the maximum charge zero. That is only true of a gasless
+			// chain, so elsewhere it is refused rather than defaulted: the wallet is expected to estimate
+			// fees from the chain. "Gasless" is decided as giano-bundler decides it: the latest block's
+			// base fee is 0. On such a chain the cap and the balance still apply, to the fee alone, and the
+			// EntryPoint charges the paymaster at most maxFeePerGas, so a later base fee cannot cost more.
 			if (maxFeePerGas === 0n && method === "pm_getPaymasterData") {
-				return rpcError(
-					JSON_RPC_INVALID_PARAMS,
-					"maxFeePerGas is required to authorise sponsorship",
-				);
+				let baseFeePerGas: bigint;
+				try {
+					baseFeePerGas =
+						(await chain.publicClient.getBlock()).baseFeePerGas ?? 0n;
+				} catch (err) {
+					request.log.warn(
+						{ err, chainId: chain.chainId },
+						"could not read the latest base fee",
+					);
+					return rpcError(
+						REASON_CODES["temporarily-unavailable"],
+						`chain ${chain.chainId} is temporarily unavailable`,
+						"temporarily-unavailable",
+					);
+				}
+				if (baseFeePerGas > 0n) {
+					return rpcError(
+						JSON_RPC_INVALID_PARAMS,
+						"maxFeePerGas is required to authorise sponsorship",
+					);
+				}
 			}
 
 			const outcome = await sponsorship.decide({

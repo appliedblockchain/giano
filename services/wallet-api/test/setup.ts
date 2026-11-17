@@ -54,6 +54,8 @@ export type MockChainState = {
 	ownerKeys: Set<string>;
 	/** lowercased Ethereum-address owners. */
 	ownerAddresses: Set<string>;
+	/** The latest block's base fee. 0 stands in for a gasless chain. */
+	baseFeePerGas: bigint;
 };
 
 export function createMockChainState(): MockChainState {
@@ -61,6 +63,7 @@ export function createMockChainState(): MockChainState {
 		contracts: new Set(),
 		ownerKeys: new Set(),
 		ownerAddresses: new Set(),
+		baseFeePerGas: 1_000_000_000n,
 	};
 }
 
@@ -132,6 +135,9 @@ export function startMockRpc(
 					hash: `0x${"11".repeat(32)}`,
 					parentHash: `0x${"22".repeat(32)}`,
 					transactions: [],
+					...(chainState
+						? { baseFeePerGas: `0x${chainState.baseFeePerGas.toString(16)}` }
+						: {}),
 				};
 			}
 			res.setHeader("content-type", "application/json");
