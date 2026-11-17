@@ -23,11 +23,11 @@ import {
 import { deployCore } from "./deploy";
 import {
 	CORE_KEYS,
+	deploymentProofFailure,
 	deploysPaymasterProxy,
 	deviationGate,
 	deviationWarning,
 	fixedAddresses,
-	onlyDeploymentUpgrade,
 	type Plan,
 	planCore,
 	reconcileRecord,
@@ -395,24 +395,13 @@ async function main() {
 		if (proxyTransaction && after.warnings.length) {
 			const proxy = record.contracts.paymasterProxy?.address;
 			const implementation = record.contracts.paymasterImplementation?.address;
-			let failure =
-				"its only Upgraded event is not the one in that transaction";
-			const proven =
-				!!proxy &&
-				!!implementation &&
-				(await onlyDeploymentUpgrade(
-					client,
-					proxy,
-					proxyTransaction,
-					implementation,
-				).catch((error: unknown) => {
-					failure = `reading its deployment and logs failed: ${error instanceof Error ? error.message : String(error)}`;
-					return false;
-				}));
-			if (!proven)
-				throw new GuidanceError(
-					`The paymaster proxy's implementation was read from its Upgraded logs and could not be checked against its deployment transaction ${proxyTransaction}: ${failure}. The deployment is recorded. Check the implementation slot through an RPC that allows eth_getStorageAt, or rerun with --accept-unverified-implementation to accept it.`,
-				);
+			const failure = await deploymentProofFailure(
+				client,
+				proxy,
+				proxyTransaction,
+				implementation,
+			);
+			if (failure) throw new GuidanceError(failure);
 			console.log(
 				`The paymaster proxy's only Upgraded event is the one in its deployment transaction ${proxyTransaction}, for implementation ${implementation}.`,
 			);

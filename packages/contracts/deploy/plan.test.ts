@@ -21,6 +21,7 @@ import { create3Address } from "./create3";
 import {
 	CORE_KEYS,
 	type CoreKey,
+	deploymentProofFailure,
 	deploysPaymasterProxy,
 	deviationGate,
 	deviationWarning,
@@ -908,6 +909,46 @@ describe("onlyDeploymentUpgrade", () => {
 					typeof v === "bigint" ? v.toString() : v,
 				),
 			);
+	});
+
+	it("deploymentProofFailure explains a refusal, and never prints the provider's error", async () => {
+		assert.equal(
+			await deploymentProofFailure(
+				stub().client,
+				proxy,
+				deployment,
+				implementation,
+			),
+			undefined,
+		);
+		assert.match(
+			(await deploymentProofFailure(
+				stub({ later: [other] }).client,
+				proxy,
+				deployment,
+				implementation,
+			)) ?? "",
+			/its only Upgraded event is not the one in that transaction/,
+		);
+		// viem puts the request URL in its error message; the URL can hold an API key.
+		const secret = "https://rpc.example/v1/SECRET-API-KEY";
+		for (const failing of ["getTransactionReceipt", "request"] as const) {
+			const { client } = stub();
+			Object.assign(client, {
+				[failing]: async () => {
+					throw new Error(`HTTP request failed. URL: ${secret}`);
+				},
+			});
+			const message =
+				(await deploymentProofFailure(
+					client,
+					proxy,
+					deployment,
+					implementation,
+				)) ?? "";
+			assert.match(message, /reading its receipt or logs failed/, failing);
+			assert.doesNotMatch(message, /SECRET-API-KEY|rpc\.example/, failing);
+		}
 	});
 });
 

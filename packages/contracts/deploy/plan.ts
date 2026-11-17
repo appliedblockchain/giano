@@ -594,6 +594,35 @@ export async function onlyDeploymentUpgrade(
 	return true;
 }
 
+/**
+ * Why the proxy's implementation, read from its `Upgraded` logs, cannot be accepted on the strength of
+ * its deployment transaction; `undefined` when {@link onlyDeploymentUpgrade} proves it. The message
+ * never includes the provider's error, which can carry the credential-bearing RPC URL.
+ */
+export async function deploymentProofFailure(
+	client: PublicClient,
+	proxy: Address | undefined,
+	transactionHash: Hex,
+	implementation: Address | undefined,
+): Promise<string | undefined> {
+	let failure = "its only Upgraded event is not the one in that transaction";
+	const proven =
+		!!proxy &&
+		!!implementation &&
+		(await onlyDeploymentUpgrade(
+			client,
+			proxy,
+			transactionHash,
+			implementation,
+		).catch(() => {
+			failure =
+				"reading its receipt or logs failed (provider error details are suppressed to protect credentials)";
+			return false;
+		}));
+	if (proven) return undefined;
+	return `The paymaster proxy's implementation was read from its Upgraded logs and could not be checked against its deployment transaction ${transactionHash}: ${failure}. The deployment is recorded. Check the implementation slot through an RPC that allows eth_getStorageAt, or rerun with --accept-unverified-implementation to accept it.`;
+}
+
 function describeCode(code: CodeState): string {
 	return code.state === "empty"
 		? "empty; will deploy"
