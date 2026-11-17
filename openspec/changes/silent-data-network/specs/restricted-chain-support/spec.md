@@ -7,19 +7,35 @@ Giano's bundler, its wallet-api chain checks and its operator tools work on a ch
 ## ADDED Requirements
 
 ### Requirement: The proxy implementation is read without storage access
-When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHALL be read from the proxy's latest ERC-1967 `Upgraded` event. This applies to wallet-api's chain check, `giano-doctor` and the paymaster SDK. Each log query SHALL span at most 10,000 blocks. When the storage read succeeds, it SHALL be used, and no logs SHALL be read.
+When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHALL be read from the proxy's latest ERC-1967 `Upgraded` event. This applies to wallet-api's chain check, `giano-doctor` and the paymaster SDK. Each log query SHALL span at most 9,000 blocks, counted inclusively. When the storage read succeeds, it SHALL be used, and no logs SHALL be read. When the storage read fails for any other reason than a refusal of the method, that error SHALL be raised and no logs SHALL be read.
 
 #### Scenario: Storage read refused
 - **WHEN** the RPC refuses `eth_getStorageAt` and the proxy's latest `Upgraded` event names implementation `I`
 - **THEN** the implementation read returns `I`, and the release check runs against the code at `I`
 
 #### Scenario: Upgrade older than one span
-- **WHEN** the latest `Upgraded` event is more than 10,000 blocks before the latest block
-- **THEN** the reader queries earlier spans of at most 10,000 blocks each, from newest to oldest, and returns the implementation from the first span that holds an event
+- **WHEN** the latest `Upgraded` event is more than 9,000 blocks before the latest block
+- **THEN** the reader queries earlier spans of at most 9,000 blocks each, from newest to oldest, and returns the implementation from the first span that holds an event
 
 #### Scenario: No upgrade event
 - **WHEN** the storage read is refused and no span holds an `Upgraded` event for the proxy
 - **THEN** the read reports no implementation, and the check fails as it does for an empty slot
+
+#### Scenario: Walk limit reached
+- **WHEN** the storage read is refused and the walk sends its maximum number of log queries without finding an `Upgraded` event
+- **THEN** the read fails with an error that names the blocks searched and says to pass the proxy's deployment block, and no further log query is sent
+
+#### Scenario: Repeated read through the same client
+- **WHEN** the storage read is refused and the implementation is read again through the same client
+- **THEN** the reader queries only the blocks after the last block it read, and returns the implementation of a newer `Upgraded` event when one is there
+
+#### Scenario: Other storage-read failure
+- **WHEN** the storage read fails with a timeout, a rate limit or any error other than a refusal of the method
+- **THEN** that error is raised unchanged, and no log query is sent
+
+#### Scenario: Storage refused and log read fails
+- **WHEN** the storage read is refused and a log query fails
+- **THEN** the read fails with an error that names both failures and carries the storage-read error as its cause
 
 #### Scenario: Storage refused and logs unavailable
 - **WHEN** the storage read is refused and the client cannot read logs
