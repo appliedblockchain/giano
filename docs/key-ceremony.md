@@ -27,10 +27,10 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 | **Paymaster operator** (`DEPLOYER_PRIVATE_KEY` in `provision:paymaster` and the paymaster-sdk CLI) | Stakes the paymaster and funds tenants' sponsorship balances. The same variable name as the canonical deployer's, but a different account. | Production: in scope (moves mainnet value). Testnets and devnets: out of scope. | Production: DevOps secret store | `provision:paymaster`, the paymaster-sdk CLI |
 | Anvil dev keys ([`E2E-DEV-KEYS.md`](E2E-DEV-KEYS.md)) | Local chains 31337/31338 and CI only; recoverable from anvil's public mnemonic. | Out of scope: local and CI keys. They must never be used on a public chain. | committed / anvil defaults | e2e, devnet |
 
-Giano has no production environment yet (`infra/versions.json` `prd` is empty), and neither canonical
-deployer is configured yet (`DEPLOYERS.mainnet` and `DEPLOYERS.testnet` are `null` in
-`packages/contracts/deploy/config.ts`). No in-scope key exists today. Every key in
-scope above is created by a ceremony when it is first needed.
+Giano has no production environment yet (`infra/versions.json` `prd` is empty), and the mainnet
+canonical deployer is not configured yet (`DEPLOYERS.mainnet` is `null` in
+`packages/contracts/deploy/config.ts`; the testnet one is set). No in-scope key exists today. Every
+key in scope above is created by a ceremony when it is first needed.
 
 ### Canonical deployers
 
@@ -45,7 +45,7 @@ stored in 1Password:
   | Deployer | `deploy/config.ts` | 1Password item |
   |----------|--------------------|----------------|
   | Mainnet canonical deployer | `DEPLOYERS.mainnet` | not created yet; the PR that sets the address names it here |
-  | Testnet canonical deployer | `DEPLOYERS.testnet` | not created yet; the PR that sets the address names it here |
+  | Testnet canonical deployer | `DEPLOYERS.testnet` = `0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5` | "Giano testnet canonical deployer" (`e3qllwnkvbddzri6b3sydqbqiy`), vault `rmoav4cdxbugtukys6m2folzoa`. Created 2026-11-16 with `multichain-keygen 2.0.0` (`--rng openssl`), piped straight into 1Password |
 
 - **Use.** Load the key for the chain's class from its 1Password item into the environment of the
   deploying shell only, for the run (`CANONICAL_DEPLOYER_PRIVATE_KEY` for the guided wizard,

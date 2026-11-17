@@ -6,10 +6,11 @@ with Foundry and permissioned CREATE3 through CreateX; #133–135 finish the too
 #157 publishes the breaking contracts package as 4.0.0 and #159 updates service dependencies.
 The address break comes from #132, not from the TypeScript compiler itself.
 
-**Public deployment is blocked today:** `packages/contracts/deploy/config.ts` has no `mainnet` or
-`testnet` canonical deployer yet (`DEPLOYERS`, both `null`). The tooling plans but refuses to sign
-for a class whose deployer is not set. `addresses.ts` has no public deployment records yet. Old
-examples can still contain legacy addresses.
+**Mainnet deployment is blocked today:** `packages/contracts/deploy/config.ts` sets the `testnet`
+canonical deployer (`DEPLOYERS.testnet`, `0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5`, its own
+1Password item, see `docs/key-ceremony.md`), but not the `mainnet` one (`null`). The tooling plans
+but refuses to sign for a class whose deployer is not set. `addresses.ts` has no public deployment
+records yet. Old examples can still contain legacy addresses.
 
 ## Start here
 
@@ -380,18 +381,32 @@ out of this evidence.
 ## Read-only public-network evidence
 
 On 27 October 2026, the new preflight reached both default public RPCs and confirmed the expected
-chain IDs, pinned CreateX runtime and canonical EntryPoint v0.9 runtime on **both networks**. The
-four provisional target addresses were empty on each chain. Both plans correctly exited nonzero
-because the deployer was still the placeholder. (Since per-class deployers, a plan exits nonzero
-because the testnet canonical deployer is not configured.) The admin supplied to these checks was an illustrative
-public address, not an operational choice. No key was used and no public transaction was sent.
-Recheck after the real deployer is configured; those will be different target addresses.
+chain IDs, pinned CreateX runtime and canonical EntryPoint v0.9 runtime on **both networks**. Both
+plans exited nonzero because no testnet deployer was configured yet.
+
+**Recheck with the real testnet deployer, 17 November 2026** (`deploy/guided.ts --plan`, release
+`v3`, the default public RPCs `https://sepolia.base.org` and
+`https://ethereum-sepolia-rpc.publicnode.com`). On both Base Sepolia and Ethereum Sepolia: RPC
+identity, CreateX upstream runtime, canonical EntryPoint v0.9 runtime and Cancun opcodes all OK, and
+the four target addresses empty ("will deploy"):
+
+| Contract | Address on both testnets |
+| --- | --- |
+| walletImplementation | `0x265dA930A9253fCC09E120B6f89EE8a91BcA9406` |
+| factory | `0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635` |
+| paymasterImplementation | `0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540` |
+| paymasterProxy | `0xb2C7081be89D88f1da020530Ebd5c14b8871615a` |
+
+The only blocker left was funding: the deployer `0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5` held
+less than the profile's 0.05 ETH reserve on each chain. The admin supplied to these checks was an
+illustrative public address, not an operational choice. No key was used and no public transaction
+was sent.
 
 ## Tooling gaps and disposition
 
 | Gap found | Work in this PR / remaining closure |
 | --- | --- |
-| No canonical deployer configured for either class | Wizard prints the plan and reports the blocker before signing. The development team creates the testnet and mainnet keys in 1Password and sets their addresses; no artifact or devnet regeneration follows. |
+| No canonical deployer configured for either class | Wizard prints the plan and reports the blocker before signing. The testnet deployer is set (#296); the mainnet key is still to be created in 1Password and set. No artifact or devnet regeneration follows. |
 | One deployer for every chain; addresses fixed as package constants | Per-class deployers, per-chain overrides, deviations recorded; code verified by release fingerprint wherever it sits; mainnet deviations need a typed confirmation. |
 | Noninteractive shell deployment trusted CHAIN_ID separately from RPC | Profile-driven wizard verifies RPC identity; shared commands use the selected profile and reject conflicting environment chain IDs. |
 | No guided checklist/address preview or secret-safe plan | Root `pnpm contracts:deploy`, validated JSON profiles, saved public choices, bootstrap checks, prompts, aggregated actionable checks, read-only plans, exact-text confirmation and per-chain public address output. |
