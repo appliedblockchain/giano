@@ -93,13 +93,22 @@ export async function httpFetchJson(url) {
 	}
 }
 
-/** Releases of an npm package. */
+/**
+ * Releases of an npm package. `time` still lists unpublished versions, so only those in
+ * `versions` count, and a deprecated version is not a release to move to.
+ */
 export async function npmReleases(fetchJson, name) {
 	const doc = await fetchJson(
 		`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`,
 	);
+	const versions = doc?.versions ?? {};
 	return Object.entries(doc?.time ?? {})
-		.filter(([version]) => parseVersion(version))
+		.filter(
+			([version]) =>
+				parseVersion(version) &&
+				versions[version] !== undefined &&
+				!versions[version].deprecated,
+		)
 		.map(([version, date]) => ({ version, date }));
 }
 
@@ -210,6 +219,25 @@ export function actionPins(text, file) {
 	return pins;
 }
 
+/**
+ * Actions pinned to a commit SHA without a `# vX.Y.Z` release comment. They cannot be compared,
+ * so they are reported rather than skipped.
+ */
+export function unversionedActionPins(text, file) {
+	const problems = [];
+	text.split("\n").forEach((line, i) => {
+		const sha =
+			/^\s*-?\s*uses:\s*([\w.-]+\/[\w.-]+)(?:\/[^@\s]*)?@[0-9a-f]{40}\b/.exec(
+				line,
+			);
+		if (sha && actionPins(line, file).length === 0)
+			problems.push(
+				`${file}:${i + 1}: \`${sha[1]}\` is pinned to a commit SHA without a \`# vX.Y.Z\` release comment`,
+			);
+	});
+	return problems;
+}
+
 /** Releases a tool pin is compared with. */
 const SOURCES = {
 	npm: (fetchJson, s) => npmReleases(fetchJson, s.package),
@@ -221,6 +249,7 @@ const SOURCES = {
 /**
  * Toolchains and CI tools pinned outside npm and actions. `files` are git pathspecs; `pattern`
  * captures the version. Every match is one pin, so a tool pinned in two places is checked in both.
+ * An entry that matches nothing is reported: its pin moved or changed shape and is no longer checked.
  */
 export const TOOLS = [
 	{
@@ -252,7 +281,10 @@ export const TOOLS = [
 	},
 	{
 		name: "foundry",
-		files: ["e2e/devnet/generate-state.mjs"],
+		files: [
+			"e2e/devnet/generate-state.mjs",
+			"e2e/devnet/upgrade-paymaster.mjs",
+		],
 		pattern: /PINNED_ANVIL_VERSION = "(\d+\.\d+\.\d+)"/,
 		source: { type: "github", repo: "foundry-rs/foundry" },
 	},
@@ -511,8 +543,8 @@ export async function staleRows({
 
 const KIND_LABEL = { npm: "npm", action: "action", tool: "tool" };
 
-/** The Markdown report. */
-export function renderReport(rows, deferralErrors = []) {
+/** The Markdown report. `problems` are pins or deferral rows that could not be read. */
+export function renderReport(rows, problems = []) {
 	const by = (status) => rows.filter((r) => r.status === status);
 	const stale = by("stale");
 	const errors = by("error");
@@ -541,9 +573,9 @@ export function renderReport(rows, deferralErrors = []) {
 		}
 		out.push("");
 	}
-	if (errors.length || deferralErrors.length) {
+	if (errors.length || problems.length) {
 		out.push("## Could not check", "");
-		for (const e of deferralErrors) out.push(`- ${e}`);
+		for (const e of problems) out.push(`- ${e}`);
 		for (const r of errors)
 			out.push(`- ${KIND_LABEL[r.kind]} \`${r.name}\` ${r.pinned}: ${r.note}`);
 		out.push("");
@@ -573,7 +605,7 @@ const git = (...args) =>
 		.filter(Boolean);
 const read = (file) => readFileSync(resolve(ROOT, file), "utf8");
 
-/** Every pin of this repository, with its kind. */
+/** Every pin of this repository, with its kind, and the pins that could not be read. */
 export function repositoryPins() {
 	const manifestFiles = git(
 		"ls-files",
@@ -601,32 +633,43 @@ export function repositoryPins() {
 		if (pin.own && !pin.where.startsWith("services/custom-example/")) continue;
 		pins.push({ ...pin, kind: "npm" });
 	}
+	const problems = [];
 	for (const file of git(
 		"ls-files",
 		".github/workflows/*.yml",
 		".github/actions/**/action.yml",
 	)) {
-		for (const pin of actionPins(read(file), file))
+		const text = read(file);
+		for (const pin of actionPins(text, file))
 			pins.push({ ...pin, kind: "action" });
+		problems.push(...unversionedActionPins(text, file));
 	}
 	for (const tool of TOOLS) {
+		let found = 0;
 		for (const file of git("ls-files", ...tool.files)) {
-			for (const pin of toolPins(tool, read(file), file))
+			for (const pin of toolPins(tool, read(file), file)) {
 				pins.push({ ...pin, kind: "tool", source: tool.source });
+				found++;
+			}
 		}
+		if (found === 0)
+			problems.push(
+				`tool \`${tool.name}\`: no pin found in ${tool.files.join(", ")} (update TOOLS in scripts/check-stale-pins.mjs)`,
+			);
 	}
-	return { pins, ownVersions };
+	return { pins, ownVersions, problems };
 }
 
 async function main() {
-	const { pins, ownVersions } = repositoryPins();
+	const { pins, ownVersions, problems } = repositoryPins();
 	const { rows: deferrals, errors: deferralErrors } = parseDeferrals(
 		read(DEFERRALS_FILE),
 	);
 	const rows = await staleRows({ pins, deferrals, ownVersions });
-	console.log(renderReport(rows, deferralErrors));
+	const unchecked = [...problems, ...deferralErrors];
+	console.log(renderReport(rows, unchecked));
 	const bad = rows.some((r) => r.status === "stale" || r.status === "error");
-	return bad || deferralErrors.length ? 1 : 0;
+	return bad || unchecked.length ? 1 : 0;
 }
 
 if (resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

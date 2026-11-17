@@ -6,11 +6,13 @@ import {
 	deferralFor,
 	newestQualifying,
 	npmPins,
+	npmReleases,
 	parseDeferrals,
 	renderReport,
 	staleRows,
 	TOOLS,
 	toolPins,
+	unversionedActionPins,
 	updateType,
 } from "./check-stale-pins.mjs";
 
@@ -25,8 +27,12 @@ const fakeFetch = (responses) => async (url) => {
 	if (value instanceof Error) throw value;
 	return value;
 };
-const npmDoc = (times) => ({
+const npmDoc = (times, versions = {}) => ({
 	time: { created: ago(999), modified: ago(0), ...times },
+	versions: {
+		...Object.fromEntries(Object.keys(times).map((v) => [v, {}])),
+		...versions,
+	},
 });
 const NPM = (name) =>
 	`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`;
@@ -122,6 +128,21 @@ describe("actionPins", () => {
 	});
 });
 
+describe("unversionedActionPins", () => {
+	it("reports a SHA-pinned action without a release comment", () => {
+		const yml = [
+			"      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+			"      - uses: foo/bar@3d3c42e5aac5ba805825da76410c181273ba90b1",
+			"      - uses: foo/baz/sub@3d3c42e5aac5ba805825da76410c181273ba90b1 # release 1.2",
+			"      - uses: actions/setup-node@v6",
+		].join("\n");
+		const problems = unversionedActionPins(yml, "w.yml");
+		assert.equal(problems.length, 2);
+		assert.match(problems[0], /^w\.yml:2: `foo\/bar`/);
+		assert.match(problems[1], /^w\.yml:3: `foo\/baz`/);
+	});
+});
+
 describe("toolPins", () => {
 	const tool = (name, file) =>
 		TOOLS.find((t) => t.name === name && t.files.includes(file));
@@ -151,6 +172,16 @@ describe("toolPins", () => {
 				["1.7.1", "ci.yml:6"],
 				["1.7.1", "ci.yml:9"],
 			],
+		);
+	});
+
+	it("reads the Anvil pin of both devnet scripts", () => {
+		const tool = TOOLS.find((t) =>
+			t.files.includes("e2e/devnet/upgrade-paymaster.mjs"),
+		);
+		assert.deepEqual(
+			toolPins(tool, 'const PINNED_ANVIL_VERSION = "1.7.1";', "u.mjs"),
+			[{ name: "foundry", pinned: "1.7.1", where: "u.mjs:1" }],
 		);
 	});
 
@@ -189,6 +220,21 @@ describe("parseDeferrals", () => {
 		assert.equal(
 			deferralFor(rows, "actions/upload-artifact", "7.0.2"),
 			undefined,
+		);
+	});
+});
+
+describe("npmReleases", () => {
+	it("skips versions that were unpublished or are deprecated", async () => {
+		const doc = npmDoc(
+			{ "1.0.0": ago(60), "1.1.0": ago(30), "1.2.0": ago(20) },
+			{ "1.2.0": { deprecated: "broken release" } },
+		);
+		delete doc.versions["1.1.0"]; // unpublished: still in `time`
+		const releases = await npmReleases(fakeFetch({ [NPM("a")]: doc }), "a");
+		assert.deepEqual(
+			releases.map((r) => r.version),
+			["1.0.0"],
 		);
 	});
 });
