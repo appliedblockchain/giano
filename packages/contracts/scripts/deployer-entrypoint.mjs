@@ -31,10 +31,7 @@
 //   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111),
 //                              and the private test token (fixtures/private-test-erc20.json) on a
 //                              local chain, or when CHAIN_PROFILE_JSON sets "privateTestErc20": true.
-//                              The registry JSON lists only the test fixtures this run checked on chain:
-//                              none without DEPLOY_TESTING=true, and the private test token only where
-//                              it is deployed. Only `testing` checks their code and refuses a production
-//                              chain (R-29), with or without a key.
+//                              The registry JSON lists the private test token only where it is deployed.
 //   PAYMASTER_FUND_ETH         the test paymaster's initial EntryPoint deposit (default 0)
 //   OUT_DIR                    where the record and the registry JSON go (default /out)
 
@@ -159,9 +156,6 @@ if (record.chainId !== chainId) {
 	);
 }
 const c = record.contracts;
-// Only the test fixtures `testing` checked in this run: a seeded record may list them, but `core`
-// checks only the core contracts, so an address from the record alone is unchecked.
-const fixtures = testing ? c : {};
 const entry = {
 	chainId,
 	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
@@ -169,10 +163,8 @@ const entry = {
 	implementation: c.walletImplementation.address,
 	sponsorshipPaymaster: c.paymasterProxy.address,
 	sponsorshipPaymasterImplementation: c.paymasterImplementation.address,
-	...(fixtures.testPaymaster
-		? { testPaymaster: fixtures.testPaymaster.address }
-		: {}),
-	...(fixtures.testErc20 ? { testErc20: fixtures.testErc20.address } : {}),
+	...(c.testPaymaster ? { testPaymaster: c.testPaymaster.address } : {}),
+	...(c.testErc20 ? { testErc20: c.testErc20.address } : {}),
 	...(privateTestErc20 && c.privateTestErc20
 		? { privateTestErc20: c.privateTestErc20.address }
 		: {}),

@@ -6,7 +6,7 @@
  *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
  *                            [--signed-rpc]   (sign every request with DEPLOYER_PRIVATE_KEY)
  *                            [--accept-unverified-implementation]
- *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>] [--release vN]
+ *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli test-token --rpc <url> [--holder <0x…>]      (--holder required to deploy)
  *       The test ERC-20 alone, for the reference dApp: allowed on the served testnets, never on a
  *       mainnet, and only from the class's canonical deployer (R-29 keeps `testing` off both).

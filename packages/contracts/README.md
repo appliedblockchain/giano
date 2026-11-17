@@ -203,9 +203,8 @@ so a chain at non-deterministic addresses is verified where it is; see
 `scripts/deployer-entrypoint.mjs`. On an RPC that refuses `eth_getStorageAt` (Silent Data),
 `ACCEPT_UNVERIFIED_IMPLEMENTATION=true` passes `--accept-unverified-implementation` to `core`. Without `DEPLOYER_PRIVATE_KEY` it only verifies, which is how the
 Helm pre-install Job runs in a client's cluster. Never give it a canonical deployer key there.
-The image's `giano-addresses.<chainId>.json` lists only the test fixtures that `testing` checked on
-chain in the same run: none without `DEPLOY_TESTING=true`, and the private test token only on a chain
-that gets it (a local chain, or a profile that opts in).
+The image's `giano-addresses.<chainId>.json` lists the private test token only on a chain that gets
+it (a local chain, or a profile that opts in, with `DEPLOY_TESTING=true`).
 
 ### Local chains
 
@@ -214,11 +213,10 @@ pnpm local:node        # anvil
 pnpm local:deploy      # CreateX, EntryPoint, P-256 verifier, every core contract and fixture
 ```
 
-`local:deploy` impersonates the fixed local deployer, so it needs no key. It deploys the latest
-release, or `RELEASE=<version>`; `RELEASE=dev` deploys the working tree. It also deploys the private
-test token `GianoTestPrivateErc20` from its fixture artifact on every run. On a local chain the CLI also takes `--release dev`
-(the working tree, unreleased), `--impersonate`, `install-createx` and `install-entrypoint`. The
-e2e devnet state is built the same way (`e2e/devnet/generate-state.mjs`).
+`local:deploy` impersonates the fixed local deployer, so it needs no key. It also deploys the private
+test token `GianoTestPrivateErc20` from its fixture artifact on every run. On a local chain the CLI
+also takes `--release dev` (the working tree, unreleased), `--impersonate`, `install-createx` and
+`install-entrypoint`. The e2e devnet state is built the same way (`e2e/devnet/generate-state.mjs`).
 
 ## Paymaster signer verification and upgrades
 
