@@ -6,6 +6,32 @@
  */
 import { getAddress } from "viem";
 import { parseDuration } from "../timelock";
+import { isMainnetChain } from "./config";
+import { profileForChain } from "./profiles";
+
+/**
+ * Whether provisioning targets a mainnet: by its chain id (the mainnet list), by the network class the
+ * operator wrapper passes (`GIANO_NETWORK`, from the selected profile), or by the chain's committed
+ * profile when the script runs directly. The chain-id list alone would miss a future mainnet on another
+ * chain, and with it the rules only this script checks (#298 review).
+ */
+export function provisioningIsMainnet(
+	chainId: number,
+	options: {
+		env?: NodeJS.ProcessEnv;
+		profileNetwork?: (chainId: number) => string | undefined;
+	} = {},
+): boolean {
+	const env = options.env ?? process.env;
+	const profileNetwork =
+		options.profileNetwork ??
+		((id: number) => profileForChain(id)?.profile.network);
+	return (
+		isMainnetChain(chainId) ||
+		env.GIANO_NETWORK?.trim() === "mainnet" ||
+		profileNetwork(chainId) === "mainnet"
+	);
+}
 
 /** The immediate roles, sent directly rather than through the timelock: one holder each on a mainnet. */
 export const IMMEDIATE_ROLES = [

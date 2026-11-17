@@ -8,6 +8,7 @@ import {
 	IMMEDIATE_ROLES,
 	MIN_MAINNET_UNSTAKE_DELAY,
 	mainnetRoleProblems,
+	provisioningIsMainnet,
 	unstakeDelaySeconds,
 } from "./provision-rules";
 
@@ -90,4 +91,39 @@ test("the unstake delay is a duration, within uint32, and at least a day on a ma
 			`at least ${MIN_MAINNET_UNSTAKE_DELAY} seconds \\(1d\\).*ERC-7562`,
 		),
 	);
+});
+
+test("a mainnet is recognised by its chain id, the wrapper's network class or its profile (#298 review)", () => {
+	const none = () => undefined;
+	// The mainnet list.
+	assert.equal(
+		provisioningIsMainnet(8453, { env: {}, profileNetwork: none }),
+		true,
+	);
+	// A future mainnet on a chain the list does not know yet: the wrapper passes GIANO_NETWORK...
+	assert.equal(
+		provisioningIsMainnet(4242, {
+			env: { GIANO_NETWORK: "mainnet" },
+			profileNetwork: none,
+		}),
+		true,
+	);
+	// ...and a direct run finds it in the chain's committed profile.
+	assert.equal(
+		provisioningIsMainnet(4242, {
+			env: {},
+			profileNetwork: (id) => (id === 4242 ? "mainnet" : undefined),
+		}),
+		true,
+	);
+	assert.equal(
+		provisioningIsMainnet(4242, {
+			env: { GIANO_NETWORK: "testnet" },
+			profileNetwork: () => "testnet",
+		}),
+		false,
+	);
+	// The committed testnet profiles.
+	assert.equal(provisioningIsMainnet(84532, { env: {} }), false);
+	assert.equal(provisioningIsMainnet(11155111, { env: {} }), false);
 });

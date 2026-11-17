@@ -39,9 +39,9 @@ import {
 	Wallet,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
-import { isMainnetChain } from "../deploy/config";
 import {
 	mainnetRoleProblems,
+	provisioningIsMainnet,
 	unstakeDelaySeconds,
 } from "../deploy/provision-rules";
 import { gianoPaymasterAbi, iEntryPointAbi } from "../generated";
@@ -226,7 +226,7 @@ async function main(): Promise<void> {
 	}
 	// The mainnet rules, here as well as in the operator wrapper, so running this script directly does
 	// not skip them (#298 review).
-	const mainnet = isMainnetChain(chainId);
+	const mainnet = provisioningIsMainnet(chainId);
 	const roleProblems = mainnetRoleProblems({
 		mainnet,
 		grantAllTo,

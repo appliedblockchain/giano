@@ -107,7 +107,12 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		const paymaster = record.contracts.paymasterProxy?.address as Address;
 
 		const provision = (
-			overrides: { tenant?: string; holders?: string[]; extra?: string[] } = {},
+			overrides: {
+				tenant?: string;
+				holders?: string[];
+				extra?: string[];
+				env?: Record<string, string>;
+			} = {},
 		) =>
 			spawnSync(
 				process.execPath,
@@ -133,7 +138,12 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 				],
 				{
 					cwd: join(import.meta.dirname, ".."),
-					env: { ...process.env, RPC_URL: rpc, DEPLOYER_PRIVATE_KEY: OPERATOR },
+					env: {
+						...process.env,
+						RPC_URL: rpc,
+						DEPLOYER_PRIVATE_KEY: OPERATOR,
+						...overrides.env,
+					},
 					encoding: "utf8",
 				},
 			);
@@ -177,6 +187,19 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		const delayTypo = provision({ extra: ["--unstake-delay", "1x"] });
 		assert.notEqual(delayTypo.status, 0);
 		assert.match(delayTypo.stderr, /--unstake-delay is not a duration.*: 1x/);
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+
+		// A mainnet the chain-id list does not know, named by the wrapper's GIANO_NETWORK, still gets
+		// the mainnet rules the script checks itself: here the one-day unstake minimum (#298 review).
+		const shortDelay = provision({
+			extra: ["--unstake-delay", "6h"],
+			env: { GIANO_NETWORK: "mainnet" },
+		});
+		assert.notEqual(shortDelay.status, 0);
+		assert.match(shortDelay.stderr, /on a mainnet is at least 86400 seconds/);
 		assert.equal(
 			await client.getTransactionCount({ address: operator }),
 			nonce,
