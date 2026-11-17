@@ -111,12 +111,18 @@ export function updateType(pinned, latest) {
 	return "patch";
 }
 
-/** The newest of `{ version, date }` releases that are stable, old enough and (optionally) in one major. */
+/**
+ * The newest of `{ version, date, target? }` releases that are stable, old enough and (optionally)
+ * in one major. A release with `target: false` counts only within a held major: it is history,
+ * not a default upgrade target (a Node line that is no longer the Active LTS).
+ */
 export function newestQualifying(releases, cutoff, major) {
 	return releases
 		.filter((r) => isStable(r.version) && Date.parse(r.date) <= cutoff)
-		.filter(
-			(r) => major === undefined || parseVersion(r.version).major === major,
+		.filter((r) =>
+			major === undefined
+				? r.target !== false
+				: parseVersion(r.version).major === major,
 		)
 		.sort((a, b) => compareVersions(b.version, a.version))[0];
 }
@@ -220,7 +226,10 @@ export async function pypiReleases(fetchJson, name) {
 		}));
 }
 
-/** Releases of the newest Node.js line in Active LTS on `today` (YYYY-MM-DD). */
+/**
+ * Every Node.js release. Only those of the newest line in Active LTS on `today` (YYYY-MM-DD) are
+ * upgrade targets; the rest stay available to a deferral that holds an older major.
+ */
 export async function nodeActiveLtsReleases(fetchJson, today) {
 	const schedule = await fetchJson(
 		"https://raw.githubusercontent.com/nodejs/Release/main/schedule.json",
@@ -235,14 +244,14 @@ export async function nodeActiveLtsReleases(fetchJson, today) {
 		)
 		.map(([name]) => Number(name.replace(/^v/, "")))
 		.sort((a, b) => b - a)[0];
-	if (active === undefined) return [];
 	const index = await fetchJson("https://nodejs.org/dist/index.json");
 	return index
 		.map((r) => ({
 			version: r.version.replace(/^v/, ""),
 			date: `${r.date}T00:00:00Z`,
 		}))
-		.filter((r) => parseVersion(r.version)?.major === active);
+		.filter((r) => parseVersion(r.version))
+		.map((r) => ({ ...r, target: parseVersion(r.version).major === active }));
 }
 
 /** The commit a GitHub tag points at, for the report (an action is pinned by commit SHA). */
@@ -525,6 +534,14 @@ export async function staleRows({
 			releaseCache.set(
 				key,
 				(async () => {
+					if (pin.own) {
+						// Our own package: the version in packages/*, which release.yml publishes. It
+						// is on GitHub Packages, so the public registry is never asked.
+						const version = ownVersions.get(pin.name);
+						if (version === undefined)
+							throw new Error("no package of this name in the workspace");
+						return [{ version, date: new Date(0).toISOString() }];
+					}
 					if (pin.kind === "npm") return npmReleases(fetchJson, pin.name);
 					if (pin.kind === "action") return githubReleases(fetchJson, pin.name);
 					return SOURCES[pin.source.type](fetchJson, pin.source, today);
@@ -559,21 +576,7 @@ export async function staleRows({
 					status: "error",
 					note: "the pin is not a version",
 				};
-			let latest;
-			if (pin.own) {
-				// Our own package: the version in packages/*, which release.yml publishes.
-				const version = ownVersions.get(pin.name);
-				if (version === undefined)
-					return {
-						...base,
-						latest: "?",
-						status: "error",
-						note: "no package of this name in the workspace",
-					};
-				latest = { version };
-			} else {
-				latest = newestQualifying(await releasesOf(pin), cutoff);
-			}
+			const latest = newestQualifying(await releasesOf(pin), cutoff);
 			if (latest === undefined)
 				return {
 					...base,
@@ -608,12 +611,15 @@ export async function staleRows({
 					Number(held[1]),
 				);
 				// The pinned release itself is in that major, so finding none means the lookup failed.
+				// For our own packages only the workspace version is known, not their release history.
 				if (inMajor === undefined)
 					return {
 						...base,
 						latest: "?",
 						status: "error",
-						note: `no qualifying release found in ${deferral["Held version"]}`,
+						note: pin.own
+							? `only ${ownVersions.get(pin.name)} is known in the workspace; hold our own package at an exact version, not ${deferral["Held version"]}`
+							: `no qualifying release found in ${deferral["Held version"]}`,
 					};
 				if (isBehind(pin.pinned, inMajor.version))
 					return withCommit({

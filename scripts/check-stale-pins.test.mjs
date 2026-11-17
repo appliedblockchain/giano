@@ -529,6 +529,77 @@ describe("staleRows", () => {
 		assert.equal(held.status, "current");
 	});
 
+	it("keeps older Node lines for a held major once a newer line is Active LTS", async () => {
+		const responses = {
+			"https://raw.githubusercontent.com/nodejs/Release/main/schedule.json": {
+				v24: {
+					lts: "2025-10-28",
+					maintenance: "2026-10-20",
+					end: "2028-04-30",
+				},
+				v25: { start: "2025-10-15", end: "2026-06-01" },
+				v26: {
+					lts: "2026-10-20",
+					maintenance: "2027-10-20",
+					end: "2029-04-30",
+				},
+			},
+			"https://nodejs.org/dist/index.json": [
+				{ version: "v26.13.1", date: ago(10).slice(0, 10) },
+				{ version: "v25.9.0", date: ago(200).slice(0, 10) },
+				{ version: "v24.22.2", date: ago(10).slice(0, 10) },
+				{ version: "v24.22.0", date: ago(60).slice(0, 10) },
+			],
+		};
+		const node = (pinned) => ({
+			kind: "tool",
+			name: "node",
+			pinned,
+			where: ".nvmrc:1",
+			source: { type: "node-lts" },
+		});
+		const [unheld] = await run([node("24.22")], { responses });
+		assert.equal(unheld.status, "stale");
+		assert.equal(unheld.latest, "26.13.1"); // not the odd 25.x line
+		const deferrals = [
+			{ Name: "node", "Held version": "24.x", "Review-by": "2027-01-01" },
+		];
+		const [held] = await run([node("24.22")], { responses, deferrals });
+		assert.equal(held.status, "deferred");
+		const [behind] = await run([node("24.21")], { responses, deferrals });
+		assert.equal(behind.status, "stale");
+		assert.equal(behind.latest, "24.22.2");
+	});
+
+	it("never asks the registry about our own package, even when a deferral holds its major", async () => {
+		const pin = { ...npm("@appliedblockchain/x", "6.0.0"), own: true };
+		const ownVersions = new Map([["@appliedblockchain/x", "7.0.1"]]);
+		const deferral = (held) => [
+			{
+				Name: "@appliedblockchain/x",
+				"Held version": held,
+				"Review-by": "2027-01-01",
+			},
+		];
+		const [major] = await run([pin], {
+			ownVersions,
+			deferrals: deferral("6.x"),
+		});
+		assert.equal(major.status, "error");
+		assert.match(
+			major.note,
+			/only 7\.0\.1 is known in the workspace; .*exact version/,
+		);
+		const [exact] = await run([pin], {
+			ownVersions,
+			deferrals: deferral("6.0.0"),
+		});
+		assert.equal(exact.status, "deferred");
+		const [missing] = await run([pin]);
+		assert.equal(missing.status, "error");
+		assert.match(missing.note, /no package of this name/);
+	});
+
 	it("compares our own package with the workspace version, without the registry", async () => {
 		const pin = { ...npm("@appliedblockchain/x", "6.0.0"), own: true };
 		const [row] = await run([pin], {
