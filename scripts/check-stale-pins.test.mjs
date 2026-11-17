@@ -28,7 +28,8 @@ const fakeFetch = (responses) => async (url) => {
 const npmDoc = (times) => ({
 	time: { created: ago(999), modified: ago(0), ...times },
 });
-const NPM = (name) => `https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`;
+const NPM = (name) =>
+	`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`;
 const GH = (repo) =>
 	`https://api.github.com/repos/${repo}/releases?per_page=100`;
 
