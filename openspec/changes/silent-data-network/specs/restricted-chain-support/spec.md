@@ -46,7 +46,7 @@ When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHA
 #### Scenario: Implementation read from the logs
 - **WHEN** the storage read is refused and the implementation is read from the proxy's latest `Upgraded` event
 - **THEN** wallet-api's chain check (at boot, and when its background probe admits the chain later), `giano-doctor` and the paymaster SDK's health check report it as a warning: not verified against the implementation slot
-- **AND** the deploy tooling refuses it, and does not reconcile the deployment record to it, unless the operator passes `--accept-unverified-implementation` (the Helm value `deployer.acceptUnverifiedImplementation` for the deployer Job), or the same `contracts:deploy` run deployed the paymaster proxy
+- **AND** the deploy tooling refuses it, and does not reconcile the deployment record to it, unless the operator passes `--accept-unverified-implementation` (the Helm value `deployer.acceptUnverifiedImplementation` for the deployer Job), or the same `contracts:deploy` run deployed the paymaster proxy and the proxy's only `Upgraded` event, up to the head, is the one in its deployment transaction
 
 #### Scenario: Long search in wallet-api's chain check
 - **WHEN** the storage read is refused and one wallet-api chain check sends 100 log queries (10 at boot, before the server listens) without finding an `Upgraded` event

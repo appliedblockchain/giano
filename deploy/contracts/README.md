@@ -335,8 +335,9 @@ an implementation, and the plan does not reconcile it, unless you pass
 `--accept-unverified-implementation`. With the flag, they use it and print a warning. The Helm
 deployer Job passes the flag when `deployer.acceptUnverifiedImplementation` is `true`
 (`ACCEPT_UNVERIFIED_IMPLEMENTATION=true` in the deployer image). A paymaster proxy that the same
-`contracts:deploy` run deployed needs no flag: its implementation is the one the run deployed and
-verified.
+`contracts:deploy` run deployed needs no flag when its only `Upgraded` event, up to the head, is the
+one in its deployment transaction, for the implementation the run deployed. Otherwise the run stops
+after the deployment, which is recorded, and a rerun with the flag finishes it.
 
 ## 5. Cut over services and clients together
 

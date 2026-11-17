@@ -27,6 +27,7 @@ import {
 	fixedAddresses,
 	formatPlan,
 	IMPLEMENTATION_SLOT,
+	onlyDeploymentUpgrade,
 	placements,
 	planCore,
 	undeclaredDeviations,
@@ -831,12 +832,82 @@ describe("a paymaster implementation read from Upgraded logs", () => {
 		assert.equal(accepted.warnings.length, 1);
 	});
 
-	it("a run that deploys the paymaster proxy needs no flag after the deploy", async () => {
+	it("knows whether the plan deploys the paymaster proxy", async () => {
 		assert.equal(deploysPaymasterProxy(await planCore(chain({}), input)), true);
 		assert.equal(
 			deploysPaymasterProxy(await planCore(deployedBy(MAINNET), input)),
 			false,
 		);
+	});
+});
+
+describe("onlyDeploymentUpgrade", () => {
+	const proxy = expected("paymasterProxy");
+	const implementation = expected("paymasterImplementation");
+	const deployment: Hex = `0x${"aa".repeat(32)}`;
+	const other: Hex = `0x${"bb".repeat(32)}`;
+	/** The deployment at block 1,000; `later` are the transactions of Upgraded logs after it. */
+	function stub({
+		status = "success",
+		named = implementation,
+		head = 20_000n,
+		later = [] as Hex[],
+	} = {}) {
+		const ranges: [bigint, bigint][] = [];
+		const client = {
+			getTransactionReceipt: async () => ({
+				status,
+				blockNumber: 1_000n,
+				logs: [{ address: proxy, topics: [UPGRADED_TOPIC, pad(named)] }],
+			}),
+			getBlockNumber: async () => head,
+			request: async ({
+				params: [{ fromBlock, toBlock }],
+			}: {
+				params: [{ fromBlock: string; toBlock: string }];
+			}) => {
+				ranges.push([BigInt(fromBlock), BigInt(toBlock)]);
+				return [deployment, ...(ranges.length === 1 ? later : [])].map(
+					(transactionHash) => ({ transactionHash }),
+				);
+			},
+		} as unknown as PublicClient;
+		return { client, ranges };
+	}
+
+	it("accepts a proxy whose only Upgraded event is its deployment's", async () => {
+		const { client, ranges } = stub();
+		assert.equal(
+			await onlyDeploymentUpgrade(client, proxy, deployment, implementation),
+			true,
+		);
+		// From the deployment block to the head, in spans of at most 9,000 blocks.
+		assert.deepEqual(ranges, [
+			[1_000n, 9_999n],
+			[10_000n, 18_999n],
+			[19_000n, 20_000n],
+		]);
+	});
+
+	it("refuses a later Upgraded event, another implementation, a failed deployment or a deployment too far back", async () => {
+		for (const options of [
+			{ later: [other] },
+			{ named: expected("walletImplementation") },
+			{ status: "reverted" },
+			{ head: 9_001_000n },
+		])
+			assert.equal(
+				await onlyDeploymentUpgrade(
+					stub(options).client,
+					proxy,
+					deployment,
+					implementation,
+				),
+				false,
+				JSON.stringify(options, (_, v) =>
+					typeof v === "bigint" ? v.toString() : v,
+				),
+			);
 	});
 });
 

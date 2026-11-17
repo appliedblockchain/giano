@@ -21,7 +21,13 @@ import {
 	keccak256,
 	type PublicClient,
 } from "viem";
-import { proxyImplementationWithSource } from "../erc1967";
+import {
+	implementationFromSlot,
+	proxyImplementationWithSource,
+	UPGRADED_LOG_CHUNK,
+	UPGRADED_LOG_MAX_CHUNKS,
+	UPGRADED_TOPIC,
+} from "../erc1967";
 import { gianoSmartWalletFactoryAbi } from "../generated";
 import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
@@ -520,15 +526,72 @@ export function fixedAddresses(plan: Plan): Partial<Record<CoreKey, Address>> {
 	return fixed;
 }
 
-/**
- * True when executing `plan` deploys the paymaster proxy: it has no code yet. After such a run, the
- * proxy's only `Upgraded` event is the one its constructor emitted for the implementation the run
- * deployed, so a log answer needs no `--accept-unverified-implementation`.
- */
+/** True when `plan` deploys the paymaster proxy: it had no code when the plan was made. */
 export function deploysPaymasterProxy(plan: Plan): boolean {
 	return plan.contracts.some(
 		(c) => c.key === "paymasterProxy" && c.code.state === "empty",
 	);
+}
+
+/**
+ * True when the proxy's only `Upgraded` event, from the deployment block to the head, is the one in
+ * `transactionHash`, and it names `implementation`. The release proxy and the release paymaster
+ * change the implementation slot only with an `Upgraded` event, so the slot then holds
+ * `implementation`: on an RPC that refuses `eth_getStorageAt`, this proves what the slot would. False
+ * when the transaction failed, holds no such event or more than one, a later `Upgraded` event exists,
+ * or the deployment is more than {@link UPGRADED_LOG_MAX_CHUNKS} spans of
+ * {@link UPGRADED_LOG_CHUNK} blocks behind the head.
+ */
+export async function onlyDeploymentUpgrade(
+	client: PublicClient,
+	proxy: Address,
+	transactionHash: Hex,
+	implementation: Address,
+): Promise<boolean> {
+	const receipt = await client.getTransactionReceipt({ hash: transactionHash });
+	if (receipt.status !== "success") return false;
+	const own = receipt.logs.filter(
+		(log) =>
+			same(log.address, proxy) &&
+			log.topics[0]?.toLowerCase() === UPGRADED_TOPIC,
+	);
+	if (
+		own.length !== 1 ||
+		!same(implementationFromSlot(own[0].topics[1]), implementation)
+	)
+		return false;
+	const head = await client.getBlockNumber({ cacheTime: 0 });
+	if (
+		head - receipt.blockNumber >=
+		UPGRADED_LOG_CHUNK * BigInt(UPGRADED_LOG_MAX_CHUNKS)
+	)
+		return false;
+	for (
+		let from = receipt.blockNumber;
+		from <= head;
+		from += UPGRADED_LOG_CHUNK
+	) {
+		const last = from + UPGRADED_LOG_CHUNK - 1n;
+		const logs = (await client.request({
+			method: "eth_getLogs",
+			params: [
+				{
+					address: proxy,
+					topics: [UPGRADED_TOPIC],
+					fromBlock: `0x${from.toString(16)}`,
+					toBlock: `0x${(last < head ? last : head).toString(16)}`,
+				},
+			],
+		})) as readonly { transactionHash: string | null }[];
+		if (
+			logs.some(
+				(log) =>
+					log.transactionHash?.toLowerCase() !== transactionHash.toLowerCase(),
+			)
+		)
+			return false;
+	}
+	return true;
 }
 
 function describeCode(code: CodeState): string {

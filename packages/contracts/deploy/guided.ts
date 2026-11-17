@@ -27,6 +27,7 @@ import {
 	deviationGate,
 	deviationWarning,
 	fixedAddresses,
+	onlyDeploymentUpgrade,
 	type Plan,
 	planCore,
 	reconcileRecord,
@@ -363,15 +364,14 @@ async function main() {
 					`Post-deployment code verification failed for ${key}. Do not serve this chain.`,
 				);
 		}
-		// A paymaster proxy this run deployed points at the implementation this run deployed and
-		// verified above, so its Upgraded log is the run's own: accept it on an RPC that refuses
-		// eth_getStorageAt. An existing proxy still needs --accept-unverified-implementation.
-		const acceptAfter =
-			acceptUnverifiedImplementation || deploysPaymasterProxy(fresh.plan);
-		if (acceptAfter && !acceptUnverifiedImplementation)
-			console.log(
-				"This run deployed the paymaster proxy, so an implementation read from its Upgraded logs is the one it deployed.",
-			);
+		// On an RPC that refuses eth_getStorageAt, a paymaster proxy this run deployed is checked
+		// against its deployment transaction instead of --accept-unverified-implementation: below,
+		// after the checks have read its implementation from the logs.
+		const proxyTransaction =
+			!acceptUnverifiedImplementation && deploysPaymasterProxy(fresh.plan)
+				? record.contracts.paymasterProxy?.transactionHash
+				: undefined;
+		const acceptAfter = acceptUnverifiedImplementation || !!proxyTransaction;
 		const after: Plan = await planCore(client, {
 			network: profile.network,
 			signer,
@@ -379,7 +379,7 @@ async function main() {
 			record,
 			acceptUnverifiedImplementation: acceptAfter,
 		});
-		for (const warning of await verifyCoreState(
+		const coreWarnings = await verifyCoreState(
 			client,
 			admin,
 			profileCoreConfig(profile),
@@ -388,8 +388,36 @@ async function main() {
 				timelock: profile.timelock?.address,
 				acceptUnverifiedImplementation: acceptAfter,
 			},
-		))
-			console.warn(`⚠ ${warning}`);
+		);
+		// The plan relied on an Upgraded log (after.warnings). Accept it only when the proxy's sole
+		// Upgraded event, up to the current head, is its deployment's, for the implementation this
+		// run deployed and verified above.
+		if (proxyTransaction && after.warnings.length) {
+			const proxy = record.contracts.paymasterProxy?.address;
+			const implementation = record.contracts.paymasterImplementation?.address;
+			let failure =
+				"its only Upgraded event is not the one in that transaction";
+			const proven =
+				!!proxy &&
+				!!implementation &&
+				(await onlyDeploymentUpgrade(
+					client,
+					proxy,
+					proxyTransaction,
+					implementation,
+				).catch((error: unknown) => {
+					failure = `reading its deployment and logs failed: ${error instanceof Error ? error.message : String(error)}`;
+					return false;
+				}));
+			if (!proven)
+				throw new GuidanceError(
+					`The paymaster proxy's implementation was read from its Upgraded logs and could not be checked against its deployment transaction ${proxyTransaction}: ${failure}. The deployment is recorded. Check the implementation slot through an RPC that allows eth_getStorageAt, or rerun with --accept-unverified-implementation to accept it.`,
+				);
+			console.log(
+				`The paymaster proxy's only Upgraded event is the one in its deployment transaction ${proxyTransaction}, for implementation ${implementation}.`,
+			);
+		}
+		for (const warning of coreWarnings) console.warn(`⚠ ${warning}`);
 		writeRecord(record);
 		const addressEnv = rehearsal
 			? join(REHEARSAL_DIR, `${chain.id}.addresses.env`)
