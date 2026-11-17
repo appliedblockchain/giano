@@ -422,7 +422,9 @@ test("deploy:cli refuses a deployment record that states another network class",
 	}
 });
 
-test("CLI --plan is read-only and blocks a testnet while its canonical deployer is unset", async () => {
+test("CLI --plan is read-only and plans a testnet at its canonical deployer's addresses", async () => {
+	const testnet = DEPLOYERS.testnet;
+	assert.ok(testnet, "DEPLOYERS.testnet is set (MULTICHAIN_SPECS §4.5)");
 	for (const [chainId, chain] of [
 		[84532, "base-sepolia"],
 		[11155111, "ethereum-sepolia"],
@@ -431,9 +433,24 @@ test("CLI --plan is read-only and blocks a testnet while its canonical deployer 
 			"--chain",
 			chain,
 		]);
+		// Still refused here, but only by this fake chain (no CreateX, no EntryPoint, an unfunded
+		// deployer), never because the class deployer is missing.
 		assert.equal(code, 1);
-		if (DEPLOYERS.testnet === null)
-			assert.match(stdout, /testnet canonical deployer is not configured/);
+		assert.doesNotMatch(stdout, /not configured/);
+		assert.match(stdout, new RegExp(`canonical deployer: ${testnet}`));
+		for (const label of [
+			"walletImplementation",
+			"factory",
+			"paymasterImplementation",
+			"paymasterProxy",
+		] as const)
+			assert.match(
+				stdout,
+				new RegExp(
+					`${label} +expected ${create3Address(testnet, LABELS[label])}`,
+				),
+			);
+		assert.match(stdout, new RegExp(`Fund ${testnet} on `));
 		assert.doesNotMatch(
 			stdout,
 			/Fund 0x000000000000000000000000000000000000dEaD/,

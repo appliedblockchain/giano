@@ -13,6 +13,7 @@ matches no release of that contract, or if the recorded release is not one of th
 fingerprint. Addresses are not compared with fixed constants: a chain's contracts may sit at
 overridden or recorded addresses, as long as they run release code.
 
-None exist yet: the mainnet and testnet canonical deployers in `deploy/config.ts` are not chosen
-yet (`null`), so nothing can be signed for a public chain. See "Deploying to a chain" in
-`../README.md`.
+None exist yet. The testnet canonical deployer is set in `deploy/config.ts`, so the testnet
+rollout (`deploy/contracts/TESTNET-ROLLOUT.md`, step 7) commits `84532.json` and `11155111.json`
+here. The mainnet deployer is not chosen yet (`null`), so nothing can be signed for a mainnet. See
+"Deploying to a chain" in `../README.md`.

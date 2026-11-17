@@ -29,8 +29,8 @@ scope. Whoever adds a key to a service or tool adds it here in the same PR.
 
 Giano has no production environment yet (`infra/versions.json` `prd` is empty), and the mainnet
 canonical deployer is not configured yet (`DEPLOYERS.mainnet` is `null` in
-`packages/contracts/deploy/config.ts`; the testnet one is set). No in-scope key exists today. Every key in
-scope above is created by a ceremony when it is first needed.
+`packages/contracts/deploy/config.ts`; the testnet one is set). No in-scope key exists today. Every
+key in scope above is created by a ceremony when it is first needed.
 
 ### Canonical deployers
 

@@ -28,8 +28,8 @@ now states its leak impact), production role holders and production timelock del
 
 | # | Step | Who | Done when |
 |---|---|---|---|
-| 1 | Create the **testnet canonical deployer**: an independent random key in its own 1Password item with restricted access. It fixes the testnet wallet address space for good, so treat it as long-lived. | development team | the 1Password item exists |
-| 2 | PR: set `DEPLOYERS.testnet` in `packages/contracts/deploy/config.ts` to its address, and name the 1Password item in `docs/key-ceremony.md`. CI `check:determinism` then covers the testnet class. | development team | merged, CI green |
+| 1 | **Done (2026-11-16):** 1Password item "Giano testnet canonical deployer", address `0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5`. Create the **testnet canonical deployer**: an independent random key in its own 1Password item with restricted access. It fixes the testnet wallet address space for good, so treat it as long-lived. | development team | the 1Password item exists |
+| 2 | **Done (#296).** PR: set `DEPLOYERS.testnet` in `packages/contracts/deploy/config.ts` to its address, and name the 1Password item in `docs/key-ceremony.md`. CI `check:determinism` then covers the testnet class. | development team | merged, CI green |
 | 3 | Rehearse again against the real deployer address on a fork: `pnpm contracts:rehearse --chain base-sepolia --platform`, then `--chain ethereum-sepolia`. `--fork-url` is optional: with the 200-block span the watcher works through the profile's public RPC too. The stand-in deployer is still used, but the profiles, release and tooling are exactly what step 5 runs. | development team | every step ✓ |
 | 4 | Fund on each chain: the testnet deployer (≥ 0.05 ETH, the profile's reserve), the bootstrap operator (0.1 ETH stake plus tenant funding plus gas) and the bundler executor (≥ 0.05 ETH). `pnpm contracts:funding --chain <profile> --env-file <operator-file>` prints the amounts. | development team / DevOps | balances confirmed |
 | 5 | **Base Sepolia**, in order: `pnpm contracts:deploy --chain base-sepolia`, then `contracts:provision`, `contracts:timelock`, `contracts:handoff` and `contracts:doctor` (deploy/contracts/README.md §3–4, runbook §2). | development team | doctor green; record written |
@@ -44,8 +44,8 @@ now states its leak impact), production role holders and production timelock del
 
 ## Drafts to fill in at step 9
 
-The real addresses come from the records written in steps 5 and 6, and are not known before them: CREATE3 places
-them by the testnet deployer's address. The rehearsal's values are shown only to show the shape.
+CREATE3 places the contracts by the testnet deployer's address, so their addresses are known before steps 5 and 6
+and are the same on both testnets. The records written in those steps confirm them; copy from the records.
 
 `GIANO_CHAINS` (the backend `chains` secret, one entry per chain; RPC URLs stay in the secret):
 
@@ -77,14 +77,16 @@ Terraform (`infra/iac/ecs_services.vars.tf`): `paymaster_address` defaults to th
 `0xf98b56de…0718`, and `factory_address` to the legacy `0x26dCd293…7050`. Both must become the new
 addresses (the paymaster proxy and factory are at the same address on both testnets).
 
-Rehearsal values, Base Sepolia fork, stand-in deployer, for shape only:
+The real addresses, from the testnet deployer `0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5` (read-only plan
+against both public RPCs, 2026-11-17; deploy/contracts/README.md, "Read-only public-network evidence"). A
+rehearsal uses a stand-in deployer and lands elsewhere: never copy a rehearsal address.
 
-| Contract | Rehearsal address |
+| Contract | Address on both testnets |
 |---|---|
-| wallet implementation | `0x3Fb76CdA4e3485d04B08cC329f994f51348b1B69` |
-| factory | `0x59b265B1dF4aC0Ec2489b6F1d242F9059d030e6F` |
-| paymaster proxy | `0x8d48fE9401Cbf5D435d56f533356cE31593Da60e` |
-| paymaster implementation after the timelocked upgrade | `0x961a7D6d41e1f0c9259Ab1984A44b0b2B0545E87` (`giano.paymaster.impl@v3`) |
+| wallet implementation | `0x265dA930A9253fCC09E120B6f89EE8a91BcA9406` |
+| factory | `0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635` |
+| paymaster implementation | `0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540` |
+| paymaster proxy | `0xb2C7081be89D88f1da020530Ebd5c14b8871615a` |
 
 ## Rollback
 

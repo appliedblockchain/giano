@@ -2891,9 +2891,11 @@ replaced and its deployment records removed, so the registry (`addresses.ts`) ha
 either chain. Until both are redeployed (§13.1), `wallet-web` cannot default `factoryAddress` and the
 SPA refuses to load ([§14.3](#143-wallet-web)), and `wallet-api` refuses a chain with no factory
 running release code. The testnet canonical deployer (`DEPLOYERS.testnet` in
-`packages/contracts/deploy/config.ts`) is still `null`: the deploy tooling plans but refuses to sign
-for a testnet until the development team has created the key and set its address. Setting it needs
-no regeneration of any generated file, devnet or e2e state.
+`packages/contracts/deploy/config.ts`) is set ([MULTICHAIN_SPECS §4.5](MULTICHAIN_SPECS.md)), so the
+deploy tooling can sign for both testnets; the contracts land at the same address on each (factory
+`0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635`, paymaster proxy
+`0xb2C7081be89D88f1da020530Ebd5c14b8871615a`). Setting it needed no regeneration of any generated
+file, devnet or e2e state.
 
 ### 13.1 The canonical contracts must be deployed on both chains
 
