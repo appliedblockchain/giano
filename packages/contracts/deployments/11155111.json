@@ -1,0 +1,69 @@
+{
+  "chainId": 11155111,
+  "deployer": "0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5",
+  "contracts": {
+    "walletImplementation": {
+      "address": "0x265dA930A9253fCC09E120B6f89EE8a91BcA9406",
+      "label": "giano.wallet.impl",
+      "release": "v3",
+      "codehash": "0x82625c13823480ca380e590d68c331347cef6f54f682b79a990c66f517dc7b71",
+      "fingerprint": "0x7971eff1d160c7f585c10e7d1ab9cdc159a9c58c42730eb1e768312ffaf3a92a",
+      "transactionHash": "0x4fc273d9eb5698d59ba1e7c293dce62d382f7559aa90bb7db633afb4e7621d42",
+      "expected": "0x265dA930A9253fCC09E120B6f89EE8a91BcA9406",
+      "deterministic": true
+    },
+    "factory": {
+      "address": "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635",
+      "label": "giano.factory",
+      "release": "v3",
+      "codehash": "0x3db71d6f30d0640b7307b868e9e3aa1477b6c5fba61c8d4edcfd826ab8cda54a",
+      "fingerprint": "0xff301483310be5f71f53b7f83e23245529052cf55b0fec8044b146ed630b2551",
+      "transactionHash": "0x1a8f5e624aa92db32cc4793d51b4a7fcd555122d3ff422fe1603a0308d2f6e21",
+      "expected": "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635",
+      "deterministic": true
+    },
+    "paymasterImplementation": {
+      "address": "0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540",
+      "label": "giano.paymaster.impl",
+      "release": "v3",
+      "codehash": "0xaf926942e548aa22eab5841773da955d66cc5b163dcc9f68431a534cd812376a",
+      "fingerprint": "0x107ad31232efd056c0b5715be897c21ede86a2db06013a4ec54836ce7c2e0fba",
+      "transactionHash": "0xb4e115f24da20073d54f4339df730114cbdaae743a90236dd2ea3973aa598a71",
+      "expected": "0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540",
+      "deterministic": true
+    },
+    "paymasterProxy": {
+      "address": "0xb2C7081be89D88f1da020530Ebd5c14b8871615a",
+      "label": "giano.paymaster.proxy",
+      "release": "v3",
+      "codehash": "0x1d07a8c854ec774527639ab90876f40d91eca6075a8f85e1f6c981eaf1c5bfe3",
+      "fingerprint": "0x1d07a8c854ec774527639ab90876f40d91eca6075a8f85e1f6c981eaf1c5bfe3",
+      "transactionHash": "0x7128edb6e21fcd892795a8f9476ee4971675e61ef6aa5d7abe55487df40659d2",
+      "expected": "0xb2C7081be89D88f1da020530Ebd5c14b8871615a",
+      "deterministic": true
+    }
+  },
+  "upgrades": [],
+  "network": "testnet",
+  "timelock": {
+    "address": "0x7Da25D415f9b68422F905C015137Af8D915F8A78",
+    "label": "giano.paymaster.timelock",
+    "release": "v3",
+    "codehash": "0x69373afb4beb4d383579b317e37db350c6b15908840c1e35a20b987293f3bb5a",
+    "transactionHash": "0x98b235e13fa8e6d0d60fbc344ed8e4e2b62f5a56aa1a379ffc484fef8236f3ec",
+    "proposers": [
+      "0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030"
+    ],
+    "executors": [],
+    "delays": {
+      "minDelay": 300,
+      "upgradeToAndCall": 3600,
+      "grantRole": 3600,
+      "revokeRole": 3600,
+      "renounceRole": 3600,
+      "setTenantWithdrawAddress": 1800,
+      "setDefaultFee": 1200,
+      "setTenantFee": 600
+    }
+  }
+}
