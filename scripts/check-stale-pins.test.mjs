@@ -236,6 +236,18 @@ describe("toolPins", () => {
 		);
 	});
 
+	it("reads the Cosign binary the installer action fetches", () => {
+		const yml = [
+			"      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2",
+			"        with:",
+			"          cosign-release: v3.1.3",
+		].join("\n");
+		assert.deepEqual(
+			pinsOf(tool("cosign", ".github/workflows/*.yml"), yml, "e2e.yml"),
+			[{ name: "cosign", pinned: "3.1.3", where: "e2e.yml:3" }],
+		);
+	});
+
 	it("reads the pnpm version of packageManager", () => {
 		const json = '{\n\t"packageManager": "pnpm@12.17.0+sha256.abc"\n}';
 		assert.equal(
@@ -673,6 +685,25 @@ describe("staleRows", () => {
 		);
 		assert.equal(rows[0].latest, "1.1.0");
 		assert.equal(rows[0].sha, "a".repeat(40));
+	});
+
+	it("reports a stale action whose new commit cannot be read as a failed check", async () => {
+		const [row] = await run(
+			[{ kind: "action", name: "o/r", pinned: "1.0.0", where: "w.yml:3" }],
+			{
+				responses: {
+					[GH("o/r")]: [ghRelease("1.0.0", 90), ghRelease("1.1.0", 10)],
+					"https://api.github.com/repos/o/r/commits/v1.1.0": new Error(
+						"HTTP 503",
+					),
+				},
+			},
+		);
+		assert.equal(row.status, "error");
+		assert.match(
+			row.note,
+			/^1\.1\.0 \(v1\.1\.0\) is newer, but its commit could not be read: HTTP 503/,
+		);
 	});
 });
 

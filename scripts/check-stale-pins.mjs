@@ -371,6 +371,13 @@ export const TOOLS = [
 		pattern: /PINNED_ANVIL_VERSION = "(\d+\.\d+\.\d+)"/,
 		source: { type: "github", repo: "foundry-rs/foundry" },
 	},
+	// The Cosign binary the installer action fetches; its releases are independent of the action's.
+	{
+		name: "cosign",
+		files: [".github/workflows/*.yml"],
+		pattern: /cosign-release:\s*"?v(\d+\.\d+\.\d+)/,
+		source: { type: "github", repo: "sigstore/cosign" },
+	},
 	{
 		name: "gitleaks",
 		files: [".github/workflows/*.yml"],
@@ -560,8 +567,13 @@ export async function staleRows({
 		if (row.kind !== "action" || !row.tag) return row;
 		try {
 			return { ...row, sha: await tagCommit(fetchJson, row.name, row.tag) };
-		} catch {
-			return row; // The version alone is still useful.
+		} catch (error) {
+			// Without the commit the pin cannot be updated, so the check failed.
+			return {
+				...row,
+				status: "error",
+				note: `${row.latest} (${row.tag}) is newer, but its commit could not be read: ${error.message}`,
+			};
 		}
 	};
 
