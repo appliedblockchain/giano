@@ -106,10 +106,17 @@ export function staleReaderKeys(
 
 /**
  * The token amount typed in the card, in base units. An empty field is 0. Throws for a value that is
- * not a decimal number, has more decimals than the token, is negative, or does not fit a uint256.
+ * not a decimal number, has more decimal places than the token, is negative, or does not fit a
+ * uint256. `parseUnits` alone would round extra decimal places, and send another amount.
  */
 export function parseAmount(amount: string, decimals: number): bigint {
-	const units = parseUnits(amount.trim() || "0", decimals);
+	const value = amount.trim() || "0";
+	const places = (value.split(".")[1] ?? "").replace(/0+$/, "").length;
+	if (places > decimals)
+		throw new Error(
+			`the amount ${amount} has more than ${decimals} decimal places`,
+		);
+	const units = parseUnits(value, decimals);
 	if (units < 0n) throw new Error(`the amount ${amount} is negative`);
 	if (units > maxUint256)
 		throw new Error(`the amount ${amount} does not fit a uint256`);

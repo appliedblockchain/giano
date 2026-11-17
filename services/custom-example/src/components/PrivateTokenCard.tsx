@@ -225,6 +225,16 @@ function PrivateTokenSection({ token }: { token: Address }) {
 		}
 	};
 
+	/** The button's read. It holds `busy`, so no other wallet request starts while its approval is open. */
+	const readOnClick = async () => {
+		setBusy(true);
+		try {
+			await readBalance();
+		} finally {
+			setBusy(false);
+		}
+	};
+
 	const send = async (op: "mint" | "transfer") => {
 		if (!meta) return;
 		let units: bigint;
@@ -549,7 +559,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 			<HStack gap="3" flexWrap="wrap">
 				<Button
 					variant="outline"
-					onClick={() => void readBalance()}
+					onClick={() => void readOnClick()}
 					disabled={!canRead}
 					data-testid="private-read"
 				>

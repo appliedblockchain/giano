@@ -150,6 +150,17 @@ describe("parseAmount", () => {
 		assert.equal(parseAmount("", 18), 0n);
 	});
 
+	it("rejects more decimal places than the token has, instead of rounding", () => {
+		assert.throws(() => parseAmount("1.999", 0), /more than 0 decimal places/);
+		assert.throws(() => parseAmount("1.005", 2), /more than 2 decimal places/);
+		assert.throws(
+			() => parseAmount("0.0000001", 6),
+			/more than 6 decimal places/,
+		);
+		assert.equal(parseAmount("1.000", 0), 1n);
+		assert.equal(parseAmount("1.25", 2), 125n);
+	});
+
 	it("rejects a negative amount and one that does not fit a uint256", () => {
 		assert.throws(() => parseAmount("-5", 18), /negative/);
 		assert.throws(
