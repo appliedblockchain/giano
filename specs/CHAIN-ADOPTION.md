@@ -34,8 +34,10 @@ no code change:
   (`services/bundler/README.md`). On a gas-charging chain, size the caps and balances for them
   (step 7).
 - **No `eth_getStorageAt`:** nothing to set. wallet-api, giano-doctor and the paymaster SDK read
-  the proxy implementation from its `Upgraded` logs when the storage read fails, in spans of at
-  most 10,000 blocks.
+  the proxy implementation from its `Upgraded` logs when the RPC refuses the storage read, in spans
+  of at most 9,000 blocks. That answer is not verified, so they report it as a warning. Once the
+  paymaster proxy exists, the deploy tooling refuses it unless you pass
+  `--accept-unverified-implementation`.
 - **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `deploy:cli` (step 4),
   `provision:paymaster` (step 7) and `deploy:cli timelock` and `handoff` (step 7a). Each request
   is then signed with the key the command sends from, so the RPC keeps the operator as `from`:
