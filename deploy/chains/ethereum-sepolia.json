@@ -5,7 +5,7 @@
 	"rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
 	"rpcUrlEnv": "ETHEREUM_SEPOLIA_RPC_URL",
 	"release": "v3",
-	"roleAdmin": null,
+	"roleAdmin": "0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030",
 	"minDeployerBalanceEth": "0.05",
 	"paymaster": {
 		"defaultFeeWei": "100000000000000",
@@ -14,7 +14,7 @@
 	},
 	"timelock": {
 		"address": null,
-		"proposers": [],
+		"proposers": ["0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030"],
 		"executors": [],
 		"delays": {
 			"minDelay": 300,
