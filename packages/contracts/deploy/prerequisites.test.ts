@@ -6,10 +6,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type Hex, keccak256, type PublicClient } from "viem";
+import {
+	createPublicClient,
+	custom,
+	type Hex,
+	http,
+	keccak256,
+	type PublicClient,
+} from "viem";
 import { entryPointRuntimeCode } from "../entrypoint";
 import {
 	assertNetworkClass,
@@ -107,6 +116,122 @@ test("chain prerequisites: CreateX by its upstream codehash, the canonical Entry
 		bare.find((p) => p.name.startsWith("Cancun"))?.detail ?? "",
 		/compiled for Cancun/,
 	);
+});
+
+/** A real viem client whose node has no CreateX or EntryPoint and answers `eth_call` with `error`. */
+function node(error: { code: number; message: string }): PublicClient {
+	return createPublicClient({
+		transport: custom(
+			{
+				request: async ({ method }: { method: string }) => {
+					if (method === "eth_getCode") return "0x";
+					if (method === "eth_call") throw error;
+					throw new Error(`unexpected ${method}`);
+				},
+			},
+			{ retryCount: 0 },
+		),
+	}) as PublicClient;
+}
+
+const cancunOf = async (client: PublicClient) =>
+	(await chainPrerequisites(client, 84532)).find((p) =>
+		p.name.startsWith("Cancun"),
+	)?.ok;
+
+test("Cancun is unavailable only when the EVM itself refused the probe (G42 R2)", async () => {
+	// anvil --hardfork shanghai, measured: InternalRpcError -32603 "EVM error NotActivated".
+	assert.equal(
+		await cancunOf(node({ code: -32603, message: "EVM error NotActivated" })),
+		false,
+	);
+	// geth on a pre-Cancun chain.
+	assert.equal(
+		await cancunOf(
+			node({
+				code: -32000,
+				message: "invalid opcode: opcode 0x5c not defined",
+			}),
+		),
+		false,
+	);
+});
+
+test("a rate limit, a rejected request, a revert or a dead endpoint is an RPC failure, not a missing Cancun (G42 R2)", async () => {
+	// The probe has no REVERT, and viem files "gas required exceeds allowance" as a revert (#298 review).
+	await assert.rejects(
+		chainPrerequisites(node({ code: 3, message: "execution reverted" }), 84532),
+	);
+	await assert.rejects(
+		chainPrerequisites(
+			node({ code: -32000, message: "gas required exceeds allowance (0)" }),
+			84532,
+		),
+	);
+	await assert.rejects(
+		chainPrerequisites(
+			node({ code: -32005, message: "request rate exceeded" }),
+			84532,
+		),
+	);
+	// An RPC that refuses eth_call without `to`.
+	await assert.rejects(
+		chainPrerequisites(
+			node({ code: -32602, message: "missing value for required argument to" }),
+			84532,
+		),
+	);
+
+	// HTTP 429, and an endpoint that never answers.
+	const server = createServer((request, response) => {
+		let body = "";
+		request.on("data", (chunk) => {
+			body += chunk;
+		});
+		request.on("end", () => {
+			const { id, method } = JSON.parse(body);
+			if (method === "eth_getCode") {
+				response.setHeader("content-type", "application/json");
+				response.end(JSON.stringify({ jsonrpc: "2.0", id, result: "0x" }));
+			} else if (request.url === "/limited") {
+				response.statusCode = 429;
+				response.end("Too Many Requests");
+			} else if (request.url === "/pre-cancun") {
+				// A provider that sends the node's JSON-RPC error inside an HTTP 500 body.
+				response.statusCode = 500;
+				response.setHeader("content-type", "application/json");
+				response.end(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						error: {
+							code: -32000,
+							message: "invalid opcode: opcode 0x5c not defined",
+						},
+					}),
+				);
+			}
+			// "/silent": no answer at all.
+		});
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const { port } = server.address() as AddressInfo;
+	const over = (path: string) =>
+		createPublicClient({
+			transport: http(`http://127.0.0.1:${port}${path}`, {
+				retryCount: 0,
+				timeout: 200,
+			}),
+		}) as PublicClient;
+	try {
+		await assert.rejects(chainPrerequisites(over("/limited"), 84532));
+		await assert.rejects(chainPrerequisites(over("/silent"), 84532));
+		// ...but a missing opcode stays a missing opcode, whatever the HTTP status (#298 review).
+		assert.equal(await cancunOf(over("/pre-cancun")), false);
+	} finally {
+		server.closeAllConnections();
+		server.close();
+	}
 });
 
 test("a chain with no P-256 precompile and no shared verifier is informational, never a failure", () => {

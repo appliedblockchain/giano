@@ -8,7 +8,7 @@ import type { Address, Hex } from "viem";
 import {
 	type LabelKey,
 	type NetworkClass,
-	REHEARSAL_DEPLOYER_ENV,
+	rehearsalDeployerAddress,
 } from "./config";
 import type { DeviationReason } from "./plan";
 
@@ -33,12 +33,17 @@ export const REHEARSAL_DIR = path.resolve(
 );
 
 /**
- * The records this process reads and writes by default: the committed ones, or the rehearsal's own
- * when the process was started for a rehearsal (config.ts `REHEARSAL_DEPLOYER_ENV`).
+ * The records this process reads and writes by default: the rehearsal's own once a rehearsal is
+ * active, the committed ones otherwise. Decided at each call from the activated state (config.ts
+ * `activateRehearsal`, which checks the RPC is an anvil fork), never from the environment alone: a
+ * shell that still exports `GIANO_REHEARSAL_DEPLOYER` must not read or write rehearsal records against a
+ * real chain (G42 R3).
  */
-export const DEPLOYMENTS_DIR = process.env[REHEARSAL_DEPLOYER_ENV]?.trim()
-	? path.join(REHEARSAL_DIR, "records")
-	: COMMITTED_DEPLOYMENTS_DIR;
+export function deploymentsDir(): string {
+	return rehearsalDeployerAddress()
+		? path.join(REHEARSAL_DIR, "records")
+		: COMMITTED_DEPLOYMENTS_DIR;
+}
 
 export type DeployedContract = {
 	address: Address;
@@ -97,7 +102,7 @@ export type DeploymentRecord = {
 	deviations?: RecordedDeviation[];
 };
 
-export function recordPath(chainId: number, dir = DEPLOYMENTS_DIR): string {
+export function recordPath(chainId: number, dir = deploymentsDir()): string {
 	return path.join(dir, `${chainId}.json`);
 }
 
@@ -109,7 +114,7 @@ export function recordPath(chainId: number, dir = DEPLOYMENTS_DIR): string {
 export function readRecord(
 	chainId: number,
 	deployer?: Address,
-	dir = DEPLOYMENTS_DIR,
+	dir = deploymentsDir(),
 ): DeploymentRecord {
 	const file = recordPath(chainId, dir);
 	if (!fs.existsSync(file))
@@ -137,7 +142,7 @@ export function readRecord(
 
 export function writeRecord(
 	record: DeploymentRecord,
-	dir = DEPLOYMENTS_DIR,
+	dir = deploymentsDir(),
 ): string {
 	fs.mkdirSync(dir, { recursive: true });
 	const file = recordPath(record.chainId, dir);
