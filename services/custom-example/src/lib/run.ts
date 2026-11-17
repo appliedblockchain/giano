@@ -118,16 +118,18 @@ export async function runAction<T>(
 		spec.params,
 	);
 
-	// Start the "before" read, but do not await it before `fn`. `fn` opens the wallet popup, and the
-	// browser allows a popup only while the click's user activation lasts. An RPC awaited first can use
-	// up that activation (Safari is strict here), and the popup is then blocked (POPUP_BLOCKED).
-	// The values are still "before" values: the read is sent before the wallet even shows the request,
-	// and a UserOperation cannot land before the user approves it. readBalances catches each call; the
-	// final catch makes sure this promise never rejects while nothing awaits it.
-	const beforeRead: Promise<{ native?: bigint; token?: bigint }> =
-		spec.noBalances
-			? Promise.resolve({})
-			: readBalances(entry, spec.account, spec.token).catch(() => ({}));
+	const before = spec.noBalances
+		? {}
+		: await readBalances(entry, spec.account, spec.token);
+	if (before.native !== undefined || before.token !== undefined) {
+		patch({
+			balances: {
+				...current.balances,
+				nativeBefore: before.native?.toString(),
+				tokenBefore: before.token?.toString(),
+			},
+		});
+	}
 
 	let result: T | undefined;
 	let error: ErrorRecord | undefined;
@@ -161,17 +163,6 @@ export async function runAction<T>(
 			...(spec.expected && !refused ? { expected: false } : {}),
 		});
 		if (isSessionEnded(raw)) ctx.onSessionEnded?.(spec.chainId, error);
-	}
-
-	const before = await beforeRead;
-	if (before.native !== undefined || before.token !== undefined) {
-		patch({
-			balances: {
-				...current.balances,
-				nativeBefore: before.native?.toString(),
-				tokenBefore: before.token?.toString(),
-			},
-		});
 	}
 
 	if (!spec.noBalances && spec.account) {
