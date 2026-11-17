@@ -4,6 +4,8 @@ import { readForwardPages } from "./forward";
 /** A node that takes at most `cap` blocks a query, narrowing to the newest as readWindow does. */
 const capped = (cap: bigint, events: readonly bigint[]) => {
 	const asked: [bigint, bigint][] = [];
+	/** Every range asked for, before the node narrowed it. */
+	const requested: [bigint, bigint][] = [];
 	const read = async ({
 		fromBlock,
 		toBlock,
@@ -11,6 +13,7 @@ const capped = (cap: bigint, events: readonly bigint[]) => {
 		fromBlock: bigint;
 		toBlock: bigint;
 	}) => {
+		requested.push([fromBlock, toBlock]);
 		const from =
 			toBlock - fromBlock + 1n > cap ? toBlock - cap + 1n : fromBlock;
 		asked.push([from, toBlock]);
@@ -20,7 +23,7 @@ const capped = (cap: bigint, events: readonly bigint[]) => {
 			items: events.filter((block) => block >= from && block <= toBlock),
 		};
 	};
-	return { read, asked };
+	return { read, asked, requested };
 };
 
 describe("readForwardPages", () => {
@@ -37,6 +40,17 @@ describe("readForwardPages", () => {
 			if (to + 1n > next) next = to + 1n;
 		}
 		expect(next).toBe(18_001n);
+	});
+
+	it("asks for the narrowed span from then on, so a capped node refuses only the first request", async () => {
+		// sepolia.base.org takes 200: a whole 45,000-block gap must not be narrowed again for every 200.
+		const { read, requested } = capped(200n, [7n, 44_999n]);
+		const result = await readForwardPages(read, 1n, 45_000n, 9_000n);
+
+		expect(result.items).toEqual([7n, 44_999n]);
+		const tooWide = requested.filter(([from, to]) => to - from + 1n > 200n);
+		expect(tooWide).toHaveLength(1);
+		expect(requested).toHaveLength(225);
 	});
 
 	it("keeps a newest-first read newest first", async () => {

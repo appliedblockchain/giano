@@ -27,7 +27,10 @@ export async function readForwardPages<T>(
 		const end = start + width - 1n < head ? start + width - 1n : head;
 		const pieces: (readonly T[])[] = [];
 		for (let to = end; to >= start; ) {
-			const page = await read({ fromBlock: start, toBlock: to });
+			// After a narrowing, ask for the span the node accepted, not the rest of the window: the rest
+			// would be refused and narrowed again, from the top, for every `width` blocks.
+			const from = to - width + 1n > start ? to - width + 1n : start;
+			const page = await read({ fromBlock: from, toBlock: to });
 			pieces.unshift(page.items);
 			if (page.fromBlock <= start) break;
 			// Narrowed to the newest blocks: keep the span the node accepts, and read the rest.

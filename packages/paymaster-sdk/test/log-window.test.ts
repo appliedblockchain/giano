@@ -184,6 +184,23 @@ describe("readWindow", () => {
 		expect(onNarrow).toHaveBeenLastCalledWith(1_125n);
 	});
 
+	it("narrows down to the Base Sepolia public RPC's 200-block range", async () => {
+		// sepolia.base.org serves toBlock - fromBlock up to 200, so 201 blocks counted inclusively.
+		// 9,000 halves to 4,500, 2,250, 1,125, 562 and 281, all refused; the floor, 200, is served.
+		const rpc = node(201n);
+		const onNarrow = vi.fn();
+		const page = await readWindow(
+			{ fromBlock: 40_000n, toBlock: 48_999n },
+			rpc.query,
+			onNarrow,
+		);
+
+		expect(rpc.seen).toEqual([{ fromBlock: 48_800n, toBlock: 48_999n }]);
+		expect(page.logs).toHaveLength(200);
+		expect(onNarrow).toHaveBeenLastCalledWith(200n);
+		expect(page.older).toEqual({ fromBlock: 48_600n, toBlock: 48_799n });
+	});
+
 	it("offers the adjacent older window, matched to the span served", async () => {
 		const page = await readWindow(
 			{ fromBlock: 10_000n, toBlock: 18_999n },

@@ -85,8 +85,11 @@ describe("readForward", () => {
 	/** A timelock whose node accepts at most `cap` blocks a query, narrowing to the newest as readWindow does. */
 	const timelock = (head: bigint, cap: bigint, found: Map<bigint, string>) => {
 		const asked: [bigint, bigint][] = [];
+		/** Every range asked for, before the node narrowed it. */
+		const requested: [bigint, bigint][] = [];
 		return {
 			asked,
+			requested,
 			client: {
 				publicClient: { getBlockNumber: async () => head },
 				getOperations: async ({
@@ -94,6 +97,7 @@ describe("readForward", () => {
 				}: {
 					range: { fromBlock: bigint; toBlock: bigint };
 				}) => {
+					requested.push([range.fromBlock, range.toBlock]);
 					const fromBlock =
 						range.toBlock - range.fromBlock + 1n > cap
 							? range.toBlock - cap + 1n
@@ -130,6 +134,21 @@ describe("readForward", () => {
 			if (to + 1n > next) next = to + 1n;
 		}
 		expect(next).toBe(25_001n);
+	});
+
+	it("asks for the narrowed span from then on, so a capped node refuses only the first request", async () => {
+		// sepolia.base.org takes 200: 45,000 blocks must not be narrowed again for every 200.
+		const { client, requested } = timelock(
+			45_000n,
+			200n,
+			new Map([[44_990n, "4"]]),
+		);
+		const result = await readForward(client, 1n);
+
+		expect(result.operations.map((entry) => entry.id.slice(-1))).toEqual(["4"]);
+		const tooWide = requested.filter(([from, to]) => to - from + 1n > 200n);
+		expect(tooWide).toHaveLength(1);
+		expect(requested).toHaveLength(225);
 	});
 
 	it("reads nothing when there are no new blocks", async () => {

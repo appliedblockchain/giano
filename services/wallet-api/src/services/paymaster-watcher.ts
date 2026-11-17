@@ -94,17 +94,20 @@ const COLD_START_LOOKBACK = 5_000n;
 /**
  * Blocks one pass may span (PAYMASTER-SPECS §8.2).
  *
- * Hosted RPCs cap `eth_getLogs` at a span — Base and Ethereum Sepolia at 10,000 blocks — and refuse
- * anything wider outright rather than truncating it. A watcher resuming from a cursor further behind
- * than that asks for the whole gap in one query, is refused, and is refused identically on every
- * poll afterwards: nothing is ingested, so the cursor never advances, so the next pass asks for a
- * gap one poll wider. On a two-second chain the cursor falls that far behind after about six hours,
- * so an ordinary outage is enough to reach it.
+ * Hosted RPCs cap `eth_getLogs` at a span and refuse anything wider outright rather than truncating
+ * it. A watcher asking for more than the cap is refused identically on every poll: nothing is
+ * ingested, so the cursor never advances, every tenant reads as unfunded and every sponsorship is
+ * refused. Clamping makes a backlog a catch-up over successive polls instead.
  *
- * Clamping makes the same outage a catch-up over successive polls. Under the cap rather than at it,
- * because several endpoints count the span inclusively.
+ * 200 is the tightest cap Giano's chains are served with: `https://sepolia.base.org`, the Base
+ * Sepolia profile's public RPC, accepts `toBlock - fromBlock` up to 200 and refuses anything wider
+ * ("eth_getLogs is limited to a 200 range", -32614). Keyed endpoints serve 10,000, but a watcher
+ * pinned to their cap stalls on the public one (the testnet rehearsal's N4). At a 4-second poll, 200
+ * blocks a pass still catches up about 100 times faster than a two-second chain makes them, so a
+ * six-hour outage clears in under four minutes. Making the span follow the RPC is left for later
+ * (tech lead's call on #279).
  */
-const MAX_POLL_RANGE = 9_000n;
+const MAX_POLL_RANGE = 200n;
 
 /**
  * The block range one pass ingests.

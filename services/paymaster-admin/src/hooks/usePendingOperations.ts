@@ -265,8 +265,11 @@ export async function readForward(
 		const end = start + width - 1n < head ? start + width - 1n : head;
 		const pages: (readonly TimelockOperation[])[] = [];
 		for (let to = end; to >= start; ) {
+			// After a narrowing, ask for the span the node accepted, not the rest of the window: the rest
+			// would be refused and narrowed again, from the top, for every `width` blocks.
+			const from = to - width + 1n > start ? to - width + 1n : start;
 			const page = await timelock.getOperations({
-				range: { fromBlock: start, toBlock: to },
+				range: { fromBlock: from, toBlock: to },
 			});
 			pages.unshift(page.operations);
 			if (page.fromBlock <= start) break;
