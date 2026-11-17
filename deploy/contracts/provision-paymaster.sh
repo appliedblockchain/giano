@@ -68,10 +68,17 @@ SIGNER_ADDR="${DERIVED##* }"
 
 # One holder per immediate role, or every role on one address (development only).
 ROLE_ARGS=()
+MISSING_HOLDERS=()
+HOLDER_ADDRESSES=()
 for pair in signer-admin:SIGNER_ADMIN param-admin:PARAM_ADMIN pauser:PAUSER \
             stake-admin:STAKE_ADMIN tenant-admin:TENANT_ADMIN fee-collector:FEE_COLLECTOR; do
   var="ROLE_HOLDER_${pair#*:}"
-  if [ -n "${!var:-}" ]; then ROLE_ARGS+=(--role-holder-"${pair%%:*}" "${!var}"); fi
+  if [ -n "${!var:-}" ]; then
+    ROLE_ARGS+=(--role-holder-"${pair%%:*}" "${!var}")
+    HOLDER_ADDRESSES+=("$(echo "${!var}" | tr '[:upper:]' '[:lower:]')")
+  else
+    MISSING_HOLDERS+=("$var")
+  fi
 done
 if [ -n "${PAYMASTER_GRANT_ALL_TO:-}" ]; then
   if [ "${GIANO_NETWORK:-}" = "mainnet" ]; then
@@ -87,6 +94,27 @@ elif [ ${#ROLE_ARGS[@]} -eq 0 ]; then
   echo "       PAYMASTER_GRANT_ALL_TO=<address> for every role on one address." >&2
   exit 1
 else
+  # A mainnet names all six, each on its own address: a missing one leaves a role with no holder, and
+  # one address in several is the collapse PAYMASTER_GRANT_ALL_TO is refused for (G42 R1).
+  if [ "${GIANO_NETWORK:-}" = "mainnet" ]; then
+    if [ ${#MISSING_HOLDERS[@]} -gt 0 ]; then
+      echo "ERROR: a mainnet names a holder for every immediate role; missing: ${MISSING_HOLDERS[*]}" >&2
+      exit 1
+    fi
+    DUPLICATES="$(printf '%s\n' "${HOLDER_ADDRESSES[@]}" | sort | uniq -d | tr '\n' ' ')"
+    if [ -n "$DUPLICATES" ]; then
+      echo "ERROR: a mainnet gives each immediate role its own holder; used for more than one role: ${DUPLICATES% }" >&2
+      exit 1
+    fi
+    # The operator key holds ROLE_ADMIN until the hand-off; an immediate role must not sit beside it.
+    OPERATOR_LOWER="$(echo "$DEPLOYER_ADDR" | tr '[:upper:]' '[:lower:]')"
+    for holder in "${HOLDER_ADDRESSES[@]}"; do
+      if [ "$holder" = "$OPERATOR_LOWER" ]; then
+        echo "ERROR: $DEPLOYER_ADDR is the operator key (DEPLOYER_PRIVATE_KEY), which holds ROLE_ADMIN until the hand-off; a mainnet gives every immediate role to another holder" >&2
+        exit 1
+      fi
+    done
+  fi
   ROLE_SUMMARY="one holder per role: ${ROLE_ARGS[*]}"
 fi
 
@@ -129,7 +157,7 @@ echo "    roles      : $ROLE_SUMMARY"
 echo "    signer     : $SIGNER_ADDR"
 echo "    tenants    : $TENANT_SUMMARY"
 echo "    withdraw to: $TENANT_WITHDRAW_ADDRESS"
-echo "    stake      : $STAKE_ETH ETH (unstake delay ${UNSTAKE_DELAY}s)   per-tenant balance: $TENANT_FUND_ETH ETH"
+echo "    stake      : $STAKE_ETH ETH (unstake delay $UNSTAKE_DELAY)   per-tenant balance: $TENANT_FUND_ETH ETH"
 echo
 
 # ROLE_ADMIN stays on the bootstrap key until contracts:handoff moves it, with the other timelocked

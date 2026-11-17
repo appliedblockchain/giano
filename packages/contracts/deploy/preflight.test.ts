@@ -18,9 +18,11 @@ import { create3Address } from "./create3";
 import { planCore } from "./plan";
 import {
 	assertRoleAdminNotDeployer,
+	handOffScanStart,
 	inspectDeployment,
 	profileCoreConfig,
 	roleAdmin,
+	scanStartProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -45,6 +47,10 @@ function client(overrides: object = {}): PublicClient {
 		getChainId: async () => 84532,
 		getCode: async () => undefined,
 		getBalance: async () => 0n,
+		// A bare chain: no Cancun. Only an EVM refusal reads as that (G42 R2).
+		call: async () => {
+			throw new Error("invalid opcode: opcode 0x5c not defined");
+		},
 		...overrides,
 	} as unknown as PublicClient;
 }
@@ -496,5 +502,76 @@ test("a hand-off goes only to the published timelock: the profile's, else the re
 		timelockMismatch(other, { record: published }) ?? "",
 		/\(the deployment record\)/,
 	);
-	assert.equal(timelockMismatch(other, {}), undefined);
+	// Nothing published: refused, not waved through (G42 R4).
+	assert.match(
+		timelockMismatch(other, {}) ?? "",
+		/no published timelock address to check --timelock 0x0+71e2 against/i,
+	);
+});
+
+test("a --from-block start needs the timelock to have had no code before it (G42 R5, #298 review)", async () => {
+	const timelock = getAddress("0x00000000000000000000000000000000000071e1");
+	const deployedAt = 100n;
+	const chain = {
+		getCode: async ({ blockNumber }: { blockNumber?: bigint }) =>
+			blockNumber !== undefined && blockNumber >= deployedAt ? "0x6001" : "0x",
+	} as unknown as PublicClient;
+	assert.equal(await scanStartProblem(chain, timelock, 0n), undefined);
+	assert.equal(await scanStartProblem(chain, timelock, 90n), undefined);
+	assert.equal(await scanStartProblem(chain, timelock, deployedAt), undefined);
+	assert.match(
+		(await scanStartProblem(chain, timelock, deployedAt + 1n)) ?? "",
+		/--from-block 101 is after the timelock's deployment: .* already has code at block 100/,
+	);
+	// An RPC without historical state cannot vouch for the start: refused.
+	const pruned = {
+		getCode: async () => {
+			throw new Error("missing trie node");
+		},
+	} as unknown as PublicClient;
+	assert.match(
+		(await scanStartProblem(pruned, timelock, 50n)) ?? "",
+		/needs an RPC that serves historical state/,
+	);
+});
+
+test("the hand-off scan starts at the recorded deployment; --from-block never starts later (G42 R5)", () => {
+	// No --from-block: the recorded deployment's block, or nothing (the scan then fails closed).
+	assert.equal(
+		handOffScanStart({ recordedTransaction: true, deployedAt: 100n }),
+		100n,
+	);
+	assert.equal(handOffScanStart({ recordedTransaction: false }), undefined);
+	// No recorded deployment transaction: --from-block stands in for it.
+	assert.equal(
+		handOffScanStart({ recordedTransaction: false, fromBlock: "42" }),
+		42n,
+	);
+	// A recorded deployment: an earlier start scans more and is fine; a later one is refused.
+	assert.equal(
+		handOffScanStart({
+			recordedTransaction: true,
+			deployedAt: 100n,
+			fromBlock: "90",
+		}),
+		90n,
+	);
+	assert.throws(
+		() =>
+			handOffScanStart({
+				recordedTransaction: true,
+				deployedAt: 100n,
+				fromBlock: "101",
+			}),
+		/--from-block 101 is later than the timelock's deployment block 100/,
+	);
+	// A recorded transaction whose receipt could not be read is not replaced by --from-block.
+	assert.throws(
+		() => handOffScanStart({ recordedTransaction: true, fromBlock: "1" }),
+		/receipt could not be read/,
+	);
+	assert.throws(
+		() => handOffScanStart({ recordedTransaction: false, fromBlock: "0x10" }),
+		/not a block number/,
+	);
 });

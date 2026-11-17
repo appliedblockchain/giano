@@ -196,6 +196,37 @@ export type Check = { ok: boolean; message: string };
  */
 const CANCUN_PROBE: Hex = "0x5f5c505f5f5f5e00";
 
+/**
+ * How nodes report an opcode the chain does not have: geth `invalid opcode: opcode 0x5c not
+ * defined`, anvil/revm `EVM error NotActivated` (measured on `anvil --hardfork shanghai`) or
+ * `InvalidFEOpcode`, Nethermind `BadInstruction`.
+ */
+const MISSING_OPCODE =
+	/invalid opcode|opcode 0x[0-9a-f]+ not defined|NotActivated|InvalidFEOpcode|OpcodeNotFound|bad ?instruction|undefined opcode/i;
+
+/**
+ * Whether a failed `eth_call` says the chain lacks an opcode. Only that means "this chain lacks
+ * Cancun". Anything else is not an answer about the chain's opcodes and is rethrown (G42 R2): a 429, a
+ * timeout or an RPC that rejects the request, and a revert too, since the probe has no REVERT and viem
+ * files "gas required exceeds allowance" as one (#298 review). The node's words are searched along the
+ * whole error chain, so an "invalid opcode" a provider sends inside an HTTP 4xx/5xx body still counts.
+ */
+export function isMissingOpcode(error: unknown): boolean {
+	for (
+		let e: unknown = error, depth = 0;
+		e && depth < 16;
+		e = (e as { cause?: unknown }).cause, depth++
+	)
+		if (
+			e instanceof Error &&
+			MISSING_OPCODE.test(
+				`${e.message} ${(e as { details?: unknown }).details ?? ""}`,
+			)
+		)
+			return true;
+	return false;
+}
+
 /** One requirement a chain must meet before any Giano contract is deployed or served on it. */
 export type Prerequisite = { name: string; ok: boolean; detail: string };
 
@@ -204,6 +235,8 @@ export type Prerequisite = { name: string; ok: boolean; detail: string };
  * and the doctor: CreateX at its address with its upstream runtime (it places every CREATE3 address),
  * the canonical EntryPoint v0.9 (the wallet implementation hardcodes it), and the Cancun opcodes.
  * A P-256 precompile is not one: the wallet verifies passkeys with its own built-in fallback.
+ * Throws when the RPC itself fails, so an unreachable or rate-limited endpoint is never reported as a
+ * chain without Cancun.
  */
 export async function chainPrerequisites(
 	client: PublicClient,
@@ -234,7 +267,8 @@ export async function chainPrerequisites(
 	let cancun = true;
 	try {
 		await client.call({ data: CANCUN_PROBE });
-	} catch {
+	} catch (error) {
+		if (!isMissingOpcode(error)) throw error;
 		cancun = false;
 	}
 	results.push({
@@ -396,9 +430,68 @@ export function timelockMismatch(
 	published: { profile?: string; record?: string },
 ): string | undefined {
 	const address = published.profile ?? published.record;
-	if (!address || getAddress(address) === getAddress(timelock))
-		return undefined;
+	// With nothing to compare against, any timelock carrying the published proposers and delays would
+	// pass the later checks, so the hand-off has no way to know it is the one tenants rely on (G42 R4).
+	if (!address)
+		return `no published timelock address to check --timelock ${getAddress(timelock)} against: neither the chain profile's timelock.address nor the deployment record names one. Run \`contracts:timelock\` (it records the address) or set the profile's timelock.address`;
+	if (getAddress(address) === getAddress(timelock)) return undefined;
 	return `--timelock ${getAddress(timelock)} is not the published timelock ${getAddress(address)} (${published.profile ? "the chain profile" : "the deployment record"})`;
+}
+
+/**
+ * Where the hand-off's role-grant scan starts. The timelock's deployment block, from its recorded
+ * deployment transaction, is the authority: `--from-block` only stands in for it when the record has
+ * none, and never starts later than it, since a later start skips earlier grants and an extra
+ * proposer would go unseen (G42 R5). Undefined when neither is known: the scan then fails closed.
+ */
+export function handOffScanStart(options: {
+	/** The record names the timelock's deployment transaction. */
+	recordedTransaction: boolean;
+	/** That transaction's block, when its receipt could be read. */
+	deployedAt?: bigint;
+	/** `--from-block`, as given. */
+	fromBlock?: string;
+}): bigint | undefined {
+	const { recordedTransaction, deployedAt, fromBlock } = options;
+	if (fromBlock === undefined) return deployedAt;
+	if (!/^\d+$/.test(fromBlock))
+		throw new Error(`--from-block is not a block number: ${fromBlock}`);
+	const given = BigInt(fromBlock);
+	if (!recordedTransaction) return given;
+	if (deployedAt === undefined)
+		throw new Error(
+			"the deployment record names the timelock's deployment transaction, but its receipt could not be read; retry once the RPC serves it. --from-block does not replace a recorded deployment",
+		);
+	if (given > deployedAt)
+		throw new Error(
+			`--from-block ${given} is later than the timelock's deployment block ${deployedAt}: the scan would skip the role grants made at deployment. Leave it out; the recorded deployment sets the start`,
+		);
+	return given;
+}
+
+/**
+ * Why `--from-block` cannot start the hand-off's role-grant scan, or undefined when it can: the
+ * timelock must have had no code in the block before it, so every grant made at deployment is at or
+ * after the start. This holds with or without a deployment record; a start that only the chain profile
+ * vouches for would otherwise be unbounded (G42 R5, review of #298). Needs an RPC that serves
+ * historical state; when it cannot, the hand-off refuses rather than trusting the start.
+ */
+export async function scanStartProblem(
+	client: Pick<PublicClient, "getCode">,
+	timelock: Address,
+	fromBlock: bigint,
+): Promise<string | undefined> {
+	if (fromBlock === 0n) return undefined;
+	const before = fromBlock - 1n;
+	let code: Hex | undefined;
+	try {
+		code = await client.getCode({ address: timelock, blockNumber: before });
+	} catch {
+		return `could not read ${timelock}'s code at block ${before} to check --from-block ${fromBlock}: with --from-block the hand-off needs an RPC that serves historical state`;
+	}
+	if (code && code !== "0x")
+		return `--from-block ${fromBlock} is after the timelock's deployment: ${timelock} already has code at block ${before}, so the scan would skip the role grants made at deployment`;
+	return undefined;
 }
 
 /** The timelock configuration a hand-off is checked against: the profile's, else the recorded one. */
@@ -408,6 +501,8 @@ export type PublishedTimelock = {
 	delays: Partial<TimelockDelays>;
 	/** The block the timelock was deployed in, to enumerate its role grants from. */
 	fromBlock?: bigint;
+	/** The record names the timelock's deployment transaction (then `--from-block` cannot replace it). */
+	recordedTransaction?: boolean;
 };
 
 /**
@@ -490,7 +585,9 @@ export async function handOffProblems(
 	]);
 	if (published.fromBlock === undefined)
 		problems.push(
-			"the timelock's deployment block is unknown, so its role grants cannot be listed: record its deployment transaction (deploy:cli timelock), or pass --from-block",
+			published.recordedTransaction
+				? "the timelock's deployment block is unknown: the receipt of its recorded deployment transaction could not be read, so its role grants cannot be listed. Retry once the RPC serves it"
+				: "the timelock's deployment block is unknown, so its role grants cannot be listed: record its deployment transaction (deploy:cli timelock), or pass --from-block",
 		);
 	else
 		try {

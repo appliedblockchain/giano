@@ -39,6 +39,11 @@ import {
 	Wallet,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
+import {
+	mainnetRoleProblems,
+	provisioningIsMainnet,
+	unstakeDelaySeconds,
+} from "../deploy/provision-rules";
 import { gianoPaymasterAbi, iEntryPointAbi } from "../generated";
 
 /** Anvil's first account. Deterministic, funded, and never used anywhere real. */
@@ -219,6 +224,19 @@ async function main(): Promise<void> {
 		if (!isAddress(holder))
 			throw new Error(`role holder for ${flag} is not an address: ${holder}`);
 	}
+	// The mainnet rules, here as well as in the operator wrapper, so running this script directly does
+	// not skip them (#298 review).
+	const mainnet = provisioningIsMainnet(chainId);
+	const roleProblems = mainnetRoleProblems({
+		mainnet,
+		grantAllTo,
+		holders: Object.fromEntries(
+			namedHolders.map((flag) => [flag, flags[`role-holder-${flag}`]]),
+		),
+		operator: wallet.address,
+	});
+	if (roleProblems.length)
+		throw new Error(`refusing to provision:\n  ${roleProblems.join("\n  ")}`);
 	for (const signer of repeated.signer ?? [])
 		if (!isAddress(signer))
 			throw new Error(`--signer is not an address: ${signer}`);
@@ -227,6 +245,9 @@ async function main(): Promise<void> {
 		stakeEth && stakeEth !== "true"
 			? ether("--stake-eth", stakeEth)
 			: undefined;
+	const unstakeDelay = unstakeDelaySeconds(flags["unstake-delay"] ?? "86400", {
+		mainnet,
+	});
 	const tenants = (repeated.tenant ?? []).map(parseTenant);
 	for (const tenant of tenants)
 		ether(`tenant ${tenant.slug}'s funding`, tenant.fundEth);
@@ -308,7 +329,6 @@ async function main(): Promise<void> {
 
 		// --- stake -------------------------------------------------------------------------------
 		if (stakeWei !== undefined) {
-			const unstakeDelay = Number(flags["unstake-delay"] ?? 86_400);
 			const info = await entryPoint.getDepositInfo(paymasterAddress);
 			if (info.staked && info.stake >= stakeWei) {
 				log(`  • already staked: ${formatEther(info.stake)} ETH`);

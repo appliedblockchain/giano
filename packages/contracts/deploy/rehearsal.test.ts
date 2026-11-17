@@ -108,13 +108,32 @@ function inChild(code: string, extraEnv: Record<string, string>): string {
 }
 
 test("a rehearsal process reads and writes records under deploy/rehearsal, never deployments/", () => {
-	const code =
-		"import { DEPLOYMENTS_DIR } from './deploy/records.ts'; console.log(DEPLOYMENTS_DIR);";
-	assert.equal(inChild(code, env), join(REHEARSAL_DIR, "records"));
+	// Before activation (a fork check against the RPC), the variable alone selects nothing (G42 R3).
+	const code = [
+		"import { activateRehearsal } from './deploy/config.ts';",
+		"import { deploymentsDir } from './deploy/records.ts';",
+		"const before = deploymentsDir();",
+		"await activateRehearsal({ request: async () => ({ forkConfig: { forkUrl: 'https://fork.invalid' } }) });",
+		"console.log(before + '|' + deploymentsDir());",
+	].join(" ");
 	assert.equal(
-		inChild(code, { [REHEARSAL_DEPLOYER_ENV]: "" }),
-		COMMITTED_DEPLOYMENTS_DIR,
+		inChild(code, env),
+		`${COMMITTED_DEPLOYMENTS_DIR}|${join(REHEARSAL_DIR, "records")}`,
 	);
+});
+
+test("a stale rehearsal variable on a real chain is refused, and records stay the committed ones", () => {
+	const code = [
+		"import { activateRehearsal } from './deploy/config.ts';",
+		"import { deploymentsDir } from './deploy/records.ts';",
+		"let refused = '';",
+		"try { await activateRehearsal({ request: async () => { throw new Error('no anvil_ namespace'); } }); }",
+		"catch (error) { refused = error.message; }",
+		"console.log(deploymentsDir() + '|' + refused);",
+	].join(" ");
+	const [dir, refused] = inChild(code, env).split("|");
+	assert.equal(dir, COMMITTED_DEPLOYMENTS_DIR);
+	assert.match(refused, /accepted only on an anvil fork/);
 });
 
 test("the published registry is built from the committed records, even in a rehearsal process", () => {

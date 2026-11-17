@@ -128,7 +128,9 @@ import {
 	type CoreConfig,
 	chainPrerequisites,
 	handOffProblems,
+	handOffScanStart,
 	isContractAccount,
+	scanStartProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -139,8 +141,8 @@ import {
 	profileForChain,
 } from "./profiles";
 import {
-	DEPLOYMENTS_DIR,
 	type DeploymentRecord,
+	deploymentsDir,
 	readRecord,
 	recordDeviations,
 	recordPath,
@@ -183,7 +185,7 @@ const { positionals, values } = parseArgs({
 		timelock: { type: "string" },
 		salt: { type: "string" },
 		"safe-json": { type: "string" },
-		/** handoff: the timelock's deployment block, when its record has no deployment transaction. */
+		/** handoff: the timelock's deployment block, when its record has no deployment transaction (never later than a recorded one). */
 		"from-block": { type: "string" },
 		proposer: { type: "string", multiple: true },
 		executor: { type: "string", multiple: true },
@@ -354,7 +356,7 @@ function resolveNetwork(chainId: number, local: boolean): Network {
  * would otherwise skip the mainnet deviation gate and the R-29 test-fixture refusal.
  */
 function chainRecord(chainId: number, target: Network): DeploymentRecord {
-	const dir = values["record-dir"] ?? DEPLOYMENTS_DIR;
+	const dir = values["record-dir"] ?? deploymentsDir();
 	const record = readRecord(chainId, undefined, dir);
 	if (record.network && record.network !== target.network)
 		throw new Error(
@@ -418,7 +420,7 @@ async function connect(): Promise<{
 	const rehearsal = await activateRehearsal(probe);
 	if (rehearsal)
 		log(
-			`REHEARSAL on an anvil fork: stand-in deployer ${rehearsal}; records go to ${DEPLOYMENTS_DIR}`,
+			`REHEARSAL on an anvil fork: stand-in deployer ${rehearsal}; records go to ${deploymentsDir()}`,
 		);
 	const chain = defineChain({
 		id: chainId,
@@ -589,9 +591,7 @@ function release(local: boolean, target?: Network): Release {
 }
 
 function save(ctx: DeployContext): void {
-	log(
-		`recorded in ${writeRecord(ctx.record, values["record-dir"] ?? DEPLOYMENTS_DIR)}`,
-	);
+	log(`recorded in ${writeRecord(ctx.record, values["record-dir"])}`);
 }
 
 async function main(): Promise<void> {
@@ -827,9 +827,7 @@ async function main(): Promise<void> {
 				executors: params.executors,
 				delays: params.delays,
 			};
-			log(
-				`recorded in ${writeRecord(record, values["record-dir"] ?? DEPLOYMENTS_DIR)}`,
-			);
+			log(`recorded in ${writeRecord(record, values["record-dir"])}`);
 			log(
 				`Next: \`handoff --timelock ${deployed.address}\` gives it the timelocked roles; then run doctor chain --timelock ${deployed.address}.`,
 			);
@@ -878,26 +876,38 @@ async function main(): Promise<void> {
 				throw new Error(
 					`no published timelock configuration for chain ${chainId} (a profile's timelock section, or the record of \`deploy:cli timelock\`); refusing to hand off to an unverified timelock`,
 				);
-			const deployedIn = values["from-block"]
-				? BigInt(values["from-block"])
-				: recorded?.transactionHash
+			const deployedIn = handOffScanStart({
+				recordedTransaction: Boolean(recorded?.transactionHash),
+				deployedAt: recorded?.transactionHash
 					? (
 							await publicClient
 								.getTransactionReceipt({ hash: recorded.transactionHash })
 								.catch(() => undefined)
 						)?.blockNumber
-					: undefined;
-			const problems = await handOffProblems(publicClient, {
-				network: target.network,
-				proxy,
-				timelock,
-				published: {
-					proposers: published.proposers,
-					executors: published.executors,
-					delays: published.delays as Partial<TimelockDelays>,
-					fromBlock: deployedIn,
-				},
+					: undefined,
+				fromBlock: values["from-block"],
 			});
+			// A --from-block start is checked against the chain itself: the timelock had no code before
+			// it. With only the profile naming the timelock, nothing else bounds it.
+			const startProblem =
+				values["from-block"] !== undefined && deployedIn !== undefined
+					? await scanStartProblem(publicClient, timelock, deployedIn)
+					: undefined;
+			const problems = [
+				...(startProblem ? [startProblem] : []),
+				...(await handOffProblems(publicClient, {
+					network: target.network,
+					proxy,
+					timelock,
+					published: {
+						proposers: published.proposers,
+						executors: published.executors,
+						delays: published.delays as Partial<TimelockDelays>,
+						fromBlock: deployedIn,
+						recordedTransaction: Boolean(recorded?.transactionHash),
+					},
+				})),
+			];
 			if (problems.length)
 				throw new Error(
 					`refusing to hand ${proxy} to ${timelock}:\n  ${problems.join("\n  ")}`,
