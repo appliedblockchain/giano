@@ -23,6 +23,7 @@ import {
 	profileCoreConfig,
 	roleAdmin,
 	scanStartProblem,
+	testingProblem,
 	testTokenProblem,
 	timelockMismatch,
 	verifyCoreState,
@@ -525,6 +526,19 @@ test("a hand-off goes only to the published timelock: the profile's, else the re
 		timelockMismatch(other, {}) ?? "",
 		/no published timelock address to check --timelock 0x0+71e2 against/i,
 	);
+});
+
+test("testing (the permissive paymaster too): never on a production chain, served testnets included (R-29)", () => {
+	assert.equal(testingProblem(31337, "local"), undefined);
+	assert.equal(testingProblem(4242, "testnet"), undefined);
+	for (const chainId of [84532, 11155111])
+		assert.match(
+			testingProblem(chainId, "testnet") ?? "",
+			new RegExp(`chain ${chainId} is a production chain.*use test-token`),
+		);
+	assert.match(testingProblem(8453, "mainnet") ?? "", /production chain/);
+	// A chain declared mainnet, off the fixed list.
+	assert.match(testingProblem(4242, "mainnet") ?? "", /production chain/);
 });
 
 test("test-token: never on a mainnet, and only from the canonical deployer on a public chain (F12)", () => {

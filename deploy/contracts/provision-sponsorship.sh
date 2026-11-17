@@ -27,8 +27,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export TENANT_SLUG
 : "${ADMIN_API_KEY:?provide the tenant admin API key in the selected operator environment}"
 
-# Empty on a production chain (8453 / 84532 / 11155111): the deploy script never puts the demo
-# ERC-20 there (R-29).
+# Empty on a mainnet, which never carries the demo ERC-20 (R-29). The served testnets (84532,
+# 11155111) carry it once `deploy:cli test-token` has run there; set it, or list it in
+# SPONSOR_ALLOWLIST, to sponsor it.
 TEST_ERC20_ADDRESS="${TEST_ERC20_ADDRESS:-}"
 # The tenant's own contracts to sponsor, comma-separated addresses, every function allowed. The
 # wallet-api enables no sponsorship at all, wallet management included, for a tenant whose allowlist

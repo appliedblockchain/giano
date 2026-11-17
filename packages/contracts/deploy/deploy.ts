@@ -385,7 +385,6 @@ export async function deployCore(
 	);
 }
 
-/** PrivateERC20 and PermissivePaymaster. Never on a production chain (the CLI enforces it). */
 /**
  * The test ERC-20 alone (`PrivateERC20`, anyone may mint): the reference dApp's token. Unlike the
  * permissive paymaster it moves no sponsorship funds, so the served testnets may carry it (R-29 is
@@ -412,6 +411,7 @@ export async function deployTestToken(
 	);
 }
 
+/** PrivateERC20 and PermissivePaymaster. Never on a production chain (the CLI enforces it). */
 export async function deployTesting(
 	ctx: DeployContext,
 	release: Release,

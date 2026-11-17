@@ -25,6 +25,7 @@ import {
 	ENTRY_POINT_V09,
 	isClassDeployer,
 	isMainnetChain,
+	isProductionChain,
 	type NetworkClass,
 } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
@@ -493,6 +494,20 @@ export async function scanStartProblem(
 	if (code && code !== "0x")
 		return `--from-block ${fromBlock} is after the timelock's deployment: ${timelock} already has code at block ${before}, so the scan would skip the role grants made at deployment`;
 	return undefined;
+}
+
+/**
+ * Why `deploy:cli testing` must not run, or undefined when it may: never on a production chain, the
+ * fixed list (mainnets and the served testnets) or any chain declared mainnet, because it deploys the
+ * permissive paymaster (R-29, PAYMASTER-SPECS §12.1 layer 1).
+ */
+export function testingProblem(
+	chainId: number,
+	network: NetworkClass,
+): string | undefined {
+	return isProductionChain(chainId, network)
+		? `chain ${chainId} is a production chain; the test fixtures must never be deployed there (R-29). For the test ERC-20 alone on a served testnet, use test-token`
+		: undefined;
 }
 
 /**
