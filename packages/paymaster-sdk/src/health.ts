@@ -55,8 +55,16 @@ export type HealthTimelock = {
 export type HealthContext = {
 	/** Without one, the report warns that no timelock is configured. */
 	timelock?: HealthTimelock;
-	/** The runtime code at the implementation, matched to a contracts release. */
-	implementation?: { address: Address; code: Hex | undefined };
+	/**
+	 * The runtime code at the implementation, matched to a contracts release. `source: "logs"`: the
+	 * address was read from the proxy's `Upgraded` logs, not from the implementation slot, and a
+	 * release there is a warning (`GianoPaymasterClient.readImplementationWithSource`).
+	 */
+	implementation?: {
+		address: Address;
+		code: Hex | undefined;
+		source?: "slot" | "logs";
+	};
 };
 
 /** Below this, sponsored operations start failing in ways that look like client bugs. */
@@ -418,16 +426,30 @@ const NEWEST_RELEASE =
 		(entry) => entry.contract === "GianoPaymaster",
 	).at(-1)?.release ?? "none";
 
-/** The implementation runs a contracts release (D13), whatever address it was deployed at. */
+/**
+ * The implementation runs a contracts release (D13), whatever address it was deployed at. An
+ * address read from the proxy's `Upgraded` logs is not verified, so a release there is a warning,
+ * as `giano-doctor` reports it.
+ */
 function implementationCheck({
 	address,
 	code,
+	source,
 }: NonNullable<HealthContext["implementation"]>): HealthCheck {
 	const present = code !== undefined && code !== "0x";
 	// Given the address, releaseOf also checks the code names itself in UUPS's `__self`.
 	const release = present
 		? releaseOf("GianoPaymaster", code, address)
 		: undefined;
+	if (release && source === "logs")
+		return {
+			id: "implementation",
+			level: "warn",
+			label: "implementation is a release, but not verified",
+			detail: `release ${release.release} at ${address}, read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt)`,
+			remedy:
+				"The code the proxy delegates to can emit an Upgraded event that names another address. Read the implementation slot through an RPC that allows eth_getStorageAt to verify it.",
+		};
 	return release
 		? {
 				id: "implementation",

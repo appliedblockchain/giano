@@ -33,13 +33,15 @@ async function main() {
 			config: { type: "string" },
 			"env-file": { type: "string" },
 			plan: { type: "boolean" },
+			/** Accept a paymaster implementation read from Upgraded logs (deploy/plan.ts). */
+			"accept-unverified-implementation": { type: "boolean" },
 			help: { type: "boolean" },
 		},
 	});
 	const [command] = positionals;
 	if (values.help) {
 		console.log(
-			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.",
+			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.",
 		);
 		return;
 	}
@@ -210,7 +212,13 @@ async function main() {
 				profile,
 				profile.release,
 				getAddress(admin),
-				{ signer: null, record: readRecord(profile.chainId) },
+				{
+					signer: null,
+					record: readRecord(profile.chainId),
+					acceptUnverifiedImplementation: Boolean(
+						values["accept-unverified-implementation"],
+					),
+				},
 			);
 			if (checks.some((check) => !check.ok))
 				throw new OperatorError(

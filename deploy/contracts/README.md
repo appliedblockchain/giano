@@ -327,6 +327,13 @@ release code, the plan uses it (and says so), and the next run that saves the re
 paymaster implementation. A proxy pointing at anything else still blocks. After the hand-off, a
 profile with `timelock.address` verifies with the timelock as ROLE_ADMIN.
 
+An RPC that refuses `eth_getStorageAt` (Silent Data) gives no implementation slot. The tooling then
+reads the paymaster implementation from the proxy's latest `Upgraded` event, which is not verified:
+the code the proxy delegates to can emit an `Upgraded` event that names another address.
+`contracts:deploy`, `deploy:cli core`, `contracts:provision` and `contracts:sponsorship` refuse such
+an implementation, and the plan does not reconcile it, unless you pass
+`--accept-unverified-implementation`. With the flag, they use it and print a warning.
+
 ## 5. Cut over services and clients together
 
 The release operator owns this gate. Snapshot the current chain document, service/image versions,

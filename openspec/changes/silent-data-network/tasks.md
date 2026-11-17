@@ -7,7 +7,7 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 | PR | Title | Tasks | Base | Changeset |
 |---|---|---|---|---|
 | 0 | `openspec(contracts, bundler): Silent Data network support (H6)` | this change folder only | `main` (bottom of the stack) | none |
-| 1 | `fix(contracts): read the proxy implementation from Upgraded logs (H6)` | group 1 | PR 0 | `giano-contracts` minor, `giano-paymaster-sdk` patch |
+| 1 | `fix(contracts): read the proxy implementation from Upgraded logs (H6)` | group 1 | PR 0 | `giano-contracts` minor, `giano-paymaster-sdk` minor |
 | 2 | `feat(bundler): estimate without state overrides; accept fee 0 on gasless chains (H6)` | group 2 | PR 1 | `giano-contracts` minor (`chains.ts` schema) |
 | 3 | `feat(contracts): sign RPC requests with --signed-rpc (H6)` | group 3 | PR 2 | `giano-contracts` minor |
 | 4 | `feat(contracts): private test ERC-20 for Silent Data chains (H6)` | group 5 | PR 3 | `giano-contracts` minor |
@@ -34,6 +34,7 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 - [x] 1.4 Add a paymaster-sdk test: with a client whose `getStorageAt` throws, `readImplementationSlot()` returns the implementation from a mocked `eth_getLogs`, and every requested span is at most 9,000 blocks, so it passes the platform read relay's limit. Verify with `pnpm -F @appliedblockchain/giano-paymaster-sdk test`.
 - [x] 1.5 Document the fallback in `packages/contracts/README.md` (the `erc1967` exports). Verify that the README names `proxyImplementation` and the 9,000-block span.
 - [x] 1.6 Review fixes on PR 1: spans of 9,000 blocks (`UPGRADED_LOG_CHUNK`); the walk is bounded by `fromBlock` and `maxChunks` and kept per client, proxy and `fromBlock`, so a later read searches only the blocks after a checkpoint 64 blocks behind the head; the fallback runs only when the RPC refuses the method (`isMethodRefusedError`), and a failed fallback keeps the storage-read error as `cause`. `giano-doctor` uses the same refusal check. Verified: `deploy/erc1967.test.ts` and `test/client-upgrade.test.ts` cover each fix; `pnpm -F @appliedblockchain/giano-contracts test:deploy` and `pnpm -F @appliedblockchain/giano-paymaster-sdk test` pass.
+- [x] 1.7 Second review round on PR 1, only for what the `Upgraded`-log fallback introduces: the deploy tooling refuses a log answer, and does not reconcile the record to it, unless `--accept-unverified-implementation` (then a warning); the paymaster SDK passes the source to `getHealth` and the console's Health, which warn on a log answer; wallet-api's chain check sends at most `PAYMASTER_LOG_REQUESTS_PER_CHECK` (100) log requests per check, so boot is not held up, and logs the unverified warning also when the background probe admits a chain. Verified: `deploy/plan.test.ts`, `deploy/preflight.test.ts`, paymaster-sdk `test/health.test.ts`, wallet-api `test/multichain.test.ts` and `test/platform-chains.test.ts` cover each fix.
 
 ## 2. Bundler on restricted chains
 

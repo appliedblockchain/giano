@@ -15,6 +15,7 @@ import { loadConfig } from "../src/config.js";
 import chainPlugin from "../src/plugins/chain.js";
 import {
 	isFatalFailure,
+	PAYMASTER_LOG_REQUESTS_PER_CHECK,
 	probeDivergence,
 	recoveryDivergence,
 	recoveryVerified,
@@ -748,6 +749,66 @@ describe("verifyChain", () => {
 		const fromLogs = await verifyChain(sponsored, refusing, fakeRelease);
 		expect(fromLogs.failures).toEqual([]);
 		expect(fromLogs.paymasterImplementationUnverified).toBe(true);
+	});
+
+	it("one check sends a bounded number of log requests, and the next check continues the search", async () => {
+		const sponsored = {
+			...descriptor,
+			sponsorshipPaymaster:
+				"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96" as `0x${string}`,
+		};
+		// The only Upgraded event is far back: more than one check's requests away from the head.
+		const head = 1_500_000n;
+		const upgradedAt = 1_000n;
+		const ranges: [bigint, bigint][] = [];
+		const refusing = {
+			...fakeClient({}),
+			async getStorageAt() {
+				throw new Error("JSON RPC method not whitelisted");
+			},
+			async getBlockNumber() {
+				return head;
+			},
+			async request({
+				params: [{ fromBlock, toBlock }],
+			}: {
+				params: [{ fromBlock: string; toBlock: string }];
+			}) {
+				const range: [bigint, bigint] = [BigInt(fromBlock), BigInt(toBlock)];
+				ranges.push(range);
+				return range[0] <= upgradedAt && upgradedAt <= range[1]
+					? [
+							{
+								blockNumber: `0x${upgradedAt.toString(16)}`,
+								topics: [
+									"0x",
+									`0x${PAYMASTER_IMPLEMENTATION.slice(2).padStart(64, "0")}`,
+								],
+							},
+						]
+					: [];
+			},
+		} as unknown as PublicClient;
+
+		const first = await verifyChain(sponsored, refusing, fakeRelease);
+		expect(ranges).toHaveLength(PAYMASTER_LOG_REQUESTS_PER_CHECK);
+		// Not found within the limit: the chain starts unavailable, which is not fatal.
+		expect(first.failures.map((failure) => failure.kind)).toEqual([
+			"unreachable",
+		]);
+		expect(first.failures.every((failure) => !isFatalFailure(failure))).toBe(
+			true,
+		);
+
+		// The next check, through the same client, continues below where the first one stopped.
+		const lowest = ranges.at(-1)?.[0] ?? 0n;
+		ranges.length = 0;
+		const second = await verifyChain(sponsored, refusing, fakeRelease);
+		expect(second.failures).toEqual([]);
+		expect(second.paymasterImplementationUnverified).toBe(true);
+		expect(ranges.some(([from, to]) => to < lowest && from <= upgradedAt)).toBe(
+			true,
+		);
 	});
 
 	it("a paymaster initialised with another EntryPoint is FATAL", async () => {

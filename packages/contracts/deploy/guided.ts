@@ -63,12 +63,14 @@ async function main() {
 			"role-admin": { type: "string" },
 			release: { type: "string" },
 			plan: { type: "boolean" },
+			/** Accept a paymaster implementation read from Upgraded logs (deploy/plan.ts). */
+			"accept-unverified-implementation": { type: "boolean" },
 			help: { type: "boolean" },
 		},
 	});
 	if (values.help) {
 		console.log(
-			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
+			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan] [--accept-unverified-implementation]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: the run refuses it unless --accept-unverified-implementation.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
 		);
 		return;
 	}
@@ -236,12 +238,15 @@ async function main() {
 			);
 		}
 		const signer = account?.address ?? null;
+		const acceptUnverifiedImplementation = Boolean(
+			values["accept-unverified-implementation"],
+		);
 		const { checks, plan } = await inspectDeployment(
 			client,
 			profile,
 			version,
 			admin,
-			{ signer, record },
+			{ signer, record, acceptUnverifiedImplementation },
 		);
 		for (const check of checks)
 			console.log(`${check.ok ? "OK" : "BLOCKED"}: ${check.message}`);
@@ -305,6 +310,7 @@ async function main() {
 		const fresh = await inspectDeployment(client, profile, version, admin, {
 			signer,
 			record,
+			acceptUnverifiedImplementation,
 		});
 		if (
 			!fresh.plan ||
@@ -361,13 +367,14 @@ async function main() {
 			signer,
 			overrides: profile.addresses,
 			record,
+			acceptUnverifiedImplementation,
 		});
 		for (const warning of await verifyCoreState(
 			client,
 			admin,
 			profileCoreConfig(profile),
 			after,
-			{ timelock: profile.timelock?.address },
+			{ timelock: profile.timelock?.address, acceptUnverifiedImplementation },
 		))
 			console.warn(`⚠ ${warning}`);
 		writeRecord(record);

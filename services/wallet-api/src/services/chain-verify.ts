@@ -110,6 +110,22 @@ export type ChainVerification = {
 	failures: ChainVerificationFailure[];
 };
 
+/**
+ * The warning for a chain whose paymaster implementation came from `Upgraded` logs. Logged when
+ * the chain is checked at boot and when it is admitted later, after a failed check.
+ */
+export function unverifiedImplementationWarning(chainId: number): string {
+	return `chain ${chainId}: the paymaster implementation was read from Upgraded logs, not verified against the implementation slot — the RPC refuses eth_getStorageAt, and the code the proxy delegates to can emit an Upgraded event that names another address`;
+}
+
+/**
+ * At most this many `eth_getLogs` requests per check, when the RPC refuses `eth_getStorageAt` and
+ * the paymaster implementation comes from its `Upgraded` logs (Silent Data). Keeps one check short,
+ * so boot does not wait for a long search. A check that stops at this limit leaves the chain
+ * unavailable, and the background probe's next check continues the search through the same client.
+ */
+export const PAYMASTER_LOG_REQUESTS_PER_CHECK = 100;
+
 /** True for a failure that must prevent the deployment from serving this chain. */
 export function isFatalFailure(failure: ChainVerificationFailure): boolean {
 	return failure.kind !== "unreachable";
@@ -294,7 +310,9 @@ export async function verifyChain(
 				// A stock ERC1967Proxy proves nothing about what it delegates to: the implementation
 				// slot must hold paymaster release code.
 				// An empty slot delegates to nothing: reported as no release code at the zero address.
-				const read = await proxyImplementationWithSource(client, paymaster);
+				const read = await proxyImplementationWithSource(client, paymaster, {
+					maxChunks: PAYMASTER_LOG_REQUESTS_PER_CHECK,
+				});
 				if (read.source === "logs")
 					result.paymasterImplementationUnverified = true;
 				const implementation = read.implementation ?? zeroAddress;

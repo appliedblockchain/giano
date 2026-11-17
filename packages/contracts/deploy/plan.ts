@@ -21,7 +21,7 @@ import {
 	keccak256,
 	type PublicClient,
 } from "viem";
-import { proxyImplementation } from "../erc1967";
+import { proxyImplementationWithSource } from "../erc1967";
 import { gianoSmartWalletFactoryAbi } from "../generated";
 import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
@@ -111,6 +111,11 @@ export type Plan = {
 	 * ({@link reconcileRecord}).
 	 */
 	reconciled: Reconciliation[];
+	/**
+	 * What the plan relies on without having verified it, because the run accepted it
+	 * (`acceptUnverifiedImplementation`). {@link formatPlan} prints each one.
+	 */
+	warnings: string[];
 };
 
 /** One executed upgrade the plan read from the chain rather than from the record. */
@@ -138,7 +143,29 @@ export type PlanInput = {
 	verifyOnly?: boolean;
 	/** For tests: the class deployer instead of deploy/config.ts. */
 	deployer?: Address | null;
+	/**
+	 * Accept a paymaster implementation read from the proxy's `Upgraded` logs, because the RPC
+	 * refuses `eth_getStorageAt` (`--accept-unverified-implementation`). The plan then relies on it
+	 * and warns. Without it, such an implementation is a blocker and is never reconciled: the code
+	 * the proxy delegates to can emit an `Upgraded` event that names another address.
+	 */
+	acceptUnverifiedImplementation?: boolean;
 };
+
+/**
+ * Why the paymaster implementation the plan read is not proof of what the proxy at `proxy` runs:
+ * it was read from the proxy's `Upgraded` logs, because the RPC refuses `eth_getStorageAt`. The
+ * refusal when the run did not accept it, else the warning.
+ */
+export function unverifiedImplementation(
+	proxy: Address,
+	implementation: Address | null,
+	accepted: boolean,
+): string {
+	return accepted
+		? `paymaster proxy at ${proxy}: implementation ${implementation ?? "(none)"} read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt); accepted with --accept-unverified-implementation.`
+		: `paymaster proxy at ${proxy}: the RPC refuses eth_getStorageAt, so its implementation ${implementation ?? "(none)"} was read from Upgraded logs and is not verified. The code the proxy delegates to can emit an Upgraded event that names another address. Check the implementation slot through an RPC that allows eth_getStorageAt, or rerun with --accept-unverified-implementation to accept it.`;
+}
 
 /** The code at `address`; when it is several releases' code, `release` (the run's) if one of them. */
 async function codeAt(
@@ -207,6 +234,7 @@ export async function planCore(
 	const signer = input.signer ? getAddress(input.signer) : null;
 	const overrides = input.overrides ?? {};
 	const blockers: string[] = [];
+	const warnings: string[] = [];
 	if (!deployer)
 		blockers.push(
 			`The ${input.network} canonical deployer is not configured (DEPLOYERS.${input.network} in packages/contracts/deploy/config.ts). Nothing can be signed for a ${input.network} chain until it is set.`,
@@ -319,7 +347,14 @@ export async function planCore(
 			);
 	}
 
-	blockers.push(...(await immutableProblems(client, contracts)));
+	blockers.push(
+		...(await immutableProblems(
+			client,
+			contracts,
+			input.acceptUnverifiedImplementation ?? false,
+			warnings,
+		)),
+	);
 
 	const deviations = contracts
 		.filter((c) => c.deviation)
@@ -340,13 +375,16 @@ export async function planCore(
 		deviations,
 		blockers,
 		reconciled,
+		warnings,
 	};
 }
 
 /**
  * The paymaster upgrade the chain executed that the record does not show: the proxy points at an
  * implementation the record lists among its upgrade targets, and that implementation holds paymaster
- * release code. An implementation that is not a recorded target is left to the usual blocker.
+ * release code. An implementation that is not a recorded target is left to the usual blocker. An
+ * implementation read from the proxy's `Upgraded` logs is not reconciled unless the run accepts it
+ * (`acceptUnverifiedImplementation`); immutableProblems refuses the plan then.
  */
 async function executedUpgrades(
 	client: PublicClient,
@@ -360,7 +398,10 @@ async function executedUpgrades(
 	if (!proxy) return [];
 	const proxyCode = await client.getCode({ address: getAddress(proxy) });
 	if (!proxyCode || proxyCode === "0x") return [];
-	const current = await proxyImplementation(client, getAddress(proxy));
+	const read = await proxyImplementationWithSource(client, getAddress(proxy));
+	if (read.source === "logs" && !input.acceptUnverifiedImplementation)
+		return [];
+	const current = read.implementation;
 	if (!current) return [];
 	const named = record.contracts.paymasterImplementation?.address ?? null;
 	if (same(named, current)) return [];
@@ -404,11 +445,15 @@ export function reconcileRecord(record: DeploymentRecord, plan: Plan): boolean {
  * The semantic checks behind the masked immutables (deploy/immutable-checks.ts), for contracts that
  * already exist, overrides included: an existing factory must clone the planned wallet
  * implementation, and an existing paymaster proxy (itself release proxy code, which codeAt checked)
- * must point at the planned paymaster implementation, which must be paymaster release code.
+ * must point at the planned paymaster implementation, which must be paymaster release code. An
+ * implementation read from the proxy's `Upgraded` logs is a problem unless `acceptUnverified`, and
+ * then a line in `warnings`.
  */
 async function immutableProblems(
 	client: PublicClient,
 	contracts: PlannedContract[],
+	acceptUnverified: boolean,
+	warnings: string[],
 ): Promise<string[]> {
 	const problems: string[] = [];
 	const find = (key: CoreKey) => contracts.find((c) => c.key === key);
@@ -428,7 +473,19 @@ async function immutableProblems(
 	const proxy = find("paymasterProxy");
 	const paymaster = find("paymasterImplementation");
 	if (proxy?.actual && proxy.code.state === "release") {
-		const implementation = await proxyImplementation(client, proxy.actual);
+		const read = await proxyImplementationWithSource(client, proxy.actual);
+		const implementation = read.implementation;
+		if (read.source === "logs") {
+			if (!acceptUnverified) {
+				problems.push(
+					unverifiedImplementation(proxy.actual, implementation, false),
+				);
+				return problems;
+			}
+			warnings.push(
+				unverifiedImplementation(proxy.actual, implementation, true),
+			);
+		}
 		const code = implementation
 			? await codeAt(client, "GianoPaymaster", implementation)
 			: ({ state: "empty" } as const);
@@ -488,6 +545,7 @@ export function formatPlan(plan: Plan): string[] {
 		lines.push(
 			`  ${r.key} was upgraded on chain to ${r.to} (a recorded upgrade target); the record still names ${r.from ?? "nothing"} and is updated by the next run that saves it.`,
 		);
+	for (const warning of plan.warnings) lines.push(`  ⚠ ${warning}`);
 	return lines;
 }
 

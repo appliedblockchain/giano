@@ -14,6 +14,7 @@ import {
 	isFatalFailure,
 	probeDivergence,
 	recoveryVerified,
+	unverifiedImplementationWarning,
 	verifyChain,
 } from "./services/chain-verify.js";
 import { isOwnDrift } from "./services/drift.js";
@@ -92,7 +93,7 @@ const servedProbes = new Map<number, string>();
 		if (verification.paymasterImplementationUnverified)
 			app.log.warn(
 				{ chainId: chain.chainId },
-				`chain ${chain.chainId}: the paymaster implementation was read from Upgraded logs, not verified against the implementation slot — the RPC refuses eth_getStorageAt, and the code the proxy delegates to can emit an Upgraded event that names another address`,
+				unverifiedImplementationWarning(chain.chainId),
 			);
 		if (
 			verification.failures.some((failure) => failure.kind === "unreachable")

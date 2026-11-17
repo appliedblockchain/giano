@@ -4,8 +4,9 @@ import type { Address } from "viem";
 import { describeError } from "../lib/format";
 
 /**
- * The implementation behind the paymaster proxy, from the ERC-1967 slot, re-read with every console
- * refresh: an executed upgrade changes it, and nothing else announces that.
+ * The implementation behind the paymaster proxy, from the ERC-1967 slot (or, on an RPC that refuses
+ * eth_getStorageAt, the proxy's latest Upgraded event, which Health reports as not verified),
+ * re-read with every console refresh: an executed upgrade changes it, and nothing else announces that.
  */
 export function useImplementation(
 	client: GianoPaymasterClient,

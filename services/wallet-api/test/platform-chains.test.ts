@@ -296,6 +296,43 @@ describe("two chains, one of them down", () => {
 		expect(chain.status).toBe("ready");
 		expect(chain.verification?.failures).toEqual([]);
 	});
+
+	it("warns when it admits a chain whose paymaster implementation came from Upgraded logs", async () => {
+		const chain = ctx.app.chains.get(31338);
+		const warn = vi.spyOn(ctx.app.log, "warn");
+		const admit = async (unverified: boolean) => {
+			chain.status = "unavailable";
+			warn.mockClear();
+			await probeChain(chain, {
+				log: ctx.app.log,
+				onStatus: () => {},
+				verify: async () => ({
+					chainId: 31338,
+					reachable: true,
+					failures: [],
+					probeAddress: "0x1111111111111111111111111111111111111111",
+					...(unverified ? { paymasterImplementationUnverified: true } : {}),
+				}),
+			});
+			expect(chain.status).toBe("ready");
+			return warn.mock.calls.filter(([, message]) =>
+				String(message).includes("read from Upgraded logs"),
+			);
+		};
+		try {
+			expect(await admit(false)).toEqual([]);
+			expect(await admit(true)).toEqual([
+				[
+					{ chainId: 31338 },
+					expect.stringMatching(
+						/^chain 31338: the paymaster implementation was read from Upgraded logs, not verified against the implementation slot/,
+					),
+				],
+			]);
+		} finally {
+			warn.mockRestore();
+		}
+	});
 });
 
 describe("what a failed read leaves on a chain", () => {

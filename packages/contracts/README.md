@@ -241,7 +241,9 @@ const implementation = await proxyImplementation(publicClient, paymasterProxy);
   `{ implementation, source }`, where `source` is `"slot"` or `"logs"`. A `"logs"` answer is not
   verified against the implementation slot: the code the proxy delegates to, such as an
   implementation an upgrade installs, can emit an `Upgraded` event that names another address.
-  wallet-api's chain check and `giano-doctor` report such an answer as a warning.
+  wallet-api's chain check, `giano-doctor` and the paymaster SDK's `getHealth` report such an
+  answer as a warning. The deploy tooling refuses it unless the operator passes
+  `--accept-unverified-implementation` ([runbook](../../deploy/contracts/README.md)).
 - `implementationFromUpgradedLogs(getLogs, latest, options?)` is the log walk alone, without the
   per-client memory, for a caller with its own log reader. `implementationFromSlot(word)` decodes a
   raw slot word.

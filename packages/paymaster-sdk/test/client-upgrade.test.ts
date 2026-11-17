@@ -32,6 +32,11 @@ describe("getImplementation", () => {
 		expect(reads).toEqual([
 			{ address: PROXY, slot: ERC1967_IMPLEMENTATION_SLOT },
 		]);
+		// From the slot: verified.
+		expect(await client.readImplementationWithSource()).toEqual({
+			address: IMPLEMENTATION,
+			source: "slot",
+		});
 	});
 });
 
