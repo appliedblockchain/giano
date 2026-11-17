@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
 import {
 	type Address,
 	createPublicClient,
@@ -664,10 +664,11 @@ test.describe("access", () => {
 				authorization: request.headers().authorization,
 			});
 		});
-		for (const done of ["requestfinished", "requestfailed"] as const)
-			page.on(done, (request) => {
-				if (isRead(request.url())) pending--;
-			});
+		const settle = (request: Request) => {
+			if (isRead(request.url())) pending--;
+		};
+		page.on("requestfinished", settle);
+		page.on("requestfailed", settle);
 		await installWallet(page, { known: [CHAINS.a.chainId] });
 		await openConsole(page);
 		await chooseDeployment(page, CHAINS.a.chainId);
