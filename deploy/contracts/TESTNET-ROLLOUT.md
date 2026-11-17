@@ -3,7 +3,7 @@
 The ordered steps that put release `v3` on Base Sepolia and Ethereum Sepolia, and move the `dev`
 environment off its legacy contracts. Everything here was rehearsed on a fork of Base Sepolia
 (`pnpm contracts:rehearse --platform`; evidence in
-`openspec/changes/harden-contract-deployment/rehearsal-evidence.md`). **Nothing has been run against
+`openspec/changes/archive/2026-11-16-harden-contract-deployment/rehearsal-evidence.md`). **Nothing has been run against
 a public chain yet.** This page is the plan for doing it.
 
 Why `dev` needs it: `infra/versions.json` pins `dev` to `5ba71241`, from before the CREATE3 cutover
