@@ -107,7 +107,7 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		const paymaster = record.contracts.paymasterProxy?.address as Address;
 
 		const provision = (
-			overrides: { tenant?: string; holders?: string[] } = {},
+			overrides: { tenant?: string; holders?: string[]; extra?: string[] } = {},
 		) =>
 			spawnSync(
 				process.execPath,
@@ -129,6 +129,7 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 							`--role-holder-${flag}`,
 							address,
 						])),
+					...(overrides.extra ?? []),
 				],
 				{
 					cwd: join(import.meta.dirname, ".."),
@@ -165,6 +166,19 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		assert.match(
 			typo.stderr,
 			/role holder for pauser is not an address: 0x123/,
+		);
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+
+		// So is an unstake delay that is not whole seconds: before, it failed at addStake, after the
+		// signer transaction had gone out (G42 R6).
+		const delayTypo = provision({ extra: ["--unstake-delay", "1d"] });
+		assert.notEqual(delayTypo.status, 0);
+		assert.match(
+			delayTypo.stderr,
+			/--unstake-delay is a whole number of seconds .*got: 1d/,
 		);
 		assert.equal(
 			await client.getTransactionCount({ address: operator }),

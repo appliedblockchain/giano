@@ -93,6 +93,20 @@ function ether(what: string, value: string): bigint {
 	}
 }
 
+/**
+ * `value` as an EntryPoint unstake delay: whole seconds, above zero, within uint32 (`addStake`'s
+ * type). Checked with the other arguments, so a typo such as `1d` stops the run before the signer
+ * or anything else has gone out (G42 R6).
+ */
+function unstakeDelaySeconds(value: string): number {
+	const seconds = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+	if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 0xffffffff)
+		throw new Error(
+			`--unstake-delay is a whole number of seconds between 1 and ${0xffffffff}, got: ${value}`,
+		);
+	return seconds;
+}
+
 function log(message: string): void {
 	console.log(message);
 }
@@ -227,6 +241,7 @@ async function main(): Promise<void> {
 		stakeEth && stakeEth !== "true"
 			? ether("--stake-eth", stakeEth)
 			: undefined;
+	const unstakeDelay = unstakeDelaySeconds(flags["unstake-delay"] ?? "86400");
 	const tenants = (repeated.tenant ?? []).map(parseTenant);
 	for (const tenant of tenants)
 		ether(`tenant ${tenant.slug}'s funding`, tenant.fundEth);
@@ -308,7 +323,6 @@ async function main(): Promise<void> {
 
 		// --- stake -------------------------------------------------------------------------------
 		if (stakeWei !== undefined) {
-			const unstakeDelay = Number(flags["unstake-delay"] ?? 86_400);
 			const info = await entryPoint.getDepositInfo(paymasterAddress);
 			if (info.staked && info.stake >= stakeWei) {
 				log(`  • already staked: ${formatEther(info.stake)} ETH`);

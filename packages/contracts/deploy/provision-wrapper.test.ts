@@ -63,6 +63,21 @@ test("the signer's address and key, when both are given, must be the same signer
 	assert.match(matching.out, /name the role holders/);
 });
 
+/** Six distinct holders, one per immediate role. */
+const SIX_HOLDERS = Object.fromEntries(
+	[
+		"SIGNER_ADMIN",
+		"PARAM_ADMIN",
+		"PAUSER",
+		"STAKE_ADMIN",
+		"TENANT_ADMIN",
+		"FEE_COLLECTOR",
+	].map((role, i) => [
+		`ROLE_HOLDER_${role}`,
+		`0x${String(i + 1).padStart(40, "0")}`,
+	]),
+);
+
 test("a mainnet refuses the signer's key, every role on one address, and a defaulted withdrawal address", () => {
 	const mainnet = { GIANO_NETWORK: "mainnet" };
 	assert.match(
@@ -81,9 +96,44 @@ test("a mainnet refuses the signer's key, every role on one address, and a defau
 		wrapper({
 			...mainnet,
 			SPONSORSHIP_SIGNER_ADDRESS: ADDRESS,
-			ROLE_HOLDER_PAUSER: ADDRESS,
+			...SIX_HOLDERS,
 		}).out,
 		/needs each tenant's own TENANT_WITHDRAW_ADDRESS/,
+	);
+});
+
+test("a mainnet names all six role holders, each on its own address (G42 R1)", () => {
+	const mainnet = {
+		GIANO_NETWORK: "mainnet",
+		SPONSORSHIP_SIGNER_ADDRESS: ADDRESS,
+	};
+	const partial = wrapper({ ...mainnet, ROLE_HOLDER_PAUSER: ADDRESS });
+	assert.notEqual(partial.code, 0);
+	assert.match(
+		partial.out,
+		/missing: ROLE_HOLDER_SIGNER_ADMIN ROLE_HOLDER_PARAM_ADMIN ROLE_HOLDER_STAKE_ADMIN ROLE_HOLDER_TENANT_ADMIN ROLE_HOLDER_FEE_COLLECTOR/,
+	);
+	// The same address twice, in any letter case.
+	const shared = wrapper({
+		...mainnet,
+		...SIX_HOLDERS,
+		ROLE_HOLDER_FEE_COLLECTOR: ADDRESS,
+		ROLE_HOLDER_PAUSER: ADDRESS.toLowerCase(),
+	});
+	assert.notEqual(shared.code, 0);
+	assert.match(
+		shared.out,
+		new RegExp(`used for more than one role: ${ADDRESS.toLowerCase()}`),
+	);
+	// A testnet may still name only some of them.
+	assert.doesNotMatch(
+		wrapper({
+			GIANO_NETWORK: "testnet",
+			SPONSORSHIP_SIGNER_ADDRESS: ADDRESS,
+			ROLE_HOLDER_PAUSER: ADDRESS,
+			ROLE_HOLDER_FEE_COLLECTOR: ADDRESS,
+		}).out,
+		/missing:|more than one role/,
 	);
 });
 

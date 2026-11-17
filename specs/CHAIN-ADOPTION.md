@@ -91,7 +91,8 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
 7.  Stake and fund the paymaster; register tenants and the role holders on this chain.
       The proxy comes with step 4; then pnpm contracts:provision, with the sponsorship signer's
       ADDRESS and one ROLE_HOLDER_* per immediate role (PAYMASTER_GRANT_ALL_TO, every role on one
-      address, is a testnet shortcut a mainnet refuses). Sponsorship is per chain: every tenant
+      address, is a testnet shortcut a mainnet refuses; a mainnet needs all six, each a different
+      address). Sponsorship is per chain: every tenant
       that sponsors here funds a balance HERE, and configures its rules HERE — nothing is
       inherited from another chain (MC-67).
 

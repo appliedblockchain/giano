@@ -1,11 +1,20 @@
 /** Read-only gates shared by the guided deployer, the operator workflows and their regression tests. */
 import {
 	type Address,
+	ExecutionRevertedError,
 	getAddress,
 	type Hex,
+	HttpRequestError,
+	InvalidParamsRpcError,
 	keccak256,
+	LimitExceededRpcError,
+	MethodNotFoundRpcError,
+	MethodNotSupportedRpcError,
 	type PublicClient,
 	parseEther,
+	ResourceUnavailableRpcError,
+	TimeoutError,
+	WebSocketRequestError,
 	zeroAddress,
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
@@ -196,6 +205,57 @@ export type Check = { ok: boolean; message: string };
  */
 const CANCUN_PROBE: Hex = "0x5f5c505f5f5f5e00";
 
+/** Errors that never reached the EVM: the endpoint, the transport or the request itself failed. */
+const NOT_EXECUTED = [
+	HttpRequestError,
+	TimeoutError,
+	WebSocketRequestError,
+	LimitExceededRpcError,
+	InvalidParamsRpcError,
+	MethodNotFoundRpcError,
+	MethodNotSupportedRpcError,
+	ResourceUnavailableRpcError,
+];
+
+/**
+ * How nodes report an opcode the chain does not have, or a revert: geth `invalid opcode: opcode 0x5c
+ * not defined`, anvil/revm `EVM error NotActivated` (measured on `anvil --hardfork shanghai`) or
+ * `InvalidFEOpcode`, Nethermind `BadInstruction`, and `execution reverted`.
+ */
+const EXECUTION_FAILURE =
+	/invalid opcode|opcode 0x[0-9a-f]+ not defined|NotActivated|InvalidFEOpcode|OpcodeNotFound|bad ?instruction|undefined opcode|stack underflow|execution reverted/i;
+
+/**
+ * Whether a failed `eth_call` failed in the EVM (an opcode the chain lacks, or a revert), rather than
+ * on the way to it. Only the first means "this chain lacks Cancun"; a 429, a timeout or an RPC that
+ * rejects the request is not an answer about the chain and is rethrown (G42 R2).
+ */
+export function isExecutionFailure(error: unknown): boolean {
+	const chain: unknown[] = [];
+	for (
+		let e: unknown = error;
+		e && chain.length < 16;
+		e = (e as { cause?: unknown }).cause
+	)
+		chain.push(e);
+	if (
+		chain.some(
+			(e) =>
+				NOT_EXECUTED.some((kind) => e instanceof kind) ||
+				(e as { status?: unknown }).status === 429,
+		)
+	)
+		return false;
+	return chain.some(
+		(e) =>
+			e instanceof ExecutionRevertedError ||
+			(e instanceof Error &&
+				EXECUTION_FAILURE.test(
+					`${e.message} ${(e as { details?: unknown }).details ?? ""}`,
+				)),
+	);
+}
+
 /** One requirement a chain must meet before any Giano contract is deployed or served on it. */
 export type Prerequisite = { name: string; ok: boolean; detail: string };
 
@@ -204,6 +264,8 @@ export type Prerequisite = { name: string; ok: boolean; detail: string };
  * and the doctor: CreateX at its address with its upstream runtime (it places every CREATE3 address),
  * the canonical EntryPoint v0.9 (the wallet implementation hardcodes it), and the Cancun opcodes.
  * A P-256 precompile is not one: the wallet verifies passkeys with its own built-in fallback.
+ * Throws when the RPC itself fails, so an unreachable or rate-limited endpoint is never reported as a
+ * chain without Cancun.
  */
 export async function chainPrerequisites(
 	client: PublicClient,
@@ -234,7 +296,8 @@ export async function chainPrerequisites(
 	let cancun = true;
 	try {
 		await client.call({ data: CANCUN_PROBE });
-	} catch {
+	} catch (error) {
+		if (!isExecutionFailure(error)) throw error;
 		cancun = false;
 	}
 	results.push({
@@ -396,9 +459,43 @@ export function timelockMismatch(
 	published: { profile?: string; record?: string },
 ): string | undefined {
 	const address = published.profile ?? published.record;
-	if (!address || getAddress(address) === getAddress(timelock))
-		return undefined;
+	// With nothing to compare against, any timelock carrying the published proposers and delays would
+	// pass the later checks, so the hand-off has no way to know it is the one tenants rely on (G42 R4).
+	if (!address)
+		return `no published timelock address to check --timelock ${getAddress(timelock)} against: neither the chain profile's timelock.address nor the deployment record names one. Run \`contracts:timelock\` (it records the address) or set the profile's timelock.address`;
+	if (getAddress(address) === getAddress(timelock)) return undefined;
 	return `--timelock ${getAddress(timelock)} is not the published timelock ${getAddress(address)} (${published.profile ? "the chain profile" : "the deployment record"})`;
+}
+
+/**
+ * Where the hand-off's role-grant scan starts. The timelock's deployment block, from its recorded
+ * deployment transaction, is the authority: `--from-block` only stands in for it when the record has
+ * none, and never starts later than it, since a later start skips earlier grants and an extra
+ * proposer would go unseen (G42 R5). Undefined when neither is known: the scan then fails closed.
+ */
+export function handOffScanStart(options: {
+	/** The record names the timelock's deployment transaction. */
+	recordedTransaction: boolean;
+	/** That transaction's block, when its receipt could be read. */
+	deployedAt?: bigint;
+	/** `--from-block`, as given. */
+	fromBlock?: string;
+}): bigint | undefined {
+	const { recordedTransaction, deployedAt, fromBlock } = options;
+	if (fromBlock === undefined) return deployedAt;
+	if (!/^\d+$/.test(fromBlock))
+		throw new Error(`--from-block is not a block number: ${fromBlock}`);
+	const given = BigInt(fromBlock);
+	if (!recordedTransaction) return given;
+	if (deployedAt === undefined)
+		throw new Error(
+			"the deployment record names the timelock's deployment transaction, but its receipt could not be read; retry once the RPC serves it. --from-block does not replace a recorded deployment",
+		);
+	if (given > deployedAt)
+		throw new Error(
+			`--from-block ${given} is later than the timelock's deployment block ${deployedAt}: the scan would skip the role grants made at deployment. Leave it out; the recorded deployment sets the start`,
+		);
+	return given;
 }
 
 /** The timelock configuration a hand-off is checked against: the profile's, else the recorded one. */

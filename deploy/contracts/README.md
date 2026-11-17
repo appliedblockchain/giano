@@ -253,7 +253,7 @@ a production signer's key never leaves its HSM) and one holder per immediate rol
 in the operator file). The bootstrap key holds only the roles it needs while it runs, then hands each
 to its holder and gives it up. `PAYMASTER_GRANT_ALL_TO=<address>` puts every role on one address
 instead: a testnet shortcut, which a mainnet refuses, as it refuses a defaulted tenant withdrawal
-address. The low-level equivalent, after exporting the **operator's** `DEPLOYER_PRIVATE_KEY` and
+address. A mainnet also needs all six `ROLE_HOLDER_*`, each a different address. The low-level equivalent, after exporting the **operator's** `DEPLOYER_PRIVATE_KEY` and
 the selected network's `RPC_URL` (not just DEPLOY_RPC_URL), with real tenant IDs and withdrawal
 destinations:
 

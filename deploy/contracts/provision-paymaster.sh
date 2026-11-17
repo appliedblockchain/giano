@@ -68,10 +68,17 @@ SIGNER_ADDR="${DERIVED##* }"
 
 # One holder per immediate role, or every role on one address (development only).
 ROLE_ARGS=()
+MISSING_HOLDERS=()
+HOLDER_ADDRESSES=()
 for pair in signer-admin:SIGNER_ADMIN param-admin:PARAM_ADMIN pauser:PAUSER \
             stake-admin:STAKE_ADMIN tenant-admin:TENANT_ADMIN fee-collector:FEE_COLLECTOR; do
   var="ROLE_HOLDER_${pair#*:}"
-  if [ -n "${!var:-}" ]; then ROLE_ARGS+=(--role-holder-"${pair%%:*}" "${!var}"); fi
+  if [ -n "${!var:-}" ]; then
+    ROLE_ARGS+=(--role-holder-"${pair%%:*}" "${!var}")
+    HOLDER_ADDRESSES+=("$(echo "${!var}" | tr '[:upper:]' '[:lower:]')")
+  else
+    MISSING_HOLDERS+=("$var")
+  fi
 done
 if [ -n "${PAYMASTER_GRANT_ALL_TO:-}" ]; then
   if [ "${GIANO_NETWORK:-}" = "mainnet" ]; then
@@ -87,6 +94,19 @@ elif [ ${#ROLE_ARGS[@]} -eq 0 ]; then
   echo "       PAYMASTER_GRANT_ALL_TO=<address> for every role on one address." >&2
   exit 1
 else
+  # A mainnet names all six, each on its own address: a missing one leaves a role with no holder, and
+  # one address in several is the collapse PAYMASTER_GRANT_ALL_TO is refused for (G42 R1).
+  if [ "${GIANO_NETWORK:-}" = "mainnet" ]; then
+    if [ ${#MISSING_HOLDERS[@]} -gt 0 ]; then
+      echo "ERROR: a mainnet names a holder for every immediate role; missing: ${MISSING_HOLDERS[*]}" >&2
+      exit 1
+    fi
+    DUPLICATES="$(printf '%s\n' "${HOLDER_ADDRESSES[@]}" | sort | uniq -d | tr '\n' ' ')"
+    if [ -n "$DUPLICATES" ]; then
+      echo "ERROR: a mainnet gives each immediate role its own holder; used for more than one role: ${DUPLICATES% }" >&2
+      exit 1
+    fi
+  fi
   ROLE_SUMMARY="one holder per role: ${ROLE_ARGS[*]}"
 fi
 
