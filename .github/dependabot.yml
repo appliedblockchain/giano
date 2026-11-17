@@ -36,6 +36,11 @@ updates:
       default-days: 7
     versioning-strategy: increase-if-necessary
     open-pull-requests-limit: 5
+    # services/custom-example is its own pnpm workspace with its own lockfile, handled by the entry
+    # below. Without this, this entry still bumps its package.json and never updates its lockfile,
+    # so the reference dApp install fails with ERR_PNPM_OUTDATED_LOCKFILE.
+    exclude-paths:
+      - services/custom-example/**
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
