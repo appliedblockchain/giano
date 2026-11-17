@@ -3,7 +3,9 @@
  * shows what an outsider sees"). Kept apart from the component so the rules are tested.
  */
 
-import { maxUint256, parseUnits } from "viem";
+import { decodeFunctionData, erc20Abi, maxUint256, parseUnits } from "viem";
+import type { Hex } from "./format";
+import type { LedgerEntry } from "./ledger";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -121,4 +123,47 @@ export function parseAmount(amount: string, decimals: number): bigint {
 	if (units > maxUint256)
 		throw new Error(`the amount ${amount} does not fit a uint256`);
 	return units;
+}
+
+/**
+ * The latest confirmed private token transfer by this wallet on this chain, from the ledger. The
+ * ledger is restored from localStorage without a check of each field, so an entry whose fields have
+ * the wrong type is skipped: it must not take the Tokens tab down.
+ */
+export function findLatestTransfer(
+	entries: readonly LedgerEntry[],
+	chainId: number,
+	account: string | undefined,
+): { txHash: Hex; recipient?: string } | undefined {
+	if (!account) return undefined;
+	for (const entry of entries) {
+		if (
+			entry.section !== "private-token" ||
+			entry.chainId !== chainId ||
+			typeof entry.account !== "string" ||
+			entry.account.toLowerCase() !== account.toLowerCase() ||
+			entry.status !== "confirmed" ||
+			typeof entry.label !== "string" ||
+			!entry.label.startsWith("Transfer") ||
+			typeof entry.txHash !== "string" ||
+			!entry.txHash ||
+			(entry.params != null && !Array.isArray(entry.params))
+		)
+			continue;
+		const [request] = (entry.params ?? []) as unknown[];
+		const data =
+			request && typeof request === "object"
+				? (request as { data?: unknown }).data
+				: undefined;
+		let recipient: string | undefined;
+		try {
+			if (typeof data === "string" && data)
+				recipient = decodeFunctionData({ abi: erc20Abi, data: data as Hex })
+					.args?.[0] as string | undefined;
+		} catch {
+			// not a transfer call: no recipient
+		}
+		return { txHash: entry.txHash as Hex, recipient };
+	}
+	return undefined;
 }

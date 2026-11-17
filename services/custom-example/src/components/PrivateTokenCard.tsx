@@ -3,7 +3,6 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { LuEye, LuEyeOff, LuPlus, LuSend } from "react-icons/lu";
 import {
 	createPublicClient,
-	decodeFunctionData,
 	encodeFunctionData,
 	getAddress,
 	isAddress,
@@ -18,6 +17,7 @@ import {
 	shortHex,
 } from "../lib/format";
 import {
+	findLatestTransfer,
 	isBalanceRefusal,
 	otherAccount,
 	parseAmount,
@@ -686,35 +686,4 @@ async function approveDelegate(
 			outcome.error?.message ?? "the wallet did not approve the read delegate",
 		);
 	return outcome.result;
-}
-
-/** The latest confirmed private token transfer by this wallet on this chain, from the ledger. */
-function findLatestTransfer(
-	entries: Demo["state"]["ledger"]["entries"],
-	chainId: number,
-	account: Address | undefined,
-): { txHash: Hex; recipient?: string } | undefined {
-	if (!account) return undefined;
-	for (const entry of entries) {
-		if (
-			entry.section !== "private-token" ||
-			entry.chainId !== chainId ||
-			entry.account?.toLowerCase() !== account.toLowerCase() ||
-			entry.status !== "confirmed" ||
-			!entry.label.startsWith("Transfer") ||
-			!entry.txHash
-		)
-			continue;
-		const [request] = (entry.params ?? []) as Array<{ data?: Hex }>;
-		let recipient: string | undefined;
-		try {
-			if (request?.data)
-				recipient = decodeFunctionData({ abi: erc20Abi, data: request.data })
-					.args?.[0] as string | undefined;
-		} catch {
-			// not a transfer call: no recipient
-		}
-		return { txHash: entry.txHash as Hex, recipient };
-	}
-	return undefined;
 }

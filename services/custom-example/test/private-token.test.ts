@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { encodeFunctionData, erc20Abi } from "viem";
+import type { LedgerEntry } from "../src/lib/ledger.ts";
 import {
+	findLatestTransfer,
 	isBalanceRefusal,
 	OUTSIDER_FALLBACK_ADDRESS,
 	otherAccount,
@@ -168,5 +171,59 @@ describe("parseAmount", () => {
 			/does not fit a uint256/,
 		);
 		assert.equal(parseAmount((2n ** 256n - 1n).toString(), 0), 2n ** 256n - 1n);
+	});
+});
+
+describe("findLatestTransfer", () => {
+	const CHAIN_ID = 31337;
+	const RECIPIENT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+	const TX_HASH = `0x${"ab".repeat(32)}`;
+	const transfer = (fields: Record<string, unknown>) =>
+		({
+			section: "private-token",
+			chainId: CHAIN_ID,
+			account: WALLET,
+			status: "confirmed",
+			label: "Transfer 1 PTK",
+			txHash: TX_HASH,
+			params: [
+				{
+					data: encodeFunctionData({
+						abi: erc20Abi,
+						functionName: "transfer",
+						args: [RECIPIENT, 1n],
+					}),
+				},
+			],
+			...fields,
+		}) as unknown as LedgerEntry;
+
+	it("finds the latest transfer and its recipient", () => {
+		assert.deepEqual(findLatestTransfer([transfer({})], CHAIN_ID, WALLET), {
+			txHash: TX_HASH,
+			recipient: RECIPIENT,
+		});
+	});
+
+	it("skips restored entries whose fields have the wrong type", () => {
+		const entries = [
+			transfer({ label: undefined }),
+			transfer({ account: 42 }),
+			transfer({ params: { data: "0x" } }),
+			transfer({ txHash: 7 }),
+			transfer({ txHash: `0x${"cd".repeat(32)}` }),
+		];
+		assert.deepEqual(findLatestTransfer(entries, CHAIN_ID, WALLET), {
+			txHash: `0x${"cd".repeat(32)}`,
+			recipient: RECIPIENT,
+		});
+	});
+
+	it("reads no recipient from a request that is not an object or has no string data", () => {
+		for (const params of [[null], [5], [{ data: 5 }], undefined])
+			assert.deepEqual(
+				findLatestTransfer([transfer({ params })], CHAIN_ID, WALLET),
+				{ txHash: TX_HASH, recipient: undefined },
+			);
 	});
 });
