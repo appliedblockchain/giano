@@ -1,13 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
 	addVirtualAuthenticator,
-	apiCall,
 	connectWallet,
 	openManagePopup,
-	platformSignIn,
 	seedCredentials,
 	TENANTS,
 } from "./helpers";
+import { platformCall, platformSignIn } from "./platform-api";
 
 /**
  * The wallet session lifecycle as the user meets it (G5, openspec change session-lifecycle):
@@ -68,7 +67,7 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 	);
 	expect(externalUserId).toBeTruthy();
 
-	const revoked = await apiCall("POST", "/v1/admin/sessions/revoke", {
+	const revoked = await platformCall("POST", "/v1/admin/sessions/revoke", {
 		body: { externalUserId },
 		headers: { authorization: `Bearer ${tenant.adminKey}` },
 	});
@@ -93,7 +92,7 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 
 	// The revocation is in the tenant's history, attributed to the admin key.
 	const token = await platformSignIn();
-	const history = await apiCall(
+	const history = await platformCall(
 		"GET",
 		`/v1/platform/tenants/${tenant.slug}/history`,
 		{ headers: { authorization: `Bearer ${token}` } },
