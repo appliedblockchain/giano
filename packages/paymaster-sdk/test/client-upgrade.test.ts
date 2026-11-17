@@ -53,11 +53,12 @@ describe("readImplementationSlot on an RPC that refuses eth_getStorageAt", () =>
 			"0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b";
 		const UPGRADED_AT = 9_000n;
 		const spans: { from: bigint; to: bigint }[] = [];
+		let head = 25_000n;
 		const publicClient = {
 			getStorageAt: async () => {
 				throw new Error("method eth_getStorageAt is not allowed");
 			},
-			getBlockNumber: async () => 25_000n,
+			getBlockNumber: async () => head,
 			request: async ({
 				method,
 				params,
@@ -96,12 +97,21 @@ describe("readImplementationSlot on an RPC that refuses eth_getStorageAt", () =>
 		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
 		// newest span first, and the walk stops at the span that holds the event
 		expect(spans).toEqual([
-			{ from: 15_001n, to: 25_000n },
-			{ from: 5_001n, to: 15_000n },
+			{ from: 16_001n, to: 25_000n },
+			{ from: 7_001n, to: 16_000n },
 		]);
-		// rpc-read-relay.ts refuses an eth_getLogs span wider than 10,000 blocks
+		// rpc-read-relay.ts refuses an eth_getLogs span wider than PLATFORM_RPC_MAX_LOG_BLOCKS,
+		// which may be as low as 9,000, counted inclusively
 		for (const { from, to } of spans)
-			expect(to - from + 1n).toBeLessThanOrEqual(10_000n);
+			expect(to - from + 1n).toBeLessThanOrEqual(9_000n);
+
+		// A read on every block (the console's health check) does not repeat the walk: the same
+		// head sends nothing, and a newer one reads only the blocks since.
+		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
+		expect(spans).toHaveLength(2);
+		head = 25_002n;
+		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
+		expect(spans.slice(2)).toEqual([{ from: 25_001n, to: 25_002n }]);
 	});
 });
 

@@ -208,20 +208,35 @@ import { proxyImplementation } from '@appliedblockchain/giano-contracts';
 const implementation = await proxyImplementation(publicClient, paymasterProxy);
 ```
 
-- `proxyImplementation(client, proxy)` reads the implementation slot (`IMPLEMENTATION_SLOT`) with
-  `eth_getStorageAt`. When that read succeeds, it reads no logs.
-- When the RPC refuses `eth_getStorageAt` (a Silent Data gateway does), it falls back to the
-  proxy's latest `Upgraded` event (`UPGRADED_TOPIC`). ERC-1967 requires that event on every
+- `proxyImplementation(client, proxy, options?)` reads the implementation slot
+  (`IMPLEMENTATION_SLOT`) with `eth_getStorageAt`. When that read succeeds, it reads no logs.
+- When the RPC refuses the method `eth_getStorageAt` (a Silent Data gateway does), it falls back to
+  the proxy's latest `Upgraded` event (`UPGRADED_TOPIC`). ERC-1967 requires that event on every
   implementation change, so the newest one names the current implementation.
-- The fallback walks back from the latest block, newest first, in spans of at most 10,000 blocks
-  (`UPGRADED_LOG_CHUNK`). That is the widest `eth_getLogs` span the Silent Data gateway and
-  wallet-api's platform read relay accept. It stops at the first span that holds an event.
+  `isMethodRefusedError(error)` decides what counts as a refusal: JSON-RPC code -32601, -32004 or
+  4200, or a message such as "method not whitelisted" or "method … is not allowed".
+- Any other storage-read error, such as a timeout or a rate limit, is raised unchanged, and no logs
+  are read. When the fallback fails too, the error names both failures and carries the
+  storage-read error as `cause`.
+- The fallback walks back from the latest block, newest first, in spans of at most 9,000 blocks,
+  counted inclusively (`UPGRADED_LOG_CHUNK`). Several public RPCs refuse exactly 10,000, and
+  wallet-api's platform read relay may be set as low as 9,000 (`PLATFORM_RPC_MAX_LOG_BLOCKS`). It
+  stops at the first span that holds an event.
+- The walk is bounded. It stops at `options.fromBlock` (default 0), for example the proxy's
+  deployment block. After `options.maxChunks` requests (default `UPGRADED_LOG_MAX_CHUNKS`, 1,000,
+  that is 9,000,000 blocks) without an event, it throws an error that says to pass `fromBlock`.
+  When it reaches `fromBlock` without an event, it returns null.
+- The result is kept per client object and per proxy. The next read on the same client walks only
+  the blocks after the last one it read, so a caller that reads on every block sends one
+  `eth_getLogs` request each time. A walk that gave up is not repeated either.
 - The fallback needs `getBlockNumber` and `request` on the client. Without them, the call raises
-  the original storage-read error. When no span holds an event, it returns null.
-- `implementationFromUpgradedLogs(getLogs, latest)` is the log walk alone, for a caller with its
-  own log reader. `implementationFromSlot(word)` decodes a raw slot word.
+  the original storage-read error.
+- `implementationFromUpgradedLogs(getLogs, latest, options?)` is the log walk alone, without the
+  per-client memory, for a caller with its own log reader. `implementationFromSlot(word)` decodes a
+  raw slot word.
 
-The walk costs one `eth_getLogs` request per 10,000 blocks since the last upgrade.
+The first walk costs one `eth_getLogs` request per 9,000 blocks since the last upgrade, at most
+`maxChunks`. Each later read on the same client costs one request.
 
 ## Toolchain
 

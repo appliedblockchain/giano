@@ -86,6 +86,7 @@ import {
 	IMPLEMENTATION_SLOT,
 	implementationFromSlot,
 	implementationFromUpgradedLogs,
+	isMethodRefusedError,
 	UPGRADED_TOPIC,
 } from "../erc1967";
 import {
@@ -404,18 +405,27 @@ async function checkSponsorshipPaymaster(
 			.getStorage(address, IMPLEMENTATION_SLOT)
 			.then(implementationFromSlot)
 			// An RPC that refuses eth_getStorageAt (Silent Data): the latest Upgraded event instead.
-			.catch(async () =>
-				implementationFromUpgradedLogs(
-					(fromBlock, toBlock) =>
-						provider.getLogs({
-							address,
-							topics: [UPGRADED_TOPIC],
-							fromBlock,
-							toBlock,
-						}),
-					BigInt(await provider.getBlockNumber()),
-				),
-			);
+			// Any other storage-read error (a timeout, a rate limit) is reported as it is.
+			.catch(async (storageError: unknown) => {
+				if (!isMethodRefusedError(storageError)) throw storageError;
+				try {
+					return await implementationFromUpgradedLogs(
+						(fromBlock, toBlock) =>
+							provider.getLogs({
+								address,
+								topics: [UPGRADED_TOPIC],
+								fromBlock,
+								toBlock,
+							}),
+						BigInt(await provider.getBlockNumber()),
+					);
+				} catch (logError) {
+					throw new Error(
+						`the RPC refused eth_getStorageAt, and reading the proxy's Upgraded logs failed: ${(logError as Error).message}`,
+						{ cause: storageError },
+					);
+				}
+			});
 		if (!impl)
 			report(
 				"fail",
