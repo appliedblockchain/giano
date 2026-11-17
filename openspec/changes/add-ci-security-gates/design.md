@@ -148,6 +148,9 @@ the audit to another server, or through a proxy that answers for the registry.
 
 ### D6. Dependabot configuration
 
+> Superseded by the change `replace-dependabot-with-stale-pins`: `.github/dependabot.yml` was removed, and the weekly
+> stale-pins run (`dependency-freshness`) reports newer releases instead. Kept as the record of what PR 2 shipped.
+
 `.github/dependabot.yml` holds three entries: npm at `/`, npm at `/services/custom-example`, and `github-actions` at
 `/`. #246 added the file with the `github-actions` entry, so PR 2 adds only the two npm entries. All are weekly with
 `cooldown: default-days: 7`. The `services/custom-example` entry excludes `@appliedblockchain/*` from the cooldown,

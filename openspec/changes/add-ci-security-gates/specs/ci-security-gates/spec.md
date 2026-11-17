@@ -98,19 +98,6 @@ not in the register for that workspace. It SHALL fail when it cannot obtain the 
 - **WHEN** the advisory request fails or returns no valid result
 - **THEN** the dependency audit fails and says that it could not audit, rather than passing
 
-### Requirement: Dependency updates respect the release-age window
-Automated dependency update PRs SHALL be configured for npm in both workspaces and for GitHub Actions. Version
-update PRs SHALL NOT propose a version published less than 7 days earlier. The one exception is our own
-`@appliedblockchain/*` packages in `services/custom-example`, the recorded ABIP-6 deviation.
-
-#### Scenario: New npm release
-- **WHEN** a third-party dependency publishes a new version
-- **THEN** no version update PR proposes it until 7 days after its release
-
-#### Scenario: New Giano release
-- **WHEN** `@appliedblockchain/giano-connector` publishes a new minor or patch version
-- **THEN** the next version update PR for `services/custom-example` may propose it at once
-
 ### Requirement: Source analysis covers TypeScript and workflows
 On every pull request and on `main`, CodeQL SHALL analyse the JavaScript/TypeScript code and the GitHub Actions
 workflows. A dismissed CodeQL alert SHALL have a register entry.
