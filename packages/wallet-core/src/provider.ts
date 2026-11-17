@@ -82,6 +82,7 @@ import { toBase64Url } from "./provider-injection/wallet-api/serialization";
 export enum ChainType {
 	EVM = 0,
 	/** @deprecated use EVM — retained as a 0-valued alias for backward compatibility */
+	// biome-ignore lint/suspicious/noDuplicateEnumValues: deprecated alias of EVM, kept so existing encoded ids decode
 	HARDHAT = 0,
 }
 
@@ -494,12 +495,11 @@ export const createGianoProvider = (
 				// (none registered, an explicit user-pick, or an ambiguous list) needs the
 				// full sign-in ceremony via eth_requestAccounts.
 				const { credentialId } = credentialInfo;
-				const rawId =
-					credentialId instanceof Array
-						? credentialId[0]
-						: credentialId === null || credentialId === "user-pick"
-							? null
-							: credentialId;
+				const rawId = Array.isArray(credentialId)
+					? credentialId[0]
+					: credentialId === null || credentialId === "user-pick"
+						? null
+						: credentialId;
 				if (!rawId) {
 					return [];
 				}
@@ -730,7 +730,7 @@ export const createGianoProvider = (
 				"wallet_addEthereumChain is not supported: Giano serves a closed, configured list of chains",
 			);
 		},
-		wallet_revokePermissions: async ([permissions]) => {
+		wallet_revokePermissions: async () => {
 			// ignoring permissions, revoking all
 			// we only support one connected account per provider instance
 			smartAccount = null;

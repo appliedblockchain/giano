@@ -16,8 +16,9 @@ const getAllowCredentials = (
 		return undefined;
 	}
 
-	const allowedIds =
-		credentialId instanceof Array ? credentialId : [credentialId];
+	const allowedIds = Array.isArray(credentialId)
+		? credentialId
+		: [credentialId];
 
 	return allowedIds.map((id) => <const>{ type: "public-key", id });
 };

@@ -193,7 +193,7 @@ export function createMockBundlerFetch(results: Record<string, unknown> = {}) {
 			method in results
 				? results[method]
 				: method === "eth_sendUserOperation"
-					? "0x" + "ab".repeat(32)
+					? `0x${"ab".repeat(32)}`
 					: method === "eth_supportedEntryPoints"
 						? ["0x433709009B8330FDa32311DF1C2AFA402eD8D009"]
 						: method === "giano_executors"

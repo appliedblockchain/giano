@@ -32,7 +32,7 @@ type BaseShape = {
 /** The envelope every message shares, plus its `type` and (for most) a payload. */
 type MessageShape<
 	Type extends string,
-	Rest extends z.ZodRawShape = {},
+	Rest extends z.ZodRawShape = Record<never, never>,
 > = BaseShape & { type: z.ZodLiteral<Type> } & Rest;
 
 const base: BaseShape = {

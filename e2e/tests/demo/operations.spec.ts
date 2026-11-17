@@ -107,7 +107,7 @@ for (const chain of [CHAINS.a, CHAINS.b]) {
 			.fill("0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7");
 		await page
 			.getByLabel("Calldata (hex)", { exact: true })
-			.fill("0xa0712d68" + "0".repeat(63) + "1");
+			.fill(`0xa0712d68${"0".repeat(63)}1`);
 		await approve(page, "[data-testid=send]", credentials);
 		await expect(latest(page, "transactions")).toHaveAttribute(
 			"data-status",

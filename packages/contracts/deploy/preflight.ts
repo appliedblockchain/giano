@@ -674,6 +674,7 @@ async function logsInChunks(
 				address: options.address,
 				event: roleGranted,
 				fromBlock: from,
+				// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 				toBlock: to < head ? to : head,
 			})),
 		);

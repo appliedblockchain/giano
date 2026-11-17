@@ -243,7 +243,7 @@ function harness({
 	};
 }
 
-async function settle(h: Harness, predicate: () => boolean) {
+async function settle(predicate: () => boolean) {
 	await vi.waitFor(() => expect(predicate()).toBe(true), { timeout: 2000 });
 }
 
@@ -333,7 +333,7 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 		});
 		await h.controller.load();
 		h.controller.startAddThisDevice();
-		await settle(h, flowIs(h, "refused"));
+		await settle(flowIs(h, "refused"));
 		expect(h.controller.flow).toMatchObject({
 			type: "refused",
 			reason: "wallet-management-not-sponsored",
@@ -353,7 +353,7 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 		});
 		await h.controller.load();
 		h.controller.startAddThisDevice();
-		await settle(h, flowIs(h, "add", "confirm-fingerprint"));
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
 
 		const confirm = h.controller.flow as Extract<
 			ManagementFlow,
@@ -366,7 +366,7 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 				{ step: "confirm-fingerprint" }
 			>
 		).approve();
-		await settle(h, flowIs(h, "add", "done"));
+		await settle(flowIs(h, "add", "done"));
 
 		// ordering: ceremony → send → receipt → THEN the registry bind
 		const bind = h.events.indexOf("registry:bind");
@@ -396,14 +396,14 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 		);
 		await h.controller.load();
 		h.controller.startAddThisDevice();
-		await settle(h, flowIs(h, "add", "confirm-fingerprint"));
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
 		(
 			h.controller.flow as Extract<
 				ManagementFlow,
 				{ step: "confirm-fingerprint" }
 			>
 		).approve();
-		await settle(h, flowIs(h, "add", "done"));
+		await settle(flowIs(h, "add", "done"));
 		expect(h.api.completePendingAddition).not.toHaveBeenCalled();
 		expect(
 			(
@@ -427,7 +427,7 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 		});
 		await h.controller.load();
 		h.controller.startAddSecondDevice();
-		await settle(h, flowIs(h, "add", "confirm-fingerprint"));
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
 		const confirm = h.controller.flow as Extract<
 			ManagementFlow,
 			{ step: "confirm-fingerprint" }
@@ -448,14 +448,14 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 		});
 		await h.controller.load();
 		h.controller.startAddSecondDevice();
-		await settle(h, flowIs(h, "add", "confirm-fingerprint"));
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
 		(
 			h.controller.flow as Extract<
 				ManagementFlow,
 				{ step: "confirm-fingerprint" }
 			>
 		).decline();
-		await settle(h, flowIs(h, "add", "declined"));
+		await settle(flowIs(h, "add", "declined"));
 		expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1");
 		expect(h.events.filter((event) => event.startsWith("send:"))).toHaveLength(
 			0,
@@ -472,7 +472,7 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 		});
 		await h.controller.load();
 		h.controller.startAddSecondDevice();
-		await settle(h, flowIs(h, "add", "expired"));
+		await settle(flowIs(h, "add", "expired"));
 	});
 });
 
@@ -497,7 +497,7 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 				{ type: "remove"; step: "confirm" }
 			>
 		).approve();
-		await settle(h, flowIs(h, "remove", "done"));
+		await settle(flowIs(h, "remove", "done"));
 
 		const sends = h.events.filter((event) => event.startsWith("send:"));
 		expect(sends).toEqual([
@@ -538,7 +538,7 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 				{ type: "remove"; step: "confirm" }
 			>
 		).approve();
-		await settle(h, flowIs(h, "remove", "done"));
+		await settle(flowIs(h, "remove", "done"));
 		const done = h.controller.flow as Extract<
 			ManagementFlow,
 			{ type: "remove"; step: "done" }
@@ -572,7 +572,7 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 		>;
 		expect(confirm.endsThisSession).toBe(true);
 		confirm.approve();
-		await settle(h, flowIs(h, "remove", "done"));
+		await settle(flowIs(h, "remove", "done"));
 
 		expect(h.events.indexOf("registry:mark-removed")).toBeGreaterThan(
 			h.events.indexOf("receipt:31337"),
@@ -604,9 +604,9 @@ describe("removal (WM-27…WM-32, WK-18, WK-19)", () => {
 				{ type: "remove"; step: "confirm" }
 			>
 		).approve();
-		await settle(h, flowIs(h, "remove", "done"));
+		await settle(flowIs(h, "remove", "done"));
 		expect(h.events.indexOf("preflight:31337")).toBeLessThan(
-			h.events.indexOf("send:31337:" + encodeRemoveOwnerAtIndex(1, bytesB)),
+			h.events.indexOf(`send:31337:${encodeRemoveOwnerAtIndex(1, bytesB)}`),
 		);
 	});
 });
@@ -617,7 +617,7 @@ describe("adding an externally-owned account (WM-24…WM-26)", () => {
 	async function toInput(h: Harness) {
 		await h.controller.load();
 		h.controller.startAddAddress();
-		await settle(h, flowIs(h, "address", "input"));
+		await settle(flowIs(h, "address", "input"));
 	}
 
 	it("validates the address: checksum, format, and not the wallet itself (WM-25)", async () => {
@@ -674,7 +674,7 @@ describe("adding an externally-owned account (WM-24…WM-26)", () => {
 				{ type: "address"; step: "confirm" }
 			>
 		).approve();
-		await settle(h, flowIs(h, "address", "done"));
+		await settle(flowIs(h, "address", "done"));
 		expect(h.api.recordOwnerEvent).toHaveBeenCalledWith(
 			expect.objectContaining({
 				action: "owner-added",
@@ -695,7 +695,7 @@ describe("the claim flow (WM-19, WM-23)", () => {
 		>;
 		input.setCode("AB3D9KFM");
 		(h.controller.flow as typeof input).submit();
-		await settle(h, flowIs(h, "claim", "deposited"));
+		await settle(flowIs(h, "claim", "deposited"));
 		expect(
 			(
 				h.controller.flow as Extract<
@@ -718,7 +718,7 @@ describe("the claim flow (WM-19, WM-23)", () => {
 				{ type: "claim"; step: "input" }
 			>
 		).submit();
-		await settle(h, flowIs(h, "claim", "error"));
+		await settle(flowIs(h, "claim", "error"));
 		expect(h.controller.flow).toMatchObject({
 			type: "claim",
 			step: "error",
@@ -772,7 +772,7 @@ describe("renaming and lifecycle", () => {
 		const h = harness();
 		await h.controller.load();
 		h.controller.startAddSecondDevice();
-		await settle(h, flowIs(h, "add", "claim-code"));
+		await settle(flowIs(h, "add", "claim-code"));
 		h.controller.dismissFlow();
 		await vi.waitFor(() =>
 			expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1"),
@@ -818,7 +818,7 @@ describe("the session ends (G5)", () => {
 		h.controller.subscribe(() => undefined);
 		await h.controller.load();
 		h.controller.startAddSecondDevice();
-		await settle(h, () => h.controller.flow !== null);
+		await settle(() => h.controller.flow !== null);
 		h.endSession("unauthorized");
 		expect(h.controller.flow).toBeNull();
 		expect(h.controller.state.view).toBe("signed-out");

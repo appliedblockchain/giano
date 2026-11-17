@@ -1,6 +1,6 @@
 import { gianoPaymasterAbi } from "@appliedblockchain/giano-contracts";
 import type { Address, Hex, PublicClient } from "viem";
-import { concat, encodeAbiParameters, numberToHex, pad } from "viem";
+import { concat, numberToHex, pad } from "viem";
 import {
 	getUserOperationHash,
 	toUserOperation,
