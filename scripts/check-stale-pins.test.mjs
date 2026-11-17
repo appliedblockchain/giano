@@ -281,6 +281,17 @@ describe("parseDeferrals", () => {
 		);
 	});
 
+	it("accepts the exact versions pin discovery accepts, pre-releases included", () => {
+		const text = `${DEFERRALS_HEADER}| a | 2.0.0-rc.1 | r | o | 2027-01-01 |\n| b | 4.x | r | o | 2027-01-01 |\n| c | 2.0 | r | o | 2027-01-01 |\n`;
+		const { rows, errors } = parseDeferrals(text, "d.md", NOW);
+		assert.deepEqual(
+			rows.map((r) => r["Held version"]),
+			["2.0.0-rc.1", "4.x"],
+		);
+		assert.equal(errors.length, 1);
+		assert.match(errors[0], /^d\.md:5: Held version/);
+	});
+
 	it("matches a held major only for pins in that major", () => {
 		const rows = [{ Name: "actions/upload-artifact", "Held version": "4.x" }];
 		assert.ok(deferralFor(rows, "actions/upload-artifact", "4.6.2"));
@@ -490,6 +501,34 @@ describe("staleRows", () => {
 		const [row] = await run([npm("a", "4.0.0")], { responses, deferrals });
 		assert.equal(row.status, "error");
 		assert.match(row.note, /4\.x/);
+	});
+
+	it("dates a Node release from the end of its day, so it never qualifies early", async () => {
+		// The Node index gives only the day. Released 7 days before NOW's date, it is not yet
+		// 7 full days old at 12:00 if it shipped late that day.
+		const day = (days) => ago(days).slice(0, 10);
+		const responses = {
+			"https://raw.githubusercontent.com/nodejs/Release/main/schedule.json": {
+				v24: { lts: "2025-10-28", end: "2028-04-30" },
+			},
+			"https://nodejs.org/dist/index.json": [
+				{ version: "v24.22.3", date: day(7) },
+				{ version: "v24.22.2", date: day(8) },
+			],
+		};
+		const [row] = await run(
+			[
+				{
+					kind: "tool",
+					name: "node",
+					pinned: "24.21",
+					where: ".nvmrc:1",
+					source: { type: "node-lts" },
+				},
+			],
+			{ responses },
+		);
+		assert.equal(row.latest, "24.22.2");
 	});
 
 	it("reports a pre-release pin once its release qualifies", async () => {

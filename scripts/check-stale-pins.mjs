@@ -248,7 +248,8 @@ export async function nodeActiveLtsReleases(fetchJson, today) {
 	return index
 		.map((r) => ({
 			version: r.version.replace(/^v/, ""),
-			date: `${r.date}T00:00:00Z`,
+			// The index gives only the day, so a release counts from that day's end: never early.
+			date: `${r.date}T23:59:59Z`,
 		}))
 		.filter((r) => parseVersion(r.version))
 		.map((r) => ({ ...r, target: parseVersion(r.version).major === active }));
@@ -477,7 +478,10 @@ export function parseDeferrals(text, file = DEFERRALS_FILE, now = Date.now()) {
 			errors.push(
 				`${file}:${i + 1}: Review-by must be at most ${MAX_DEFERRAL_DAYS} days ahead (${latestReview})`,
 			);
-		} else if (!/^(\d+\.x|\d+\.\d+\.\d+)$/.test(row["Held version"])) {
+		} else if (
+			!/^\d+\.x$/.test(row["Held version"]) &&
+			!EXACT.test(row["Held version"])
+		) {
 			errors.push(
 				`${file}:${i + 1}: Held version must be an exact version or N.x`,
 			);
