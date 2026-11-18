@@ -120,6 +120,13 @@ operation. The selected profile's RPC environment reference takes precedence ove
 then the public profile fallback is used. No command executes a shell sourced from a profile or
 operator dotenv file. No secret values are added to deployment records or generated address fragments.
 
+On an RPC that replaces `from` on unsigned calls (Silent Data), add `--signed-rpc` to
+`contracts:deploy`, `contracts:provision`, `contracts:timelock` and `contracts:handoff`. Each then
+signs every request with the key it sends from: `CANONICAL_DEPLOYER_PRIVATE_KEY` for the deploy,
+`DEPLOYER_PRIVATE_KEY` for provisioning, and the ROLE_ADMIN key for the timelock and the hand-off.
+Each refuses to start without its key. The commands that send no transaction (`contracts:funding`,
+`contracts:sponsorship`, `contracts:doctor`) refuse the flag. See `specs/CHAIN-ADOPTION.md`.
+
 Use `contracts:provision` for the EOA-admin bootstrap topology, then `contracts:timelock` and
 `contracts:handoff` to move the timelocked roles (ROLE_ADMIN, upgrader, fee admin, withdraw-address
 admin) to the profile's `GianoTimelock` (G9; see [the timelock runbook](../../docs/PAYMASTER-TIMELOCK-RUNBOOK.md)).

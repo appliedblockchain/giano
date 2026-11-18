@@ -64,7 +64,9 @@ The simulation always prices gas at 1 wei, so the fee only matters at submission
 ### 4. Operator tools sign with the operator key, through `--signed-rpc`
 
 - `deploy:cli` uses a viem transport that signs the exact HTTP body (`deploy/signed-rpc.ts`).
-- `provision:paymaster` uses an ethers `FetchRequest` pre-flight hook. Its batch size is 1, so each body is signed on its own.
+- `provision:paymaster` uses an ethers `FetchRequest` pre-flight hook. Its batch size is 1, so each body is signed on its own. Both build the headers with the one `signatureHeaders` in `deploy/signed-rpc.ts`, which refuses a body that is not a string.
+- The operator commands (`contracts:deploy`, `contracts:provision`, `contracts:timelock`, `contracts:handoff`) take `--signed-rpc` and pass it on, so a Silent Data adoption keeps their profile checks and confirmations. The wizard signs with `CANONICAL_DEPLOYER_PRIVATE_KEY`.
+- A command signs only what it sends from its key. A `handoff` plan only reads, so it goes unsigned and works where ROLE_ADMIN is a Safe.
 - *Why:* the gateway keeps `from` only for a request signed by `from`. Both tools estimate role-gated calls, so they must sign.
 - *Why opt-in:* the signature headers are harmless elsewhere, but signing every request costs time, and an explicit flag makes it clear which chains need it.
 - *Alternative:* depend on `silentdatarollup-core` in `packages/contracts`. Rejected, because the signing scheme is small (40 lines) and the dependency brings ethers v6 provider classes into a package that uses viem for deployment.

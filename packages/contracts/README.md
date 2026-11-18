@@ -148,10 +148,14 @@ pnpm deploy:cli p256 --rpc <url>                                   # P-256 verif
 
 `--signed-rpc` signs every request after the chain id read with the key the command sends from
 (`deploy/signed-rpc.ts`): `DEPLOYER_PRIVATE_KEY`, or `ROLE_ADMIN_PRIVATE_KEY` for `timelock` and
-`handoff`. `upgrade --execute` also signs the upgrader's own requests with `UPGRADER_PRIVATE_KEY`.
-A Silent Data RPC keeps `from` only on a request that `from` signed, so without the flag the CreateX
-simulation runs from a random address and role-gated estimates fail. `provision:paymaster` takes
-the same flag. The flag without the key it needs is refused before any request is sent.
+`handoff --execute`. `upgrade --execute` also signs the upgrader's own requests with
+`UPGRADER_PRIVATE_KEY`. A Silent Data RPC keeps `from` only on a request that `from` signed, so
+without the flag the CreateX simulation runs from a random address and role-gated estimates fail.
+`provision:paymaster` takes the same flag. The flag without the key it needs is refused before any
+request is sent (`provision:paymaster` reads the chain id first, to fall back to the anvil key on
+31337). A `handoff` plan (no `--execute`) only reads, so it goes unsigned and needs no key. The
+operator commands `pnpm contracts:deploy`, `contracts:provision`, `contracts:timelock` and
+`contracts:handoff` take `--signed-rpc` too and pass it on.
 
 `testing` deploys the test fixtures: `PrivateERC20` (`giano.test.erc20`) and `PermissivePaymaster`
 (`giano.test.paymaster`). It refuses a production chain (R-29). It also deploys the private test token

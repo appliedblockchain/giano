@@ -54,6 +54,7 @@ import {
 	writeRecord,
 } from "./records";
 import { loadRelease } from "./release";
+import { signedHttp } from "./signed-rpc";
 
 class GuidanceError extends Error {}
 
@@ -69,12 +70,14 @@ async function main() {
 			plan: { type: "boolean" },
 			/** Accept a paymaster implementation read from Upgraded logs (deploy/plan.ts). */
 			"accept-unverified-implementation": { type: "boolean" },
+			/** Sign every request with the canonical deployer key (deploy/signed-rpc.ts). */
+			"signed-rpc": { type: "boolean" },
 			help: { type: "boolean" },
 		},
 	});
 	if (values.help) {
 		console.log(
-			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan] [--accept-unverified-implementation]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: the run refuses it unless --accept-unverified-implementation.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
+			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan] [--accept-unverified-implementation] [--signed-rpc]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: the run refuses it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc signs every request with CANONICAL_DEPLOYER_PRIVATE_KEY, and refuses to start without it.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
 		);
 		return;
 	}
@@ -172,7 +175,28 @@ async function main() {
 				"Release not found or unreadable. Use --release v1 or another committed release under packages/contracts/releases/.",
 			);
 		}
-		const transport = http(rpc, { timeout: 15000, retryCount: 1 });
+		// With --signed-rpc, the RPC keeps the canonical deployer as `from` only on a request it signed
+		// (Silent Data). Checked before the first request, so none leaves unsigned.
+		let rpcSigner: ReturnType<typeof privateKeyToAccount> | undefined;
+		if (values["signed-rpc"]) {
+			try {
+				rpcSigner = privateKeyToAccount(
+					process.env.CANONICAL_DEPLOYER_PRIVATE_KEY as Hex,
+				);
+			} catch {
+				throw new GuidanceError(
+					"--signed-rpc needs CANONICAL_DEPLOYER_PRIVATE_KEY to sign with. Load the canonical deployer key from its 1Password item into this shell only, and rerun. No request was sent.",
+				);
+			}
+		}
+		const httpConfig = { timeout: 15000, retryCount: 1 };
+		const transport = rpcSigner
+			? signedHttp(
+					rpc,
+					{ chainId: profile.chainId, signer: rpcSigner },
+					httpConfig,
+				)
+			: http(rpc, httpConfig);
 		const chain = defineChain({
 			id: profile.chainId,
 			name: profile.name,
