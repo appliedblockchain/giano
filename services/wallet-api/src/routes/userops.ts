@@ -175,12 +175,16 @@ export default async function useropRoutes(
 			let status = row.status;
 			// An `accepted` row was never confirmed by the bundler: a send whose outcome is unknown
 			// (G37), or one still in flight. Once the bundler finds it on chain it was submitted.
+			// Where the RPC hides transaction calldata (Silent Data), giano-bundler answers
+			// `eth_getUserOperationByHash` with null even for a mined operation; its receipt, read from
+			// the EntryPoint's logs, is still there.
 			if (status === "accepted") {
 				const chain = registry.tryGet(row.chainId);
 				try {
 					const found =
 						chain &&
-						(await chain.bundler.getUserOperationByHash(row.useropHash));
+						((await chain.bundler.getUserOperationByHash(row.useropHash)) ??
+							(await chain.bundler.getUserOperationReceipt(row.useropHash)));
 					if (found) {
 						await db
 							.update(useropLog)

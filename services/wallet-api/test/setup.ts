@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as http from "node:http";
+import { GAS_PRICE_ORACLE } from "@appliedblockchain/giano-contracts";
 import {
 	PostgreSqlContainer,
 	type StartedPostgreSqlContainer,
@@ -54,8 +55,12 @@ export type MockChainState = {
 	ownerKeys: Set<string>;
 	/** lowercased Ethereum-address owners. */
 	ownerAddresses: Set<string>;
-	/** The latest block's base fee. 0 stands in for a gasless chain. */
-	baseFeePerGas: bigint;
+	/** The latest block's base fee. 0 stands in for a gasless chain; null for legacy gas pricing. */
+	baseFeePerGas: bigint | null;
+	/** What eth_gasPrice answers. */
+	gasPrice: bigint;
+	/** The OP Stack GasPriceOracle's L1 fee; undefined when the chain is not OP Stack. */
+	l1Fee?: bigint;
 };
 
 export function createMockChainState(): MockChainState {
@@ -64,6 +69,7 @@ export function createMockChainState(): MockChainState {
 		ownerKeys: new Set(),
 		ownerAddresses: new Set(),
 		baseFeePerGas: 1_000_000_000n,
+		gasPrice: 1_000_000_000n,
 	};
 }
 
@@ -103,7 +109,12 @@ export function startMockRpc(
 			if (method === "eth_call") {
 				const data = params?.[0]?.data ?? "0x";
 				const selector = data.slice(0, 10).toLowerCase();
-				if (chainState && selector === SEL_IS_OWNER_PUBLIC_KEY) {
+				if (
+					chainState?.l1Fee !== undefined &&
+					params?.[0]?.to?.toLowerCase() === GAS_PRICE_ORACLE.toLowerCase()
+				) {
+					result = `0x${chainState.l1Fee.toString(16).padStart(64, "0")}`;
+				} else if (chainState && selector === SEL_IS_OWNER_PUBLIC_KEY) {
 					const x = `0x${data.slice(10, 74)}`;
 					const y = `0x${data.slice(74, 138)}`;
 					result = chainState.ownerKeys.has(ownerKeyOf(x, y))
@@ -122,7 +133,14 @@ export function startMockRpc(
 				const address = String(
 					(params as unknown as [string])?.[0] ?? "",
 				).toLowerCase();
-				result = chainState?.contracts.has(address) ? "0x6080" : "0x";
+				result =
+					chainState?.contracts.has(address) ||
+					(chainState?.l1Fee !== undefined &&
+						address === GAS_PRICE_ORACLE.toLowerCase())
+						? "0x6080"
+						: "0x";
+			} else if (method === "eth_gasPrice") {
+				result = `0x${(chainState?.gasPrice ?? 0n).toString(16)}`;
 			} else if (method === "eth_chainId") {
 				result = "0x7a69";
 			} else if (method === "eth_blockNumber") {
@@ -135,7 +153,7 @@ export function startMockRpc(
 					hash: `0x${"11".repeat(32)}`,
 					parentHash: `0x${"22".repeat(32)}`,
 					transactions: [],
-					...(chainState
+					...(chainState && chainState.baseFeePerGas !== null
 						? { baseFeePerGas: `0x${chainState.baseFeePerGas.toString(16)}` }
 						: {}),
 				};

@@ -25,8 +25,8 @@ endpoint per chain: `POST /<chainId>`.
 | Method | Behaviour |
 | --- | --- |
 | `eth_chainId`, `eth_supportedEntryPoints` | From configuration and the chain. |
-| `eth_estimateUserOperationGas` `[op, entryPoint]` | Simulation-based (below), or fixed limits on a chain with `stateOverride: false`. Always returns all five gas fields as hex. State overrides in the request are refused. A `maxFeePerGas` of 0 is refused unless the latest block's base fee is 0 or absent. |
-| `eth_sendUserOperation` `[op, entryPoint]` | Checks, simulates against the real EntryPoint, broadcasts, then returns the hash. |
+| `eth_estimateUserOperationGas` `[op, entryPoint]` | Simulation-based (below), or fixed limits on a chain with `stateOverride: false`. Always returns all five gas fields as hex. State overrides in the request are refused. A `maxFeePerGas` of 0 is refused unless the chain charges nothing for gas (`chargesNoGas`, below). |
+| `eth_sendUserOperation` `[op, entryPoint]` | Checks, simulates against the real EntryPoint, broadcasts, then returns the hash. Refuses a `maxFeePerGas` of 0 on the same rule as estimation. |
 | `eth_getUserOperationReceipt` `[hash]` | Alto's receipt shape. `null` while pending. |
 | `eth_getUserOperationByHash` `[hash]` | Alto's shape, decoded from the `handleOps` input. `null` while pending, and `null` when the RPC hides the transaction's calldata (input `0x`). |
 | `giano_executors` | Not ERC-4337: for wallet-api's chain status (`GET /v1/platform/chains`). The chain's gas price and, for each executor key, its address, balance (read when asked), whether its lane holds a transaction (`busySince`, and `heldSeconds` counted by the bundler's own clock), and its latest and pending nonces, all as hex. Addresses only; a key never leaves the bundler. |
@@ -72,21 +72,35 @@ cannot simulate. The bundler then sends no `eth_call` with a state override and 
 | Field | Fixed limit | A value the caller sends |
 | --- | --- | --- |
 | `verificationGasLimit` | 1,000,000 (a passkey validation plus wallet deployment) | kept when higher |
-| `callGasLimit` | 300,000; 0 for empty call data | always kept |
+| `callGasLimit` | 300,000; 1,000,000 at a `maxFeePerGas` of 0; 0 for empty call data | kept, at no less than 9,000 |
 | `paymasterVerificationGasLimit` | 200,000, with a paymaster | kept when higher |
 | `paymasterPostOpGasLimit` | 50,000, with a paymaster | kept |
 
 `preVerificationGas` is computed as below, on both paths. Nothing checks during estimation that
 the operation would succeed, so a call that needs more than its limit reverts on chain.
 
-The cost depends on the chain's base fee:
-- On a chain that charges no gas (base fee 0), the larger limits cost nothing.
+The fixed limits apply to a caller that sends none. Giano's wallet sends its own verification gas
+for a passkey, 800,000 (`toGianoSmartAccount`), and viem keeps it over the estimate. A first
+passkey operation (wallet deployment plus validation) needs at most about 630,000, even on a chain
+without the P-256 precompile (`packages/contracts/test/GianoSmartWallet/FirstOperationGas.t.sol`).
+wallet-api's paymaster stub sends 150,000 paymaster verification gas, which viem also keeps; the
+paymaster's validation stays under 60,000 (`test/GianoPaymaster/Gas.t.sol`).
+
+The cost depends on whether the chain charges for gas:
+- On a chain that charges no gas, at a `maxFeePerGas` of 0, the larger limits cost nothing. The call
+  then gets 1,000,000 gas, because nothing could simulate how much it needs.
 - On a chain that charges gas, the account or paymaster prefund, and wallet-api's maximum charge,
   cover every limit at `maxFeePerGas`: about 1.5 million gas plus `preVerificationGas`. That is
   about 4 times a simulated ETH transfer. EntryPoint v0.9 charges no unused verification gas.
   When more than 40,000 call gas goes unused, it charges 10% of the unused call gas: a call that
   uses 50,000 of 300,000 costs 25,000 more gas. A wallet that knows its call gas should send it.
   Size the paymaster deposit, the tenant balances and `maxCostPerTxWei` for the fixed limits.
+
+**A fee of 0** is accepted, at estimation and at submission, only where the chain charges nothing
+for gas. `chargesNoGas` (`@appliedblockchain/giano-contracts`, also used by wallet-api's
+`pm_getPaymasterData`) decides it: the gas price is 0 (the latest block's base fee, or `eth_gasPrice`
+where blocks carry none), and on an OP Stack chain the GasPriceOracle's L1 fee is also 0. The
+executor pays the L1 fee, and only the operation's gas price repays it.
 
 Leave `stateOverride` at its default (`true`) on every chain whose RPC accepts state overrides.
 An explicit setting keeps a real simulation fault visible as an error: the bundler never falls

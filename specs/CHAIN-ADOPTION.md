@@ -129,7 +129,8 @@ no code change:
       builds, plus --signed-rpc.
       On a gas-charging chain with bundler.stateOverride: false, every operation carries the
       bundler's fixed limits: verification 1,000,000, call 300,000 (unless the wallet sends its
-      own), paymaster verification 200,000 and post-op 100,000. The maximum charge is then about
+      own), paymaster verification 200,000 and post-op 100,000. Giano's wallet sends 800,000
+      verification and wallet-api's stub 150,000 paymaster verification, so these are the maxima. The maximum charge is then about
       1.6 million gas plus pre-verification gas, times maxFeePerGas, about four times that of a
       simulated ETH transfer. Settlement still charges the actual cost. Size for that maximum:
         - the paymaster deposit: it must cover the prefund of every operation in flight;
@@ -138,7 +139,8 @@ no code change:
         - each tenant's maxCostPerTxWei rule, and the platform's wallet-management cap
           (SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI): a cap below the maximum charge refuses the
           operation.
-      A gasless chain (base fee 0) needs none of this: the gas part of the charge is 0.
+      A gasless chain needs none of this: the gas part of the charge is 0. Gasless means a gas
+      price of 0 and, on an OP Stack chain, an L1 fee of 0 (`chargesNoGas`).
 
 7a. Hand the timelocked roles to the timelock (G9; docs/PAYMASTER-TIMELOCK-RUNBOOK.md §2).
       pnpm contracts:timelock, then pnpm contracts:handoff. The hand-off first checks the timelock

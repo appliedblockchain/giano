@@ -920,6 +920,11 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 	let app: Awaited<ReturnType<typeof buildApp>>;
 	/** What the bundler answers to eth_getUserOperationByHash: null until the op is on chain. */
 	let onChain = false;
+	/**
+	 * The RPC hides transaction calldata (Silent Data): eth_getUserOperationByHash stays null even
+	 * on chain, and only the receipt finds the operation.
+	 */
+	let calldataHidden = false;
 	/** How the bundler answers eth_sendUserOperation: hold it forever, accept it, or refuse it. */
 	let sendAnswer: "hold" | "accept" | "refuse" | "drop" | "http502" = "hold";
 	let sends = 0;
@@ -975,8 +980,22 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 					JSON.stringify({
 						jsonrpc: "2.0",
 						id,
+						result:
+							onChain && !calldataHidden
+								? { transactionHash: `0x${"12".repeat(32)}` }
+								: null,
+					}),
+				);
+			if (method === "eth_getUserOperationReceipt")
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id,
 						result: onChain
-							? { transactionHash: `0x${"12".repeat(32)}` }
+							? {
+									success: true,
+									receipt: { transactionHash: `0x${"12".repeat(32)}` },
+								}
 							: null,
 					}),
 				);
@@ -1047,6 +1066,30 @@ describe("a send the bundler does not confirm in time (G37)", () => {
 		expect(await statusOf(body.userOperationHash)).toBe("submitted");
 		onChain = false;
 		expect(await statusOf(body.userOperationHash)).toBe("submitted");
+	});
+
+	it("settles an unconfirmed op from its receipt where the RPC hides calldata (Silent Data)", async () => {
+		onChain = false;
+		calldataHidden = true;
+		sendAnswer = "hold";
+		try {
+			const res = await app.inject({
+				method: "POST",
+				url: "/v1/userops",
+				headers: { authorization: `Bearer ${sessionToken}` },
+				payload: { userOperation: makeOp(0x1a0) },
+			});
+			expect(res.statusCode).toBe(504);
+			const { userOperationHash } = res.json() as { userOperationHash: string };
+			expect(await statusOf(userOperationHash)).toBe("accepted");
+
+			// Mined: eth_getUserOperationByHash still answers null, the receipt does not.
+			onChain = true;
+			expect(await statusOf(userOperationHash)).toBe("submitted");
+		} finally {
+			onChain = false;
+			calldataHidden = false;
+		}
 	});
 
 	it("resends an unconfirmed op the bundler lost, and answers duplicate once it accepts it", async () => {

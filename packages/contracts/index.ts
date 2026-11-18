@@ -2,6 +2,7 @@ export * from "./addresses";
 export * from "./chains";
 export * from "./entrypoint";
 export * from "./erc1967";
+export * from "./gasless";
 export * from "./generated";
 export * from "./paymaster";
 export * from "./receipt";

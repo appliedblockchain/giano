@@ -46,16 +46,18 @@ With `false`, the bundler returns fixed limits and does not simulate.
 - *Why:* a refused simulation is the only gas signal the bundler has. If the bundler fell back automatically on any override error, a real simulation fault on a normal chain would turn into fixed limits instead of an error. An explicit setting keeps that error visible.
 - *Fixed values:*
   - verification gas 1,000,000, enough for a passkey (P-256) validation plus wallet deployment;
-  - call gas 300,000;
+  - call gas 300,000, or 1,000,000 at a fee of 0, where unused call gas costs nothing; a caller's own call gas is kept, at no less than 9,000;
   - paymaster verification gas 200,000.
+- *Giano's wallet:* the fixed limits apply to a caller that sends none. Giano's wallet sends 800,000 verification gas for a passkey, and wallet-api's paymaster stub sends 150,000 paymaster verification gas; viem keeps both over the estimate. A first passkey operation needs at most about 630,000 verification gas, even without the P-256 precompile, and `FirstOperationGas.t.sol` fails CI if it reaches 700,000. The paymaster's validation stays under 60,000 (`Gas.t.sol`).
 - *Cost of the fixed values:* EntryPoint v0.9 does not charge unused verification gas. It does charge for unused call gas: once more than 40,000 call gas is unused, it charges 10% of *all* the unused call gas, not only the part above 40,000. For example, a call that uses 30,000 of the fixed 300,000 is charged a further 27,000. The same penalty applies to unused paymaster postOp gas (`_getUnusedGasPenalty` in `EntryPoint.sol`). Size the caps on a gas-charging chain with both penalties included. On a gasless chain the over-reservation costs nothing. On a chain that charges gas, the prefund must cover the maxima, so a wallet that knows its call gas sends it.
 - *Permanent:* the gateway refuses state overrides, and Giano expects no change to it. Fixed limits are the long-term approach on Silent Data, not a stopgap.
 
-### 3. Accept a fee of 0 when the base fee is 0
+### 3. Accept a fee of 0 when the chain charges no gas
 
 The simulation always prices gas at 1 wei, so the fee only matters at submission.
 
-- *Why:* on a chain with base fee 0, a fee of 0 is the correct fee. The check now reads the latest block's base fee.
+- *Why:* on a chain that charges no gas, a fee of 0 is the correct fee. The check reads the latest block's base fee, or `eth_gasPrice` where blocks carry none: a legacy-priced chain with a gas price above 0 would never mine a transaction at gas price 0. On an OP Stack chain the GasPriceOracle's L1 fee must also be 0: the executor pays the L1 fee, and only the operation's gas price repays it.
+- *One check:* `chargesNoGas` in giano-contracts makes it for the bundler's estimator, the bundler's submitter, and wallet-api. wallet-api reads its own RPC and the bundler may read `bundler.rpcUrl`; the two can disagree only briefly while a chain's fee changes, and the result is then a refusal.
 - wallet-api's `pm_getPaymasterData` makes the same check. Without it, the bundler would accept a fee-0 operation that wallet-api then refuses to sponsor. With fee 0 the gas part and the overhead of the maximum charge are 0, so the cap and the balance apply to the tenant fee alone.
 - *Alternative:* a per-chain `gasless` setting. Rejected, because the base fee already says it, and a chain that later starts charging gas is handled without a configuration change.
 

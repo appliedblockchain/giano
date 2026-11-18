@@ -1,4 +1,7 @@
-import { PAYMASTER_MIN_POST_OP_GAS_LIMIT } from "@appliedblockchain/giano-contracts";
+import {
+	chargesNoGas,
+	PAYMASTER_MIN_POST_OP_GAS_LIMIT,
+} from "@appliedblockchain/giano-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Address, Hex } from "viem";
@@ -329,18 +332,18 @@ export default async function paymasterRoutes(
 
 			// A zero fee makes the gas part of the maximum charge zero. That is only true of a gasless
 			// chain, so elsewhere it is refused rather than defaulted: the wallet is expected to estimate
-			// fees from the chain. "Gasless" is decided as giano-bundler decides it: the latest block's
-			// base fee is 0. On such a chain the cap and the balance still apply, to the fee alone, and the
-			// EntryPoint charges the paymaster at most maxFeePerGas, so a later base fee cannot cost more.
+			// fees from the chain. "Gasless" is decided by `chargesNoGas`, the check giano-bundler makes:
+			// a gas price of 0 and, on an OP Stack chain, an L1 fee of 0. On such a chain the cap and the
+			// balance still apply, to the fee alone, and the EntryPoint charges the paymaster at most
+			// maxFeePerGas, so a later base fee cannot cost more.
 			if (maxFeePerGas === 0n && method === "pm_getPaymasterData") {
-				let baseFeePerGas: bigint;
+				let gasless: boolean;
 				try {
-					baseFeePerGas =
-						(await chain.publicClient.getBlock()).baseFeePerGas ?? 0n;
+					gasless = await chargesNoGas(chain.publicClient);
 				} catch (err) {
 					request.log.warn(
 						{ err, chainId: chain.chainId },
-						"could not read the latest base fee",
+						"could not read whether the chain charges for gas",
 					);
 					return rpcError(
 						REASON_CODES["temporarily-unavailable"],
@@ -348,7 +351,7 @@ export default async function paymasterRoutes(
 						"temporarily-unavailable",
 					);
 				}
-				if (baseFeePerGas > 0n) {
+				if (!gasless) {
 					return rpcError(
 						JSON_RPC_INVALID_PARAMS,
 						"maxFeePerGas is required to authorise sponsorship",

@@ -133,6 +133,7 @@ export function createChainRegistry(options: {
 		const submitter = createSubmitter({
 			client,
 			chainId: config.chainId,
+			chainType,
 			entryPoint: config.entryPoint,
 			executors,
 			resubmitTimeoutMs: options.resubmitTimeoutMs,

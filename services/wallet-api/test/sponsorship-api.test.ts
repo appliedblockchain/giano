@@ -226,6 +226,8 @@ beforeEach(async () => {
 	ctx.paymasterState.unreachable = false;
 	ctx.paymasterState.feeOverrides.clear();
 	ctx.chainState.baseFeePerGas = 1_000_000_000n;
+	ctx.chainState.gasPrice = 1_000_000_000n;
+	ctx.chainState.l1Fee = undefined;
 });
 
 // ── authentication and binding ────────────────────────────────────────────────
@@ -417,6 +419,56 @@ describe("request validation", () => {
 			expect(BigInt(reservation.totalWei)).toBe(
 				ctx.paymasterState.defaultFeeWei,
 			);
+		});
+
+		it("is refused on a chain with no base fee whose gas price is above 0", async () => {
+			ctx.chainState.baseFeePerGas = null;
+			ctx.chainState.gasPrice = 1_000_000_000n;
+			const session = await newSession(`fee0-legacy-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error?.message).toBe(
+				"maxFeePerGas is required to authorise sponsorship",
+			);
+			expect(await ctx.db.select().from(sponsorshipReservations)).toEqual([]);
+		});
+
+		it("is sponsored on a chain with no base fee whose gas price is 0", async () => {
+			ctx.chainState.baseFeePerGas = null;
+			ctx.chainState.gasPrice = 0n;
+			const session = await newSession(`fee0-legacy-free-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error).toBeUndefined();
+		});
+
+		it("is refused on an OP Stack chain with base fee 0 while its L1 fee is above 0", async () => {
+			ctx.chainState.baseFeePerGas = 0n;
+			ctx.chainState.l1Fee = 1_000n;
+			const session = await newSession(`fee0-l1-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error?.message).toBe(
+				"maxFeePerGas is required to authorise sponsorship",
+			);
+			expect(await ctx.db.select().from(sponsorshipReservations)).toEqual([]);
+
+			ctx.chainState.l1Fee = 0n;
+			const free = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(free.error).toBeUndefined();
 		});
 
 		it("still applies the cost cap, to the fee, on a gasless chain", async () => {

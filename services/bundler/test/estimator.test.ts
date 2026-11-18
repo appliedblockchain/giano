@@ -32,11 +32,15 @@ const op: UserOp = {
 type Call = { method: string; params: unknown[] };
 
 /**
- * A chain whose RPC answers only what the fixed path needs: the latest block and the
- * GasPriceOracle's getL1Fee. Any other eth_call (a simulation) is refused, as Silent Data refuses
- * an eth_call with a state override.
+ * A chain whose RPC answers only what the fixed path needs: the latest block, the gas price and
+ * the GasPriceOracle's getL1Fee. Any other eth_call (a simulation) is refused, as Silent Data
+ * refuses an eth_call with a state override.
  */
-function chain(options: { baseFeePerGas?: bigint | null }) {
+function chain(options: {
+	baseFeePerGas?: bigint | null;
+	gasPrice?: bigint;
+	l1Fee?: bigint;
+}) {
 	const calls: Call[] = [];
 	const client = createPublicClient({
 		transport: custom(
@@ -62,6 +66,8 @@ function chain(options: { baseFeePerGas?: bigint | null }) {
 								? {}
 								: { baseFeePerGas: numberToHex(options.baseFeePerGas ?? 0n) }),
 						};
+					if (method === "eth_gasPrice")
+						return numberToHex(options.gasPrice ?? 0n);
 					// reads the simulation's state override is built from
 					if (method === "eth_getBalance") return "0x0";
 					if (method === "eth_getCode") return "0x";
@@ -71,7 +77,10 @@ function chain(options: { baseFeePerGas?: bigint | null }) {
 							params.length === 2 &&
 							request.to.toLowerCase() === GAS_PRICE_ORACLE.toLowerCase()
 						)
-							return encodeAbiParameters([{ type: "uint256" }], [L1_FEE]);
+							return encodeAbiParameters(
+								[{ type: "uint256" }],
+								[options.l1Fee ?? L1_FEE],
+							);
 						throw new Error("state override not allowed");
 					}
 					throw new Error(`unexpected ${method}`);
@@ -114,12 +123,13 @@ describe("estimate with stateOverride: false", () => {
 		expect(overrideCalls(calls)).toEqual([]);
 	});
 
-	it("keeps the call gas the caller sends", async () => {
+	it("keeps the call gas the caller sends, at no less than 9,000", async () => {
 		const { client } = chain({});
-		const estimate = await estimatorOn(client, {
-			stateOverride: false,
-		}).estimate({ ...op, callGasLimit: 120_000n });
-		expect(estimate.callGasLimit).toBe(120_000n);
+		const estimator = estimatorOn(client, { stateOverride: false });
+		const given = await estimator.estimate({ ...op, callGasLimit: 120_000n });
+		expect(given.callGasLimit).toBe(120_000n);
+		const tiny = await estimator.estimate({ ...op, callGasLimit: 1n });
+		expect(tiny.callGasLimit).toBe(9_000n);
 	});
 
 	it("keeps a verification gas above the fixed limit", async () => {
@@ -202,28 +212,57 @@ describe("estimate on a default chain", () => {
 });
 
 describe("a fee of 0 at estimation", () => {
-	for (const [label, baseFeePerGas] of [
-		["is 0", 0n],
-		["is absent", null],
+	const feeZero = { ...op, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n };
+
+	for (const [label, chainOptions, chainType] of [
+		["the base fee is 0", { baseFeePerGas: 0n }, "default"],
+		[
+			"the chain has no base fee and gas price 0",
+			{ baseFeePerGas: null, gasPrice: 0n },
+			"default",
+		],
+		[
+			"an OP Stack chain has base fee 0 and L1 fee 0",
+			{ baseFeePerGas: 0n, l1Fee: 0n },
+			"op-stack",
+		],
 	] as const)
-		it(`is accepted when the base fee ${label}`, async () => {
-			const { client } = chain({ baseFeePerGas });
+		it(`is accepted when ${label}, with 1,000,000 call gas`, async () => {
+			const { client } = chain(chainOptions);
 			const estimate = await estimatorOn(client, {
+				chainType,
 				stateOverride: false,
-			}).estimate({ ...op, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n });
-			expect(estimate.callGasLimit).toBe(300_000n);
+			}).estimate(feeZero);
+			// nothing is charged at a fee of 0, so the unsimulated call gets more room
+			expect(estimate.callGasLimit).toBe(1_000_000n);
 		});
 
-	it("is refused with invalid params when the base fee is above 0", async () => {
-		const { client } = chain({ baseFeePerGas: 251n });
-		const error = await estimatorOn(client, { stateOverride: false })
-			.estimate({ ...op, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n })
-			.catch((caught: unknown) => caught);
-		expect(error).toBeInstanceOf(RpcError);
-		expect(error).toMatchObject({
-			code: -32602,
-			message:
-				"user operation max fee per gas must be larger than 0 during gas estimation",
+	for (const [label, chainOptions, chainType] of [
+		["the base fee is above 0", { baseFeePerGas: 251n }, "default"],
+		[
+			"the chain has no base fee and a gas price above 0",
+			{ baseFeePerGas: null, gasPrice: 1_000_000_000n },
+			"default",
+		],
+		[
+			"an OP Stack chain has base fee 0 but an L1 fee above 0",
+			{ baseFeePerGas: 0n, l1Fee: 1_000n },
+			"op-stack",
+		],
+	] as const)
+		it(`is refused with invalid params when ${label}`, async () => {
+			const { client } = chain(chainOptions);
+			const error = await estimatorOn(client, {
+				chainType,
+				stateOverride: false,
+			})
+				.estimate(feeZero)
+				.catch((caught: unknown) => caught);
+			expect(error).toBeInstanceOf(RpcError);
+			expect(error).toMatchObject({
+				code: -32602,
+				message:
+					"user operation max fee per gas must be larger than 0 during gas estimation",
+			});
 		});
-	});
 });
