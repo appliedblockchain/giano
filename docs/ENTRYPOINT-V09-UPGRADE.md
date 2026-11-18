@@ -64,6 +64,9 @@ or RPC-capability tests. The v0.9 address is identical in every row.
 
 **No public chain becomes a production-supported Giano deployment merely by merging this PR.**
 The committed public Giano registry is empty and the canonical deployer is still a placeholder.
+*(Superseded: this describes the state when the upgrade PR merged. Since 2026-11-17 the testnet deployer
+is set and the registry carries release v3 on Base Sepolia and Ethereum Sepolia; see
+`specs/INFRASTRUCTURE.md` §13 and `packages/contracts/deployments/`.)*
 Sepolia and Base Sepolia are the next acceptance targets; Base is the existing production adoption
 candidate. Other EVM chains may qualify through the same checklist. Pre-Cancun chains and native
 non-EVM account-abstraction systems are outside this implementation's compatibility guarantee.

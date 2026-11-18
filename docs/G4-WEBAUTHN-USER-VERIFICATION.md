@@ -186,7 +186,9 @@ already-fixed browser bugs. So enforcement excludes no authenticator that curren
   Giano deployment.
   The committed registry is empty on `main` too. The only live wallets are on local devnets and the
   dev environment, and they are test accounts. Re-check this before cutting the release if a
-  testnet deployment has happened in the meantime.
+  testnet deployment has happened in the meantime. *(Superseded: release v3 was deployed on Base
+  Sepolia and Ethereum Sepolia on 2026-11-17, so those testnets now have registry entries; see
+  `specs/INFRASTRUCTURE.md` §13.)*
 - **Release v2.** PR #169 freezes contract release v2 with a new wallet implementation, because
   EntryPoint v0.9 already forces one. Adding `requireUV: true` before v2 is first deployed costs a
   re-cut of v2: `releases/v2/*`, canonical code hashes and both devnet states. It does not cost a
