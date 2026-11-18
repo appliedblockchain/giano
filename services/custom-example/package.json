@@ -8,7 +8,7 @@
 		"dev": "vite --host --port 4410 --strictPort",
 		"dev:stock": "env GIANO_WALLET_URL=http://wallet.localhost GIANO_OTHER_WALLET_URL=http://wallet-byo.localhost GIANO_APP_LABEL='tenant: stock' vite --host --port 4410 --strictPort",
 		"dev:byo": "env GIANO_WALLET_URL=http://wallet-byo.localhost GIANO_OTHER_WALLET_URL=http://wallet.localhost GIANO_APP_LABEL='tenant: byo' vite --host --port 4411 --strictPort",
-		"lint": "biome check .",
+		"lint": "biome check --error-on-warnings .",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
 		"test": "node --test test/*.test.ts",
