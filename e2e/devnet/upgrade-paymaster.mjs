@@ -33,9 +33,11 @@ async function rpc(method, params = []) {
 	return body.result;
 }
 
+// The Anvil release the devnet state is generated with (e2e/devnet/generate-state.mjs).
+const PINNED_ANVIL_VERSION = "1.7.1";
 const version = await rpc("web3_clientVersion");
-if (!version.includes("anvil") || !version.includes("1.7.1"))
-	throw new Error("requires the pinned local Anvil 1.7.1");
+if (!version.includes("anvil") || !version.includes(PINNED_ANVIL_VERSION))
+	throw new Error(`requires the pinned local Anvil ${PINNED_ANVIL_VERSION}`);
 if (![31337, 31338].includes(CHAIN_ID))
 	throw new Error(`CHAIN_ID ${CHAIN_ID} is not a local devnet chain`);
 if (Number(BigInt(await rpc("eth_chainId"))) !== CHAIN_ID)

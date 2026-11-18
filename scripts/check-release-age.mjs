@@ -144,10 +144,12 @@ export async function findStaleExclusions(
 	return errs;
 }
 
+/** The npm registry document of a package; every `/` of a scoped name is encoded. */
+export const registryUrl = (name) =>
+	`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`;
+
 async function registryJson(name) {
-	const res = await fetch(
-		`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`,
-	);
+	const res = await fetch(registryUrl(name));
 	return res.ok ? res.json() : null;
 }
 

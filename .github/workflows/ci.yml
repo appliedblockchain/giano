@@ -161,6 +161,9 @@ jobs:
           node-version-file: .nvmrc
       - name: Pin check unit tests
         run: node --test scripts/check-pinned-versions.test.mjs
+      # The weekly stale-pins report (stale-pins.yml) reads the network, so only its tests run here.
+      - name: Stale-pins report unit tests
+        run: node --test scripts/check-stale-pins.test.mjs
       - name: Check every manifest and override
         run: node scripts/check-pinned-versions.mjs
 
