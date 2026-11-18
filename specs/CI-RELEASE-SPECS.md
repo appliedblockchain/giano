@@ -622,7 +622,8 @@ Version 2.31.1 also handles the GitHub-Packages-specific wrinkle that makes this
 GitHub Packages does not auto-assign the `latest` dist-tag the way npmjs does, so a bare
 `npm info <name>` can return empty for a package that exists. 2.31.1 retries with
 `npm info <name>@<version>` before concluding `E404`. Do not downgrade `@changesets/cli` below
-2.31.1. The repository runs no Renovate or Dependabot, so the pin only moves when someone moves it.
+2.31.1. The repository runs no Renovate or Dependabot: the weekly stale-pins run only reports a newer release, so
+the pin only moves when someone moves it.
 
 ### 6.2 A rebuilt artifact at the same version — closed by the registry
 

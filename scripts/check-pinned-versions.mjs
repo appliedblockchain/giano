@@ -27,7 +27,8 @@ const FIELDS = [
 	"peerDependencies",
 ];
 
-const EXACT = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+/** An exact npm version (ABIP-7). */
+export const EXACT = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 const GIT_SHA = /^(github:|git\+(https|ssh):\/\/|git:\/\/).+#[0-9a-f]{40}$/;
 
 /** Whether a manifest specifier is an exact, drift-free reference. */
@@ -107,7 +108,8 @@ export function checkOverrides(text, file) {
 		}));
 }
 
-function manifests() {
+/** Every tracked package.json of both workspaces, outside vendored code. */
+export function manifests() {
 	return execFileSync("git", ["ls-files", "package.json", "**/package.json"], {
 		cwd: ROOT,
 		encoding: "utf8",
