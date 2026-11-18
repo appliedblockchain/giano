@@ -39,6 +39,7 @@ export const gianoAddresses: Record<number, GianoDeployment> = {
     implementation: '0x265dA930A9253fCC09E120B6f89EE8a91BcA9406',
     sponsorshipPaymaster: '0xb2C7081be89D88f1da020530Ebd5c14b8871615a',
     sponsorshipPaymasterImplementation: '0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540',
+    testErc20: '0x461E0641a3615336b7D2E4C5D71fB2BB88038C93',
   },
   11155111: {
     entryPoint: '0x433709009B8330FDa32311DF1C2AFA402eD8D009',
@@ -46,6 +47,7 @@ export const gianoAddresses: Record<number, GianoDeployment> = {
     implementation: '0x265dA930A9253fCC09E120B6f89EE8a91BcA9406',
     sponsorshipPaymaster: '0xb2C7081be89D88f1da020530Ebd5c14b8871615a',
     sponsorshipPaymasterImplementation: '0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540',
+    testErc20: '0x461E0641a3615336b7D2E4C5D71fB2BB88038C93',
   },
 };
 
