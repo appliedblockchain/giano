@@ -7,6 +7,7 @@
 import { type Address, getAddress } from "viem";
 import { ENTRY_POINT_ADDRESS } from "../entrypoint";
 import type { ReleaseContractName } from "../release-fingerprints";
+import type { FixtureContractName } from "./fixtures";
 
 /** A chain's network class. Local chains (31337, 31338) are `local`; a profile declares the rest. */
 export type NetworkClass = "mainnet" | "testnet" | "local";
@@ -161,6 +162,12 @@ export const LABELS = {
 	/** Fixtures for local chains and testnets only; never on a production chain. */
 	testErc20: "giano.test.erc20",
 	testPaymaster: "giano.test.paymaster",
+	/**
+	 * Only where the RPC enforces private reads (Silent Data): a profile opts in with
+	 * `privateTestErc20`, and local chains always get it, for the local gateway. Deployed from a
+	 * committed artifact, not a release (deploy/fixtures.ts).
+	 */
+	privateTestErc20: "giano.test.private-erc20",
 } as const;
 
 export type LabelKey = keyof typeof LABELS;
@@ -246,7 +253,10 @@ export function isClassDeployer(address: Address): boolean {
 /** ERC-4337 EntryPoint v0.9; the wallet implementation hardcodes it. */
 export const ENTRY_POINT_V09: Address = ENTRY_POINT_ADDRESS;
 
-/** The release contract deployed under each label, for matching on-chain code (releaseOf). */
+/**
+ * The contract deployed under each label, for matching on-chain code: a release contract (releaseOf),
+ * or a fixture deployed from its committed artifact (deploy/fixtures.ts).
+ */
 export const CONTRACT_OF = {
 	walletImplementation: "GianoSmartWallet",
 	factory: "GianoSmartWalletFactory",
@@ -254,7 +264,11 @@ export const CONTRACT_OF = {
 	paymasterProxy: "ERC1967Proxy",
 	testErc20: "PrivateERC20",
 	testPaymaster: "PermissivePaymaster",
-} as const satisfies Record<LabelKey, ReleaseContractName>;
+	privateTestErc20: "GianoTestPrivateErc20",
+} as const satisfies Record<
+	LabelKey,
+	ReleaseContractName | FixtureContractName
+>;
 
 /**
  * Contracts a chain profile may override (deploy/profiles.ts `addresses`): the core contracts. The

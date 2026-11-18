@@ -73,7 +73,7 @@ Decided:
   - a UCEF test token under `packages/contracts`;
   - the `testing` deployment.
 - **Dependencies:**
-  - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), vendored at a pinned commit.
+  - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), a git submodule pinned to a commit.
   - The demo needs a client that signs Silent Data requests for a smart wallet (`x-signer-swc`). `@appliedblockchain/silentdatarollup-core` has one. The GitHub Packages scope caveat in `packages/connector/README.md` applies.
 - **Configuration:** a `GIANO_CHAINS` entry for 19877 and one for 19874. Each sets `bundler.rpcUrl` to that chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds them.
 - **Blocked:** contract deployment on both chains waits for the testnet canonical deployer key (`DEPLOYERS.testnet` is `null`). Copper-heron also needs funds for the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX.

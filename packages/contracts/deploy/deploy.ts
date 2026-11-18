@@ -45,6 +45,13 @@ import {
 	guardedSalt,
 } from "./create3";
 import { createxAbi } from "./createx";
+import {
+	FIXTURE_RELEASE,
+	type FixtureContractName,
+	fixtureMatch,
+	isFixtureContract,
+	loadFixture,
+} from "./fixtures";
 import { type CoreKey, placementOf } from "./plan";
 import type { DeployedContract, DeploymentRecord } from "./records";
 import { DEV_RELEASE, type Release } from "./release";
@@ -90,7 +97,26 @@ export type TestingParams = {
 	entryPoint: Address;
 	/** Wei forwarded to PermissivePaymaster's EntryPoint deposit; 0 skips funding. */
 	fundWei: bigint;
+	/**
+	 * Also deploy GianoTestPrivateErc20, from its committed artifact whatever the release (see
+	 * privateTestErc20Wanted).
+	 */
+	privateTestErc20?: boolean;
 };
+
+/**
+ * Whether `testing` deploys GianoTestPrivateErc20 (openspec silent-data-network, design D7). Its
+ * privacy holds only where the RPC enforces private reads, so a remote chain needs its profile to opt
+ * in (`privateTestErc20: true`; a mainnet profile cannot, R-29). A local chain always gets it, for the
+ * local Silent Data gateway. It comes from a committed artifact (deploy/fixtures.ts), so the release
+ * plays no part.
+ */
+export function privateTestErc20Wanted(chain: {
+	local: boolean;
+	optIn?: boolean;
+}): boolean {
+	return chain.local || chain.optIn === true;
+}
 
 function assertDeployerAccount(ctx: DeployContext): void {
 	// CreateX only honours a permissioned salt from the address in its first 20 bytes. From any
@@ -130,7 +156,7 @@ export async function deployLabel(
 	}: {
 		label: string;
 		release: string;
-		contract: ReleaseContractName;
+		contract: ReleaseContractName | FixtureContractName;
 		initCode: Hex;
 		init?: Hex;
 	},
@@ -213,16 +239,25 @@ export async function deployLabel(
 
 /**
  * The record entry for `code` at `address`, which must be a release's `contract` (any release: a
- * chain may keep an older one). Only a `dev` build, local by construction, is exempt.
+ * chain may keep an older one), or, for a fixture, its committed artifact's. Only a `dev` build,
+ * local by construction, is exempt.
  */
 function releaseCode(
 	label: string,
 	release: string,
-	contract: ReleaseContractName,
+	contract: ReleaseContractName | FixtureContractName,
 	address: Address,
 	code: Hex,
 ): DeployedContract {
 	const codehash = keccak256(code);
+	if (isFixtureContract(contract)) {
+		const match = fixtureMatch(contract, code);
+		if (!match)
+			throw new Error(
+				`${label} at ${address} holds code ${codehash}, which is not ${contract}'s committed artifact (packages/contracts/fixtures)`,
+			);
+		return { address, label, codehash, ...match };
+	}
 	// Prefer the release being deployed: a release can leave a contract unchanged, and its code is
 	// then every such release's.
 	const match = releaseOf(contract, code, address, release);
@@ -411,7 +446,10 @@ export async function deployTestToken(
 	);
 }
 
-/** PrivateERC20 and PermissivePaymaster. Never on a production chain (the CLI enforces it). */
+/**
+ * PrivateERC20 and PermissivePaymaster from `release`, and GianoTestPrivateErc20 from its committed
+ * artifact when `params.privateTestErc20`. Never on a production chain (the CLI enforces it).
+ */
 export async function deployTesting(
 	ctx: DeployContext,
 	release: Release,
@@ -445,6 +483,17 @@ export async function deployTesting(
 			`  + funded the test paymaster's deposit with ${params.fundWei} wei`,
 		);
 	}
+	if (params.privateTestErc20)
+		record(
+			ctx,
+			"privateTestErc20",
+			await deployLabel(ctx, {
+				label: LABELS.privateTestErc20,
+				release: FIXTURE_RELEASE,
+				contract: CONTRACT_OF.privateTestErc20,
+				initCode: loadFixture(CONTRACT_OF.privateTestErc20).creationCode,
+			}),
+		);
 }
 
 export type UpgradeOf = "paymasterImplementation" | "walletImplementation";

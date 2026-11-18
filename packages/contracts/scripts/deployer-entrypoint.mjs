@@ -28,7 +28,10 @@
 //                              warning (`core --accept-unverified-implementation`). Without it, `core`
 //                              refuses that implementation, because it is not verified.
 //   RELEASE                    optional; the latest release by default
-//   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111)
+//   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111),
+//                              and the private test token (fixtures/private-test-erc20.json) on a
+//                              local chain, or when CHAIN_PROFILE_JSON sets "privateTestErc20": true.
+//                              The registry JSON lists the private test token only where it is deployed.
 //   PAYMASTER_FUND_ETH         the test paymaster's initial EntryPoint deposit (default 0)
 //   OUT_DIR                    where the record and the registry JSON go (default /out)
 
@@ -78,8 +81,9 @@ function parseJson(name) {
 	}
 }
 
-if (env.CHAIN_PROFILE_JSON) {
-	const profile = parseJson("CHAIN_PROFILE_JSON");
+// The image ships no profiles, so this is the CLI's only profile.
+const profile = env.CHAIN_PROFILE_JSON ? parseJson("CHAIN_PROFILE_JSON") : null;
+if (profile) {
 	if (profile.chainId !== chainId) {
 		console.error(
 			`CHAIN_PROFILE_JSON is chain ${profile.chainId}, not CHAIN_ID=${chainId}`,
@@ -125,7 +129,13 @@ cli([
 	...common,
 ]);
 
-if (env.DEPLOY_TESTING === "true") {
+const testing = env.DEPLOY_TESTING === "true";
+// The rule `testing` selects the private test token by (privateTestErc20Wanted in deploy/deploy.ts):
+// a local chain, or a profile that opts in. Otherwise `testing` neither deploys nor checks it.
+const privateTestErc20 =
+	testing &&
+	([31337, 31338].includes(chainId) || profile?.privateTestErc20 === true);
+if (testing) {
 	cli([
 		"testing",
 		"--holder",
@@ -155,6 +165,9 @@ const entry = {
 	sponsorshipPaymasterImplementation: c.paymasterImplementation.address,
 	...(c.testPaymaster ? { testPaymaster: c.testPaymaster.address } : {}),
 	...(c.testErc20 ? { testErc20: c.testErc20.address } : {}),
+	...(privateTestErc20 && c.privateTestErc20
+		? { privateTestErc20: c.privateTestErc20.address }
+		: {}),
 };
 const path = `${outDir}/giano-addresses.${chainId}.json`;
 writeFileSync(path, JSON.stringify(entry, null, 2));

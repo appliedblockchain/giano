@@ -65,6 +65,12 @@
  * a Safe batch, for a ROLE_ADMIN that is itself a Safe); with --execute it sends them from
  * ROLE_ADMIN_PRIVATE_KEY. Only the timelock can undo the hand-off.
  *
+ * Test fixtures: `testing` deploys PrivateERC20 and PermissivePaymaster, never on a production chain
+ * (R-29). It also deploys the private test token GianoTestPrivateErc20 (`giano.test.private-erc20`)
+ * where the chain's profile sets `privateTestErc20: true`, which only a chain whose RPC enforces
+ * private reads should do, and on every local chain. The token comes from its committed artifact
+ * (fixtures/, deploy/fixtures.ts), not from the release.
+ *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
  * Commit that file for any chain other than 31337/31338.
  */
@@ -124,6 +130,7 @@ import {
 	paymasterUpgradeCalldata,
 	paymasterUpgradeProposal,
 	planHandOff,
+	privateTestErc20Wanted,
 	type UpgradeOf,
 	upgradeTargetLabel,
 } from "./deploy";
@@ -737,6 +744,10 @@ async function main(): Promise<void> {
 				owner: address("owner"),
 				entryPoint: address("entry-point"),
 				fundWei: parseEther(required("fund-eth")),
+				privateTestErc20: privateTestErc20Wanted({
+					local: ctx.local,
+					optIn: ctx.target.profile?.privateTestErc20,
+				}),
 			});
 			save(ctx);
 			return;

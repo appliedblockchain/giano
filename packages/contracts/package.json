@@ -29,6 +29,7 @@
 	"files": [
 		"dist",
 		"src/**/*.sol",
+		"!src/testing/GianoTestPrivateErc20.sol",
 		"vendor/**/*.sol",
 		"index.ts",
 		"generated.ts",
@@ -58,6 +59,7 @@
 		"coverage:check": "node scripts/check-coverage.mjs",
 		"gen:abis": "forge build src --out out-abi --cache-path cache_forge_abi && wagmi generate",
 		"gen:releases": "tsx scripts/generate-releases.ts",
+		"gen:fixtures": "tsx scripts/generate-fixtures.ts",
 		"check:determinism": "tsx scripts/check-determinism.ts",
 		"gen:addresses": "tsx scripts/generate-addresses.ts",
 		"release:cut": "tsx scripts/release.ts cut",

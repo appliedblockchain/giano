@@ -11,6 +11,9 @@
   "lib/solady": {
     "rev": "b609a9c79ce541c2beca7a7d247665e7c93942a3"
   },
+  "lib/ucef-contracts": {
+    "rev": "03913b199109c029cfe24f5dce8b54b7186dbc45"
+  },
   "lib/webauthn-sol": {
     "rev": "619f20ab0f074fef41066ee4ab24849a913263b2"
   }

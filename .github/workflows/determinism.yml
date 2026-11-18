@@ -13,6 +13,7 @@ on:
       - "packages/contracts/releases/**"
       - "packages/contracts/deploy/**"
       - "packages/contracts/vendor/**"
+      - "packages/contracts/fixtures/**"
       - "packages/contracts/scripts/check-determinism.ts"
       - "packages/contracts/scripts/release.ts"
       - "packages/contracts/scripts/generate-releases.ts"
@@ -88,7 +89,7 @@ jobs:
       # The one-command local bring-up the devnet and developers use, run twice: the second run
       # must find everything in place and deploy nothing (idempotency is what makes a re-run of a
       # half-finished deployment on a real chain safe).
-      - name: The deploy CLI deploys every core contract, then re-runs as a no-op
+      - name: The deploy CLI deploys every core contract and fixture, then re-runs as a no-op
         working-directory: packages/contracts
         run: |
           anvil --host 127.0.0.1 --chain-id 31337 > /tmp/anvil.log 2>&1 &
@@ -111,6 +112,11 @@ jobs:
               if (!c.deterministic || !c.fingerprint) { console.error('DETERMINISM FAILURE:', key, 'is not recorded as deterministic release code'); process.exit(1); }
               console.log('OK', key, c.address, c.release, c.fingerprint);
             }
+            // The private test token, from its committed artifact on every local run.
+            const fixture = contracts.privateTestErc20;
+            const artifact = JSON.parse(fs.readFileSync('fixtures/private-test-erc20.json', 'utf8'));
+            if (!fixture?.deterministic || fixture.release !== 'fixture' || fixture.fingerprint !== artifact.fingerprint) { console.error('DETERMINISM FAILURE: privateTestErc20 is not recorded as the deterministic fixture artifact', fixture); process.exit(1); }
+            console.log('OK privateTestErc20', fixture.address, fixture.release, fixture.fingerprint);
           "
 
   storage-layout:

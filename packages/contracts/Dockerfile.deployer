@@ -4,13 +4,14 @@
 #   docker build -f packages/contracts/Dockerfile.deployer -t ghcr.io/appliedblockchain/giano-contracts-deployer .
 # Ships as a Helm pre-install hook (deploy/helm/giano, deployer.enabled).
 #
-# It deploys release creation code (packages/contracts/releases/), so it compiles nothing: no
-# forge, no solc, no git submodules.
+# It deploys release creation code (packages/contracts/releases/), and the private test token from
+# its committed artifact (packages/contracts/fixtures/), so it compiles nothing: no forge, no solc,
+# no git submodules.
 #
 # ABIP-2: every stage on a digest-pinned Docker Hardened Image — -dev to build, the runtime variant to
 # run (the wallet-api pins). The CLI is bundled with every dependency into dist-deployer/cli.mjs
-# (tsdown.deployer.config.mts), so the runtime holds node, that file, the releases and the CreateX
-# deployment data — no node_modules, no tsx, no TypeScript, no shell — and runs as the image's own
+# (tsdown.deployer.config.mts), so the runtime holds node, that file, the releases, the fixture
+# artifacts and the CreateX deployment data — no node_modules, no tsx, no TypeScript, no shell — and runs as the image's own
 # non-root user (node, 1000:1000).
 
 FROM dhi.io/node:24-alpine3.23-dev@sha256:93960e52ba08d91ed90a09d26c112752fa6b1ee64e5471716923d125c61c509f AS build
@@ -25,7 +26,7 @@ COPY packages/contracts packages/contracts
 # the runtime user so the job can write it without root.
 RUN pnpm --filter @appliedblockchain/giano-contracts exec tsdown --config tsdown.deployer.config.mts \
  && mkdir -p /stage/contracts/vendor /out \
- && cp -r packages/contracts/dist-deployer packages/contracts/releases /stage/contracts/ \
+ && cp -r packages/contracts/dist-deployer packages/contracts/releases packages/contracts/fixtures /stage/contracts/ \
  && cp -r packages/contracts/vendor/createx /stage/contracts/vendor/ \
  && mkdir -p /stage/contracts/scripts \
  && cp packages/contracts/scripts/deployer-entrypoint.mjs /stage/contracts/scripts/

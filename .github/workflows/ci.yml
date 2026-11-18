@@ -6,7 +6,7 @@ on:
 
 # Without this a called workflow inherits the CALLER's token — every job here would then run
 # with release.yml's `packages: write`. Nothing below needs more than read: no step reads a
-# secret, all six git submodules are public, and setup-node's pnpm cache authenticates with
+# secret, every git submodule is public, and setup-node's pnpm cache authenticates with
 # ACTIONS_RUNTIME_TOKEN rather than GITHUB_TOKEN.
 permissions:
   contents: read
@@ -255,6 +255,11 @@ jobs:
       - name: Recompile and regenerate ABIs
         working-directory: packages/contracts
         run: pnpm gen:abis
+      # The private test token is deployed from this committed artifact, not from a release
+      # (packages/contracts/fixtures/README.md). It reuses gen:abis' build, so nothing recompiles.
+      - name: The private test token artifact matches its source and UCEF
+        working-directory: packages/contracts
+        run: pnpm gen:fixtures --check
       - name: Verify final v0.9 upstream artifacts
         run: node packages/contracts/scripts/generate-entrypoint-artifacts.mjs --check
       - name: Fail on drift

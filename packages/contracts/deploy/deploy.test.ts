@@ -20,9 +20,15 @@ import {
 	create3Salt,
 	guardedSalt,
 } from "./create3";
-import { type DeployContext, deployCore } from "./deploy";
+import {
+	type DeployContext,
+	deployCore,
+	deployTesting,
+	privateTestErc20Wanted,
+} from "./deploy";
+import { loadFixture } from "./fixtures";
 import { recordDeviations } from "./records";
-import { loadRelease } from "./release";
+import { loadRelease, type Release } from "./release";
 
 const LABELS = [
 	"giano.wallet.impl",
@@ -228,5 +234,143 @@ describe("deployCore with a key", () => {
 			PAYMASTER,
 		);
 		assert.deepEqual(sent, ["giano.factory", "giano.paymaster.proxy"]);
+	});
+});
+
+describe("deployTesting and the private test token (silent-data-network D7)", () => {
+	const TESTING_LABELS = [
+		"giano.test.erc20",
+		"giano.test.paymaster",
+		"giano.test.private-erc20",
+	];
+	const PRIVATE_TOKEN = create3Address(
+		CANONICAL_DEPLOYER,
+		"giano.test.private-erc20",
+	);
+	const PARAMS = {
+		holder: PAYMASTER.roleAdmin,
+		owner: PAYMASTER.roleAdmin,
+		entryPoint: PAYMASTER.entryPoint,
+		fundWei: 0n,
+	};
+	const artifact = loadFixture("GianoTestPrivateErc20");
+
+	/** A `dev` release (accepted without a fingerprint, as on a local chain) with the two older fixtures. */
+	const devRelease = (): Release => ({
+		version: "dev",
+		compiler: { solc: "test", settings: {} },
+		contracts: {
+			PrivateERC20: { source: "", creationCode: "0x01" },
+			PermissivePaymaster: { source: "", creationCode: "0x02" },
+		} as unknown as Release["contracts"],
+	});
+
+	/**
+	 * Like `chain`, for the testing labels. A deployment leaves `privateTokenCode` at the token's
+	 * address (by default the runtime code whose hash is the artifact's fingerprint) and some code
+	 * elsewhere. Records each label sent and the init code it was sent with.
+	 */
+	function testingChain(privateTokenCode = artifact.runtimeCode) {
+		const code = new Map<string, Hex>();
+		const sent: string[] = [];
+		const initCodes = new Map<string, Hex>();
+		const salts = new Map(
+			TESTING_LABELS.map((l) => [
+				guardedSalt(CANONICAL_DEPLOYER, create3Salt(CANONICAL_DEPLOYER, l)),
+				create3Address(CANONICAL_DEPLOYER, l),
+			]),
+		);
+		const publicClient = {
+			getCode: async ({ address }: { address: Address }) =>
+				address === CREATEX_ADDRESS ? "0x01" : (code.get(address) ?? "0x"),
+			readContract: async ({ args }: { args: [Hex] }) => salts.get(args[0]),
+			simulateContract: async ({ args }: { args: [Hex, Hex] }) => {
+				const label = TESTING_LABELS.find(
+					(l) => create3Salt(CANONICAL_DEPLOYER, l) === args[0],
+				) as string;
+				return {
+					request: { label, initCode: args[1] },
+					result: create3Address(CANONICAL_DEPLOYER, label),
+				};
+			},
+			waitForTransactionReceipt: async () => ({ status: "success" }),
+		} as unknown as PublicClient;
+		const walletClient = {
+			account: { address: CANONICAL_DEPLOYER },
+			writeContract: async ({
+				label,
+				initCode,
+			}: {
+				label: string;
+				initCode: Hex;
+			}) => {
+				sent.push(label);
+				initCodes.set(label, initCode);
+				code.set(
+					create3Address(CANONICAL_DEPLOYER, label),
+					label === "giano.test.private-erc20" ? privateTokenCode : "0x6001",
+				);
+				return keccak256(`0x${Buffer.from(label).toString("hex")}`);
+			},
+		} as unknown as DeployContext["walletClient"];
+		return { publicClient, walletClient, sent, initCodes, code };
+	}
+
+	it("deploys GianoTestPrivateErc20 from its artifact, whatever the release, and records it as `fixture`", async () => {
+		const { publicClient, walletClient, sent, initCodes } = testingChain();
+		const ctx = context(publicClient, walletClient);
+		await deployTesting(ctx, devRelease(), {
+			...PARAMS,
+			privateTestErc20: true,
+		});
+		assert.deepEqual(sent, TESTING_LABELS);
+		assert.equal(
+			initCodes.get("giano.test.private-erc20"),
+			artifact.creationCode,
+		);
+		const recorded = ctx.record.contracts.privateTestErc20;
+		assert.equal(recorded?.address, PRIVATE_TOKEN);
+		assert.equal(recorded?.label, "giano.test.private-erc20");
+		assert.equal(recorded?.release, "fixture");
+		assert.equal(recorded?.fingerprint, artifact.fingerprint);
+		assert.equal(recorded?.deterministic, true);
+	});
+
+	it("leaves it out when not asked", async () => {
+		const { publicClient, walletClient, sent } = testingChain();
+		const ctx = context(publicClient, walletClient);
+		await deployTesting(ctx, devRelease(), PARAMS);
+		assert.deepEqual(sent, ["giano.test.erc20", "giano.test.paymaster"]);
+		assert.equal(ctx.record.contracts.privateTestErc20, undefined);
+	});
+
+	it("a re-run finds it in place and sends nothing", async () => {
+		const { publicClient, walletClient, sent } = testingChain();
+		const ctx = context(publicClient, walletClient);
+		const params = { ...PARAMS, privateTestErc20: true };
+		await deployTesting(ctx, devRelease(), params);
+		sent.length = 0;
+		await deployTesting(ctx, devRelease(), params);
+		assert.deepEqual(sent, []);
+		assert.equal(ctx.record.contracts.privateTestErc20?.release, "fixture");
+	});
+
+	it("refuses code at its address that is not the artifact's", async () => {
+		const { publicClient, walletClient } = testingChain("0x6001");
+		await assert.rejects(
+			deployTesting(context(publicClient, walletClient), devRelease(), {
+				...PARAMS,
+				privateTestErc20: true,
+			}),
+			/giano.test.private-erc20 at 0x[0-9a-fA-F]{40} holds code 0x[0-9a-f]{64}, which is not GianoTestPrivateErc20's committed artifact/,
+		);
+	});
+
+	it("a remote chain gets it only when its profile opts in; a local chain always does", () => {
+		assert.equal(privateTestErc20Wanted({ local: false }), false);
+		assert.equal(privateTestErc20Wanted({ local: false, optIn: false }), false);
+		assert.equal(privateTestErc20Wanted({ local: false, optIn: true }), true);
+		assert.equal(privateTestErc20Wanted({ local: true }), true);
+		assert.equal(privateTestErc20Wanted({ local: true, optIn: false }), true);
 	});
 });

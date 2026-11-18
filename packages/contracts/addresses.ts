@@ -30,6 +30,11 @@ export type GianoDeployment = {
   testPaymaster?: `0x${string}`;
   /** Testing-only ERC-20 (not deployed on production chains). */
   testErc20?: `0x${string}`;
+  /**
+   * Testing-only private ERC-20 (GianoTestPrivateErc20): only the holder can read its balance. Only
+   * on chains whose RPC enforces private reads (Silent Data), never on production chains.
+   */
+  privateTestErc20?: `0x${string}`;
 };
 
 export const gianoAddresses: Record<number, GianoDeployment> = {
