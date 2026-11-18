@@ -87,6 +87,9 @@ function isRefusal(error: unknown): boolean {
 	return false;
 }
 
+/** viem's `waitForTransactionReceipt` timeout when the caller sets none. */
+const VIEM_DEFAULT_TIMEOUT_MS = 180_000;
+
 export type WaitForReceiptParameters = {
 	hash: `0x${string}`;
 	confirmations?: number;
@@ -99,6 +102,9 @@ export type WaitForReceiptParameters = {
  * refused the full block that check asked for. A replaced transaction is then not reported as
  * replaced: the wait times out instead. Every other failure is thrown as it is, including a
  * full-block request that failed without a refusal.
+ *
+ * Both waits share the caller's `timeout` (viem's 180 s when unset): the second gets only the time
+ * the first left. A `timeout` of 0 means no limit, as in viem.
  */
 export async function waitForReceipt<Receipt>(
 	client: {
@@ -108,12 +114,17 @@ export async function waitForReceipt<Receipt>(
 	},
 	parameters: WaitForReceiptParameters,
 ): Promise<Receipt> {
+	const started = Date.now();
 	try {
 		return await client.waitForTransactionReceipt(parameters);
 	} catch (error) {
 		if (!isFullBlockRequestError(error) || !isRefusal(error)) throw error;
+		const timeout = parameters.timeout ?? VIEM_DEFAULT_TIMEOUT_MS;
 		return client.waitForTransactionReceipt({
 			...parameters,
+			// At least 1 ms: viem reads 0 as no limit, and a spent limit must still time out.
+			timeout:
+				timeout === 0 ? 0 : Math.max(1, timeout - (Date.now() - started)),
 			checkReplacement: false,
 		});
 	}

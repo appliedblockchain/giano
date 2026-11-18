@@ -26,6 +26,8 @@ type Chain = {
 		| "failed-503";
 	/** `eth_getTransactionReceipt` fails with this error instead. */
 	receiptError?: { code: number; message: string };
+	/** How long the full-block refusal takes to arrive. */
+	refusalDelayMs?: number;
 };
 
 /**
@@ -109,13 +111,16 @@ async function stubRpc(chain: Chain) {
 					return reply(503, {
 						error: { code: -32603, message: "service unavailable" },
 					});
-				if (full && chain.fullBlocks !== "allowed")
+				if (full && chain.fullBlocks !== "allowed") {
+					if (chain.refusalDelayMs)
+						await new Promise((r) => setTimeout(r, chain.refusalDelayMs));
 					return reply(chain.fullBlocks === "refused-403" ? 403 : 200, {
 						error: {
 							code: -107486,
 							message: "param values not whitelisted for JSON RPC method",
 						},
 					});
+				}
 				return reply(200, {
 					result: {
 						number: request.params[0],
@@ -138,12 +143,15 @@ async function stubRpc(chain: Chain) {
 		pollingInterval: 5,
 	});
 	/** Records the parameters of each wait waitForReceipt starts. */
-	const waits: { checkReplacement?: boolean }[] = [];
+	const waits: { checkReplacement?: boolean; timeout?: number }[] = [];
 	const counted = {
 		waitForTransactionReceipt(
 			parameters: Parameters<typeof client.waitForTransactionReceipt>[0],
 		) {
-			waits.push({ checkReplacement: parameters.checkReplacement });
+			waits.push({
+				checkReplacement: parameters.checkReplacement,
+				timeout: parameters.timeout,
+			});
 			return client.waitForTransactionReceipt(parameters);
 		},
 	};
@@ -165,14 +173,46 @@ for (const fullBlocks of ["refused-200", "refused-403"] as const)
 			});
 			assert.equal(receipt.status, "success");
 			assert.equal(receipt.blockNumber, 6n);
-			assert.deepEqual(rpc.waits, [
-				{ checkReplacement: undefined },
-				{ checkReplacement: false },
-			]);
+			assert.deepEqual(
+				rpc.waits.map((wait) => wait.checkReplacement),
+				[undefined, false],
+			);
 		} finally {
 			rpc.close();
 		}
 	});
+
+test("the second wait gets only the time the first left", async () => {
+	const rpc = await stubRpc({
+		minedAt: 6,
+		fullBlocks: "refused-200",
+		refusalDelayMs: 200,
+	});
+	try {
+		await waitForReceipt(rpc.counted, { hash: HASH, timeout: 5_000 });
+		assert.equal(rpc.waits.length, 2);
+		assert.equal(rpc.waits[0].timeout, 5_000);
+		const left = rpc.waits[1].timeout ?? 0;
+		assert.ok(left > 0 && left <= 4_800, `second wait got ${left} ms`);
+	} finally {
+		rpc.close();
+	}
+});
+
+test("without a timeout, the second wait gets what is left of viem's 180 s", async () => {
+	const rpc = await stubRpc({
+		minedAt: 6,
+		fullBlocks: "refused-200",
+		refusalDelayMs: 200,
+	});
+	try {
+		await waitForReceipt(rpc.counted, { hash: HASH });
+		const left = rpc.waits[1].timeout ?? 0;
+		assert.ok(left > 0 && left <= 179_800, `second wait got ${left} ms`);
+	} finally {
+		rpc.close();
+	}
+});
 
 for (const fullBlocks of ["failed-429", "failed-503"] as const)
 	test(`a full block that failed without a refusal (${fullBlocks}) is thrown, with no second wait`, async () => {
@@ -182,7 +222,10 @@ for (const fullBlocks of ["failed-429", "failed-503"] as const)
 				waitForReceipt(rpc.counted, { hash: HASH, timeout: 5_000 }),
 				(error) => isFullBlockRequestError(error),
 			);
-			assert.deepEqual(rpc.waits, [{ checkReplacement: undefined }]);
+			assert.deepEqual(
+				rpc.waits.map((wait) => wait.checkReplacement),
+				[undefined],
+			);
 		} finally {
 			rpc.close();
 		}
@@ -196,7 +239,10 @@ test("on a chain that returns full blocks, the wait is viem's and runs once", as
 			timeout: 5_000,
 		});
 		assert.equal(receipt.blockNumber, 6n);
-		assert.deepEqual(rpc.waits, [{ checkReplacement: undefined }]);
+		assert.deepEqual(
+			rpc.waits.map((wait) => wait.checkReplacement),
+			[undefined],
+		);
 		// The replacement check still ran: nothing changes where full blocks are allowed.
 		assert.ok(rpc.methods.includes("eth_getBlockByNumber(full)"));
 	} finally {
