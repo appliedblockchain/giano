@@ -14,8 +14,16 @@ const hex = (n: number) => `0x${n.toString(16)}`;
 type Chain = {
 	/** The block the receipt first appears in; earlier polls answer null. */
 	minedAt: number;
-	/** `eth_getBlockByNumber` with `true`: answered, or refused as the Silent Data gateway does. */
-	fullBlocks: "allowed" | "refused-200" | "refused-403";
+	/**
+	 * `eth_getBlockByNumber` with `true`: answered, refused as the Silent Data gateway does, or failed
+	 * with an HTTP 429 or 503 that is not a refusal.
+	 */
+	fullBlocks:
+		| "allowed"
+		| "refused-200"
+		| "refused-403"
+		| "failed-429"
+		| "failed-503";
 	/** `eth_getTransactionReceipt` fails with this error instead. */
 	receiptError?: { code: number; message: string };
 };
@@ -93,6 +101,14 @@ async function stubRpc(chain: Chain) {
 						: null,
 				});
 			case "eth_getBlockByNumber":
+				if (full && chain.fullBlocks === "failed-429")
+					return reply(429, {
+						error: { code: -32005, message: "too many requests" },
+					});
+				if (full && chain.fullBlocks === "failed-503")
+					return reply(503, {
+						error: { code: -32603, message: "service unavailable" },
+					});
 				if (full && chain.fullBlocks !== "allowed")
 					return reply(chain.fullBlocks === "refused-403" ? 403 : 200, {
 						error: {
@@ -153,6 +169,20 @@ for (const fullBlocks of ["refused-200", "refused-403"] as const)
 				{ checkReplacement: undefined },
 				{ checkReplacement: false },
 			]);
+		} finally {
+			rpc.close();
+		}
+	});
+
+for (const fullBlocks of ["failed-429", "failed-503"] as const)
+	test(`a full block that failed without a refusal (${fullBlocks}) is thrown, with no second wait`, async () => {
+		const rpc = await stubRpc({ minedAt: 6, fullBlocks });
+		try {
+			await assert.rejects(
+				waitForReceipt(rpc.counted, { hash: HASH, timeout: 5_000 }),
+				(error) => isFullBlockRequestError(error),
+			);
+			assert.deepEqual(rpc.waits, [{ checkReplacement: undefined }]);
 		} finally {
 			rpc.close();
 		}
