@@ -817,10 +817,11 @@ async function main(): Promise<void> {
 			// missing key stops the run before the upgrade target is deployed.
 			const executes =
 				which === "paymaster" && values.execute && !values.timelock;
+			// The key is parsed first, so a malformed key gets this command's message, not viem's.
+			const upgraderKey = executes ? upgraderPrivateKey() : undefined;
 			const upgraderSigner = executes
 				? rpcSigner("UPGRADER_PRIVATE_KEY")
 				: undefined;
-			const upgraderKey = executes ? upgraderPrivateKey() : undefined;
 			const ctx = await deployerContext();
 			const of =
 				which === "paymaster"
@@ -863,7 +864,7 @@ async function main(): Promise<void> {
 				);
 				return;
 			}
-			if (!values.execute) {
+			if (!upgraderKey) {
 				log(
 					`To upgrade, the UPGRADER_ROLE holder sends to ${proxy}:\n  ${calldata}`,
 				);
@@ -877,7 +878,7 @@ async function main(): Promise<void> {
 							signer: upgraderSigner,
 						})
 					: http(required("rpc")),
-				account: privateKeyToAccount(upgraderKey ?? upgraderPrivateKey()),
+				account: privateKeyToAccount(upgraderKey),
 			});
 			const role = await ctx.publicClient.readContract({
 				address: proxy,
