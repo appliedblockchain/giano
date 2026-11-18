@@ -1,5 +1,23 @@
 # @appliedblockchain/giano-wallet-core
 
+## 7.1.0
+
+### Patch Changes
+
+- 072c3a9: Remove every non-null assertion (`!`) and explicit `any`. Biome now rejects both. No exported API or type changes, and valid input behaves as before. Changes for invalid input:
+  - `createGianoProvider` throws the real configuration error (`Unknown chain: N`, `No bundler for chain N`, …) when it cannot select `initialChainId`. Before, the error was an unhandled promise rejection, and the provider returned `gianoClient: undefined`.
+  - Where a missing value used to cause a `TypeError`, the code now throws an error that names the missing value. For example, the provider throws `GianoError("Giano not connected: …")` when it has no chain state.
+- Updated dependencies [3f3e8db]
+- Updated dependencies [c08878a]
+- Updated dependencies [c950c90]
+- Updated dependencies [4e7d63e]
+- Updated dependencies [120ed8a]
+- Updated dependencies [5f5d4c4]
+- Updated dependencies [77deabf]
+- Updated dependencies [91333c4]
+- Updated dependencies [08288d7]
+  - @appliedblockchain/giano-contracts@7.1.0
+
 ## 7.0.1
 
 ### Patch Changes

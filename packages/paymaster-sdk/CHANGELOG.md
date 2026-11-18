@@ -1,5 +1,38 @@
 # @appliedblockchain/giano-paymaster-sdk
 
+## 7.1.0
+
+### Minor Changes
+
+- 120ed8a: Read the proxy implementation without `eth_getStorageAt` (Silent Data, H6).
+
+  `proxyImplementation` now falls back to the proxy's latest `Upgraded` event when the RPC refuses the method `eth_getStorageAt`. Any other storage-read error, such as a timeout or a rate limit, is raised as before. When the fallback fails too, the error carries the storage-read error as `cause`.
+
+  The fallback reads logs in spans of at most 9,000 blocks, counted inclusively. The walk stops at the optional `fromBlock` (such as the proxy's deployment block). One read sends at most `maxChunks` requests (default 1,000, a non-negative safe integer); at the limit it throws, and the next read through the same client continues the search further back. The result is kept per client, proxy and `fromBlock`, up to a checkpoint 64 blocks behind the head, so a later read on the same client reads only the newer blocks, and a reorganisation cannot leave a removed upgrade behind.
+
+  `proxyImplementation` takes an optional third argument, `{ fromBlock, maxChunks }`. `proxyImplementationWithSource` returns `{ implementation, source }`, where `source` is `"slot"` or `"logs"`: an answer from the logs is not verified against the implementation slot, and wallet-api's chain check and giano-doctor report it as a warning. New exports: `proxyImplementationWithSource`, `implementationFromUpgradedLogs`, `isMethodRefusedError`, `UPGRADED_TOPIC`, `UPGRADED_LOG_CHUNK`, `UPGRADED_LOG_MAX_CHUNKS` and the type `UpgradedLogWalkOptions`. giano-doctor and the paymaster SDK's `readImplementationSlot` use the same fallback.
+
+  The deploy tooling (`contracts:deploy`, `deploy:cli core`, `contracts:provision`, `contracts:sponsorship`) refuses a paymaster implementation read from the logs, and does not reconcile the deployment record to it, unless the operator passes the new flag `--accept-unverified-implementation`. With the flag, it prints a warning. The deployer image takes `ACCEPT_UNVERIFIED_IMPLEMENTATION=true` for the same flag. `contracts:deploy` accepts the log answer without the flag for a paymaster proxy that the same run deployed, when the proxy's only `Upgraded` event, up to the head, is the one in its deployment transaction and names the implementation the run deployed.
+
+  Paymaster SDK: the new `readImplementationWithSource()` returns `{ address, source }`. `getImplementationCode()` also returns `source`, and `HealthContext.implementation` takes an optional `source`. `getHealth()` reports a release read from the logs as a warning, "implementation is a release, but not verified", not as a pass.
+
+### Patch Changes
+
+- 5172a2f: Log reads narrow down to a 200-block span, not 250, when a node refuses a wider one. `https://sepolia.base.org` serves at most 200 (`eth_getLogs is limited to a 200 range`), so every log read against it failed once narrowing stopped at 250.
+- 072c3a9: Remove every non-null assertion (`!`) and explicit `any`. Biome now rejects both. No exported API or type changes, and valid input behaves as before. Changes for invalid input:
+  - `createGianoProvider` throws the real configuration error (`Unknown chain: N`, `No bundler for chain N`, …) when it cannot select `initialChainId`. Before, the error was an unhandled promise rejection, and the provider returned `gianoClient: undefined`.
+  - Where a missing value used to cause a `TypeError`, the code now throws an error that names the missing value. For example, the provider throws `GianoError("Giano not connected: …")` when it has no chain state.
+- Updated dependencies [3f3e8db]
+- Updated dependencies [c08878a]
+- Updated dependencies [c950c90]
+- Updated dependencies [4e7d63e]
+- Updated dependencies [120ed8a]
+- Updated dependencies [5f5d4c4]
+- Updated dependencies [77deabf]
+- Updated dependencies [91333c4]
+- Updated dependencies [08288d7]
+  - @appliedblockchain/giano-contracts@7.1.0
+
 ## 7.0.1
 
 ### Patch Changes

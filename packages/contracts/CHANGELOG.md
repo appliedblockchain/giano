@@ -1,5 +1,64 @@
 # @appliedblockchain/giano-contracts
 
+## 7.1.0
+
+### Minor Changes
+
+- 3f3e8db: The bundler chain section accepts `stateOverride` (default `true`) (Silent Data, H6).
+
+  Set it to `false` for an RPC that refuses `eth_call` state overrides. The bundler then returns fixed gas limits instead of simulating. It keeps the call gas the caller sends, and a higher verification gas the caller sends.
+
+- c950c90: The deploy tooling can rehearse a testnet deployment on an anvil fork (`pnpm contracts:rehearse`). A stand-in deployer is accepted only when the RPC reports a fork, and everything a rehearsal writes stays in `deploy/rehearsal/`.
+
+  Fixes to the deployment path:
+
+  - A paymaster upgrade executed through the timelock is read from the proxy and reconciled into the record, instead of blocking every later plan, provision and verify run.
+  - A handed-off chain verifies with its timelock as `ROLE_ADMIN`.
+  - Provisioning takes the sponsorship signer's address and one holder per immediate role. It refuses every-role-on-one-address and a defaulted tenant withdrawal address on a mainnet, and explains its refusal after the hand-off.
+  - The hand-off checks the timelock's release code, proposers, executors and delays before sending anything. On a mainnet, proposers must be contracts; EIP-7702-delegated EOAs count as keys.
+  - Chains on the mainnet list are always production chains and can never be treated as testnets.
+  - `deploy:cli core` runs the wizard's chain prerequisite checks (CreateX codehash, EntryPoint v0.9, Cancun), and `--entry-point` is local-only.
+  - The doctor checks CreateX and Cancun instead of the Arachnid factory, and reports a chain without a P-256 precompile as informational.
+  - RPC URLs are printed as their origin only.
+
+  The testnet profiles now pin release `v3`.
+
+- 4e7d63e: Add the private test token `GianoTestPrivateErc20` for Silent Data chains (H6).
+
+  It is a UCEF token (`UCEFOwned`, from the `appliedblockchain/ucef-contracts` git submodule): only the holder can read its balance, and anyone can mint to themselves. `deploy:cli testing` deploys it under `giano.test.private-erc20` on chains whose profile sets `"privateTestErc20": true`, and on every local chain, so `local:deploy` deploys it too. No release carries it: it is deployed from the committed artifact `fixtures/private-test-erc20.json` (`pnpm gen:fixtures`), whatever the release. The registry gains an optional `privateTestErc20` field, which a production chain never has.
+
+  The package does not ship the token's Solidity source, because it imports UCEF from `lib/`, which the package does not ship. Its ABI is in `generated.ts`.
+
+- 120ed8a: Read the proxy implementation without `eth_getStorageAt` (Silent Data, H6).
+
+  `proxyImplementation` now falls back to the proxy's latest `Upgraded` event when the RPC refuses the method `eth_getStorageAt`. Any other storage-read error, such as a timeout or a rate limit, is raised as before. When the fallback fails too, the error carries the storage-read error as `cause`.
+
+  The fallback reads logs in spans of at most 9,000 blocks, counted inclusively. The walk stops at the optional `fromBlock` (such as the proxy's deployment block). One read sends at most `maxChunks` requests (default 1,000, a non-negative safe integer); at the limit it throws, and the next read through the same client continues the search further back. The result is kept per client, proxy and `fromBlock`, up to a checkpoint 64 blocks behind the head, so a later read on the same client reads only the newer blocks, and a reorganisation cannot leave a removed upgrade behind.
+
+  `proxyImplementation` takes an optional third argument, `{ fromBlock, maxChunks }`. `proxyImplementationWithSource` returns `{ implementation, source }`, where `source` is `"slot"` or `"logs"`: an answer from the logs is not verified against the implementation slot, and wallet-api's chain check and giano-doctor report it as a warning. New exports: `proxyImplementationWithSource`, `implementationFromUpgradedLogs`, `isMethodRefusedError`, `UPGRADED_TOPIC`, `UPGRADED_LOG_CHUNK`, `UPGRADED_LOG_MAX_CHUNKS` and the type `UpgradedLogWalkOptions`. giano-doctor and the paymaster SDK's `readImplementationSlot` use the same fallback.
+
+  The deploy tooling (`contracts:deploy`, `deploy:cli core`, `contracts:provision`, `contracts:sponsorship`) refuses a paymaster implementation read from the logs, and does not reconcile the deployment record to it, unless the operator passes the new flag `--accept-unverified-implementation`. With the flag, it prints a warning. The deployer image takes `ACCEPT_UNVERIFIED_IMPLEMENTATION=true` for the same flag. `contracts:deploy` accepts the log answer without the flag for a paymaster proxy that the same run deployed, when the proxy's only `Upgraded` event, up to the head, is the one in its deployment transaction and names the implementation the run deployed.
+
+  Paymaster SDK: the new `readImplementationWithSource()` returns `{ address, source }`. `getImplementationCode()` also returns `source`, and `HealthContext.implementation` takes an optional `source`. `getHealth()` reports a release read from the logs as a warning, "implementation is a release, but not verified", not as a pass.
+
+- 5f5d4c4: `deploy:cli` and `provision:paymaster` accept `--signed-rpc` (Silent Data, H6).
+
+  With the flag, every RPC request carries `x-timestamp` and `x-signature`, signed with the key the command sends from, so an RPC that replaces `from` on unsigned calls keeps the operator as `from`. That key is `DEPLOYER_PRIVATE_KEY`, or `ROLE_ADMIN_PRIVATE_KEY` for `deploy:cli timelock` and `handoff`; `deploy:cli upgrade --execute` also signs the upgrader's requests with `UPGRADER_PRIVATE_KEY`. Each command refuses to start without the key it needs.
+
+- 08288d7: The registry carries release v3 on Base Sepolia (84532) and Ethereum Sepolia (11155111): `getGianoDeployment(chainId)` returns the factory, wallet implementation and sponsorship paymaster deployed there on 2026-11-17, at the same addresses on both chains.
+
+### Patch Changes
+
+- c08878a: Deploy tooling follow-ups from the #279 review (G42):
+  - On a mainnet, provisioning needs all six role holders, each a different address and none of them the operator key, and an unstake delay of at least a day. `provision:paymaster` checks this too when run directly, not only the `contracts:provision` wrapper.
+  - `--unstake-delay` accepts durations (`90`, `6h`, `1d`) and is checked with the other arguments, before the first transaction.
+  - The chain prerequisite check reports Cancun as unavailable only when the node says an opcode is missing. A rate limit, a timeout, a rejected request or a revert is reported as an RPC failure.
+  - The records directory follows the activated rehearsal, which checks the RPC is an anvil fork, instead of the `GIANO_REHEARSAL_DEPLOYER` variable alone.
+  - `handoff` refuses when neither the chain profile nor the deployment record names the timelock's address.
+  - `handoff --from-block` is checked against the chain: the timelock must have no code before that block. It also can't start after the recorded deployment block.
+- 77deabf: `deploy:cli test-token` deploys the test ERC-20 alone, without the permissive paymaster, so the served testnets (Base Sepolia, Ethereum Sepolia) can carry the reference dApp's token. It refuses a mainnet, and on a public chain it signs only as the class's canonical deployer, so the token lands at its deterministic address. The registry still refuses a `testPaymaster` on every production chain, and now refuses a `testErc20` only on a mainnet.
+- 91333c4: The registry carries the test ERC-20 on Base Sepolia and Ethereum Sepolia: `getGianoDeployment(chainId).testErc20` is `0x461E0641a3615336b7D2E4C5D71fB2BB88038C93` on both, the reference dApp's open-mint token.
+
 ## 7.0.1
 
 ## 7.0.0
