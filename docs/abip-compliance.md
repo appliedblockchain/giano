@@ -87,8 +87,13 @@ fails when the audit cannot run. The register is the only place an advisory left
 reason, one owner and an expiry date, and moderate and low advisories left open are recorded there too
 ([`security/README.md`](../security/README.md)). The `dependency-security` capability in OpenSpec sets the rule.
 
-Dependabot ([`.github/dependabot.yml`](../.github/dependabot.yml)) opens version update PRs for both workspaces with a
-7-day `cooldown`, so it proposes no version younger than the window. Its PRs keep every pin exact (ABIP-7).
+No bot opens version update PRs. Every Monday, the stale-pins run
+([`.github/workflows/stale-pins.yml`](../.github/workflows/stale-pins.yml), `scripts/check-stale-pins.mjs`) compares
+each exact npm pin in both workspaces, each SHA-pinned action, and the toolchains and tools below with its newest stable
+release that is at least 7 days old, and lists every pin behind it in one issue labelled `stale-pins`. Upgrades are
+made by hand, one PR each, so every pin stays exact (ABIP-7) and no version younger than the window is proposed. A pin
+held back on purpose has a row in [`docs/version-deferrals.md`](version-deferrals.md) with a reason, an owner and a
+review date. The `dependency-freshness` capability in OpenSpec sets the rule.
 
 ## ABIP-7: Pin Exact Dependency Versions (adopted)
 
@@ -132,9 +137,10 @@ repository-level contract is the `ci-security-gates` capability in OpenSpec.
   --require-hashes`. A release binary is checked with `sha256sum -c` against the sha256 in the workflow's `env`, next to
   the version and a comment with the release date. A mismatch fails the job before the tool runs.
 
-Dependabot does not update these tools. Update them by hand under the same rule, in a PR that also updates the table
-below and any register entry whose finding ID the new version changes (`security/README.md`). The rule is not checked
-automatically: checking release dates would need network access to each project's release page.
+The weekly stale-pins run reports a newer release of each of these tools. Update them by hand under the same rule, in a
+PR that also updates the table below and any register entry whose finding ID the new version changes
+(`security/README.md`). The 7-day rule is not checked on the PR: checking release dates would need network access to
+each project's release page.
 
 | Tool | Version | Released | Integrity check | Where it is pinned |
 |------|---------|----------|-----------------|--------------------|
