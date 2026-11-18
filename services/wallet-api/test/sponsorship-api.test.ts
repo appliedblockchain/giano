@@ -401,8 +401,24 @@ describe("request validation", () => {
 			expect(await ctx.db.select().from(sponsorshipReservations)).toEqual([]);
 		});
 
+		it("is refused on a chain whose base fee is 0 but whose gas price is above 0", async () => {
+			// The node still asks for a tip (geth's --txpool.pricelimit).
+			ctx.chainState.baseFeePerGas = 0n;
+			const session = await newSession(`fee0-tip-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error?.code).toBe(-32602);
+			expect(body.error?.message).toBe(
+				"maxFeePerGas is required to authorise sponsorship",
+			);
+		});
+
 		it("is sponsored on a gasless chain, reserving the tenant fee alone", async () => {
 			ctx.chainState.baseFeePerGas = 0n;
+			ctx.chainState.gasPrice = 0n;
 			const session = await newSession(`fee0-gasless-${Math.random()}`);
 			const body = await rpc(
 				session.token,
@@ -450,6 +466,7 @@ describe("request validation", () => {
 
 		it("is refused on an OP Stack chain with base fee 0 while its L1 fee is above 0", async () => {
 			ctx.chainState.baseFeePerGas = 0n;
+			ctx.chainState.gasPrice = 0n;
 			ctx.chainState.l1Fee = 1_000n;
 			const session = await newSession(`fee0-l1-${Math.random()}`);
 			const body = await rpc(
@@ -473,6 +490,7 @@ describe("request validation", () => {
 
 		it("still applies the cost cap, to the fee, on a gasless chain", async () => {
 			ctx.chainState.baseFeePerGas = 0n;
+			ctx.chainState.gasPrice = 0n;
 			await setConfig(ADMIN_KEY, {
 				...generousConfig,
 				maxCostPerTxWei: (ctx.paymasterState.defaultFeeWei - 1n).toString(),
