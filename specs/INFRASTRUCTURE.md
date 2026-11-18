@@ -2878,24 +2878,22 @@ with CREATE3 through CreateX, so their addresses are a pure function of the netw
 canonical deployer and fixed labels. Both chains are profiles of class `testnet`
 (`deploy/chains/*.json`), so they get the **same addresses** (mainnets get a different set):
 
-| Contract | Address | On 84532? | On 11155111? |
+| Contract | Address (both chains) | On 84532? | On 11155111? |
 |---|---|---|---|
 | EntryPoint v0.9 | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` | yes (canonical, everywhere) | yes |
-| `GianoSmartWalletFactory` | testnet deterministic address (`getGianoDeployment(chainId).factory`) | **no** — to be deployed (§13.1) | **no** — to be deployed |
-| `GianoSmartWallet` implementation | testnet deterministic address (`.implementation`) | **no** — same | **no** — same |
-| `GianoPaymaster` proxy | testnet deterministic address (`.sponsorshipPaymaster`) | **no** | **no** |
+| `GianoSmartWalletFactory` | `0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635` | **yes**, release v3 | **yes**, release v3 |
+| `GianoSmartWallet` implementation | `0x265dA930A9253fCC09E120B6f89EE8a91BcA9406` | **yes** | **yes** |
+| `GianoPaymaster` proxy | `0xb2C7081be89D88f1da020530Ebd5c14b8871615a` | **yes** | **yes** |
+| `GianoPaymaster` implementation | `0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540` | **yes** | **yes** |
+| `GianoTimelock` (holds `ROLE_ADMIN`, upgrader, fee and withdraw-address admin) | `0x7Da25D415f9b68422F905C015137Af8D915F8A78` | **yes** | **yes** |
 
-⚠ **Neither chain carries the current contracts.** The contracts both chains hold were deployed
-under the previous scheme (CREATE2, salt `0xAB…AB`, factory `0x26dCd293…`); that scheme has been
-replaced and its deployment records removed, so the registry (`addresses.ts`) has no entry for
-either chain. Until both are redeployed (§13.1), `wallet-web` cannot default `factoryAddress` and the
-SPA refuses to load ([§14.3](#143-wallet-web)), and `wallet-api` refuses a chain with no factory
-running release code. The testnet canonical deployer (`DEPLOYERS.testnet` in
-`packages/contracts/deploy/config.ts`) is set ([MULTICHAIN_SPECS §4.5](MULTICHAIN_SPECS.md)), so the
-deploy tooling can sign for both testnets; the contracts land at the same address on each (factory
-`0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635`, paymaster proxy
-`0xb2C7081be89D88f1da020530Ebd5c14b8871615a`). Setting it needed no regeneration of any generated
-file, devnet or e2e state.
+Release v3 was deployed on both chains on 2026-11-17 by the testnet canonical deployer
+(`DEPLOYERS.testnet`, [MULTICHAIN_SPECS §4.5](MULTICHAIN_SPECS.md)), provisioned (stake 0.1 ETH, the
+`example` and `byoui` tenants), and handed to the timelock; `giano-doctor` is green on both. The
+records are `packages/contracts/deployments/84532.json` and `11155111.json`, and the registry
+(`addresses.ts`, `getGianoDeployment(chainId)`) carries both chains. The contracts `dev` serves today
+are still the previous scheme's (CREATE2, salt `0xAB…AB`, factory `0x26dCd293…`), until `dev` is
+moved to these addresses (`deploy/contracts/TESTNET-ROLLOUT.md`, steps 8–10).
 
 ### 13.1 The canonical contracts must be deployed on both chains
 
