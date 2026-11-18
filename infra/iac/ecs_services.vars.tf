@@ -53,20 +53,32 @@ variable "chain_b_name" {
   default     = "Ethereum Sepolia"
 }
 
-# ⚠ REQUIRED, no default. §13.1: the GianoPaymaster proxy is not frozen in the contracts
-# registry for 84532, so this must be a real deployed proxy or sponsorship cannot work at all.
+# The GianoPaymaster proxy, release v3: the same CREATE3 address on both testnets (§13.1;
+# packages/contracts/deployments/84532.json and 11155111.json). Read by the provision-sponsorship
+# one-shot task. The legacy v0.7 paymaster was 0xf98b56de62ce88cEb70A9155582248cDBf2D0718.
 variable "paymaster_address" {
-  description = "the deployed GianoPaymaster proxy address for this chain — §13.1, deploy it BEFORE the first apply that enables sponsorship"
+  description = "the deployed GianoPaymaster proxy address (release v3, both testnets) — §13.1"
   type        = string
-  default     = "0xf98b56de62ce88cEb70A9155582248cDBf2D0718"
+  default     = "0xb2C7081be89D88f1da020530Ebd5c14b8871615a"
 }
 
 # ⚠ REQUIRED for wallet-byo only (§14.5) — its bundle has no registry dependency, unlike
 # wallet-api and wallet-web which default correctly from the contracts registry.
+# Release v3, the same CREATE3 address on both testnets. The legacy v0.7 factory was
+# 0x26dCd29390eba3B22BcCbd2143989E5994Ac7050.
 variable "factory_address" {
   description = "GianoSmartWalletFactory address — required by wallet-byo's serve.mjs, which has no contracts-registry dependency"
   type        = string
-  default     = "0x26dCd29390eba3B22BcCbd2143989E5994Ac7050"
+  default     = "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635"
+}
+
+# Giano's test ERC-20 (PrivateERC20, anyone may mint): the reference dApp's default token. The same
+# CREATE3 address on both testnets (deploy:cli test-token; registry field testErc20). Never on a
+# mainnet (R-29).
+variable "test_erc20_address" {
+  description = "the reference dApp's default token on both testnets: Giano's test ERC-20"
+  type        = string
+  default     = "0x461E0641a3615336b7D2E4C5D71fB2BB88038C93"
 }
 
 # rpc_origin / rpc_b_origin (wallet-web's CSP connect-src for direct browser RPC) are gone: the
