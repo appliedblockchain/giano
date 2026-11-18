@@ -579,7 +579,7 @@ export async function onlyDeploymentUpgrade(
 					address: proxy,
 					topics: [UPGRADED_TOPIC],
 					fromBlock: `0x${from.toString(16)}`,
-					// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min throws on bigint
+					// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 					toBlock: `0x${(last < head ? last : head).toString(16)}`,
 				},
 			],
