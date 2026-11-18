@@ -23,6 +23,8 @@ import {
 	profileCoreConfig,
 	roleAdmin,
 	scanStartProblem,
+	testingProblem,
+	testTokenProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -523,6 +525,68 @@ test("a hand-off goes only to the published timelock: the profile's, else the re
 	assert.match(
 		timelockMismatch(other, {}) ?? "",
 		/no published timelock address to check --timelock 0x0+71e2 against/i,
+	);
+});
+
+test("testing (the permissive paymaster too): never on a production chain, served testnets included (R-29)", () => {
+	assert.equal(testingProblem(31337, "local"), undefined);
+	assert.equal(testingProblem(4242, "testnet"), undefined);
+	for (const chainId of [84532, 11155111])
+		assert.match(
+			testingProblem(chainId, "testnet") ?? "",
+			new RegExp(`chain ${chainId} is a production chain.*use test-token`),
+		);
+	assert.match(testingProblem(8453, "mainnet") ?? "", /production chain/);
+	// A chain declared mainnet, off the fixed list.
+	assert.match(testingProblem(4242, "mainnet") ?? "", /production chain/);
+});
+
+test("test-token: never on a mainnet, and only from the canonical deployer on a public chain (F12)", () => {
+	const canonical = getAddress("0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5");
+	const admin = getAddress("0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030");
+	const testnet = {
+		chainId: 84532,
+		network: "testnet" as const,
+		local: false,
+		canonical,
+	};
+	assert.equal(testTokenProblem({ ...testnet, signer: canonical }), undefined);
+	// Without a key the run only verifies.
+	assert.equal(testTokenProblem(testnet), undefined);
+	assert.match(
+		testTokenProblem({ ...testnet, signer: admin }) ?? "",
+		/signer 0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030 is not the testnet canonical deployer/,
+	);
+	assert.match(
+		testTokenProblem({
+			chainId: 8453,
+			network: "mainnet",
+			local: false,
+			canonical: null,
+			signer: canonical,
+		}) ?? "",
+		/chain 8453 is a mainnet/,
+	);
+	// A chain declared mainnet by its profile, off the fixed list.
+	assert.match(
+		testTokenProblem({
+			chainId: 4242,
+			network: "mainnet",
+			local: false,
+			canonical: null,
+		}) ?? "",
+		/is a mainnet/,
+	);
+	// Local chains: any signer (the devnet's deployer is anvil's).
+	assert.equal(
+		testTokenProblem({
+			chainId: 31337,
+			network: "local",
+			local: true,
+			canonical: null,
+			signer: admin,
+		}),
+		undefined,
 	);
 });
 

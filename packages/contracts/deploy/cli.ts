@@ -5,6 +5,9 @@
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
  *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
+ *   pnpm deploy:cli test-token --rpc <url> [--holder <0x…>]      (--holder required to deploy)
+ *       The test ERC-20 alone, for the reference dApp: allowed on the served testnets, never on a
+ *       mainnet, and only from the class's canonical deployer (R-29 keeps `testing` off both).
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
  *   pnpm deploy:cli timelock --rpc <url> --proposer <safe> [--proposer …] [--executor <0x…> …]
@@ -71,6 +74,7 @@ import {
 	parseEther,
 	type Transport,
 	type WalletClient,
+	zeroAddress,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
@@ -88,7 +92,6 @@ import {
 	classDeployer,
 	DEPLOYERS,
 	ENTRY_POINT_V09,
-	isProductionChain,
 	LABELS,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
@@ -103,6 +106,7 @@ import {
 	type DeployContext,
 	deployCore,
 	deployTesting,
+	deployTestToken,
 	deployTimelock,
 	deployUpgradeTarget,
 	paymasterUpgradeCalldata,
@@ -131,6 +135,8 @@ import {
 	handOffScanStart,
 	isContractAccount,
 	scanStartProblem,
+	testingProblem,
+	testTokenProblem,
 	timelockMismatch,
 	verifyCoreState,
 } from "./preflight";
@@ -679,17 +685,48 @@ async function main(): Promise<void> {
 		}
 		case "testing": {
 			const ctx = await deployerContext({ verifyOnly: true });
-			if (isProductionChain(ctx.chainId, ctx.network)) {
-				throw new Error(
-					`chain ${ctx.chainId} is a production chain; the test fixtures must never be deployed there (R-29)`,
-				);
-			}
-			await deployTesting(ctx, release(ctx.local), {
+			const problem = testingProblem(ctx.chainId, ctx.network);
+			if (problem) throw new Error(problem);
+			await deployTesting(ctx, release(ctx.local, ctx.target), {
 				holder: address("holder"),
 				owner: address("owner"),
 				entryPoint: address("entry-point"),
 				fundWei: parseEther(required("fund-eth")),
 			});
+			save(ctx);
+			return;
+		}
+		case "test-token": {
+			const ctx = await deployerContext({ verifyOnly: true });
+			const problem = testTokenProblem({
+				chainId: ctx.chainId,
+				network: ctx.network,
+				local: ctx.local,
+				signer: ctx.walletClient?.account.address,
+				canonical: classDeployer(ctx.network),
+			});
+			if (problem) throw new Error(problem);
+			// The holder only receives the initial supply when the token is deployed: it is neither part
+			// of the CREATE3 address nor of the runtime code, so a verify-only run does not need it, and
+			// a rerun over an existing token cannot apply or check it.
+			const existing = await ctx.publicClient.getCode({
+				address: create3Address(ctx.deployer, LABELS.testErc20),
+			});
+			const deployed = Boolean(existing && existing !== "0x");
+			if (deployed && values.holder)
+				log(
+					`  note: the test ERC-20 is already deployed; --holder ${getAddress(values.holder)} is ignored (only the deploying run mints the supply)`,
+				);
+			if (!deployed && ctx.walletClient && !values.holder)
+				throw new Error(
+					"--holder is required to deploy the test ERC-20 (it receives the initial supply)",
+				);
+			// The profile's release, as `core`: both chains must get the same bytecode at the same address.
+			await deployTestToken(
+				ctx,
+				release(ctx.local, ctx.target),
+				values.holder ? address("holder") : zeroAddress,
+			);
 			save(ctx);
 			return;
 		}
@@ -974,7 +1011,7 @@ async function main(): Promise<void> {
 		}
 		default:
 			console.error(
-				"usage: giano-deploy addresses | core | testing | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
+				"usage: giano-deploy addresses | core | testing | test-token | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
 			);
 			process.exit(2);
 	}

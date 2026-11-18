@@ -1416,10 +1416,12 @@ R-29 wants the separation structural. Four layers, in decreasing strength:
 
 1. **Deployment.** The deploy CLI's `core` command, which the deployer image runs, never references
    the testing contracts; they go only through its `testing` command, which refuses production chain
-   ids.
+   ids. The served testnets still need the test ERC-20 for the reference dApp; `test-token` deploys
+   that token alone (no permissive paymaster), refuses a mainnet, and signs only as the class's
+   canonical deployer.
 2. **Types.** The registry's `testPaymaster` and `sponsorshipPaymaster` are different fields (§4.5),
    so a consumer cannot pass one where the other is meant, and CI asserts no production chain id
-   carries a `testPaymaster`.
+   carries a `testPaymaster` and no mainnet carries a `testErc20`.
 3. **Runtime.** `wallet-api` refuses to boot, and `wallet-web` refuses to load its config, if a
    permissive paymaster address is configured while `NODE_ENV=production` and an explicit
    `GIANO_ALLOW_TEST_PAYMASTER` escape hatch is absent.
