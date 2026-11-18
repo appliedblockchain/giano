@@ -578,6 +578,36 @@
 			"owner": "Rui Sereno",
 			"reason": "No fix in this image yet. The vulnerable package is part of the Ubuntu 22.04 layer of the Foundry v1.7.1 base image (ghcr.io/foundry-rs/foundry, pinned by digest), and Foundry has not rebuilt that image. A newer Foundry release would also change the Foundry that determinism.yml uses to build the contracts, so it needs its own change. giano-devnet is the ABIP-2 exception image (#165): its entrypoint is anvil, it has no RUN step, and it serves a local chain to local and CI clients only. It is never deployed.",
 			"followUp": "Upgrade Foundry, together with determinism.yml, to a release whose image has the fixed packages, or move giano-devnet to a hardened base (#165). Then remove AF-037 to AF-043."
+		},
+		{
+			"id": "AF-044",
+			"tool": "pnpm-audit",
+			"match": {
+				"workspace": ".",
+				"ghsa": "GHSA-fc5q-39xc-vjpf"
+			},
+			"severity": "high",
+			"location": "picomatch 2.3.2, 3.0.2, 4.0.5 and 4.0.7 in pnpm-lock.yaml (root workspace)",
+			"accepted": "2026-11-18",
+			"expires": "2027-02-16",
+			"owner": "Giovanni Pinto",
+			"reason": "No fix available: the advisory lists no patched picomatch version and 4.0.7 is the latest release (affects <= 4.0.7). The ReDoS needs an attacker-controlled extglob pattern. Every install of picomatch here is a build or test-time dependency (tinyglobby, vitest, tsdown, @changesets, @wagmi/cli) or a wallet-connector storage helper (unstorage via anymatch) that matches fixed patterns written by us, so no untrusted input reaches it and nothing ships it in a request path.",
+			"followUp": "Bump picomatch (via parent upgrades or an override) as soon as a patched release is published and clears the 7-day ABIP-6 age gate, then remove AF-044 and AF-045."
+		},
+		{
+			"id": "AF-045",
+			"tool": "pnpm-audit",
+			"match": {
+				"workspace": "services/custom-example",
+				"ghsa": "GHSA-fc5q-39xc-vjpf"
+			},
+			"severity": "high",
+			"location": "picomatch 2.3.2 in services/custom-example/pnpm-lock.yaml (unstorage > anymatch, via @walletconnect/keyvaluestorage)",
+			"accepted": "2026-11-18",
+			"expires": "2027-02-16",
+			"owner": "Giovanni Pinto",
+			"reason": "No fix available: the advisory lists no patched picomatch version and 4.0.7 is the latest release (affects <= 4.0.7). The ReDoS needs an attacker-controlled extglob pattern. Every install of picomatch here is a build or test-time dependency (tinyglobby, vitest, tsdown, @changesets, @wagmi/cli) or a wallet-connector storage helper (unstorage via anymatch) that matches fixed patterns written by us, so no untrusted input reaches it and nothing ships it in a request path.",
+			"followUp": "Bump picomatch (via parent upgrades or an override) as soon as a patched release is published and clears the 7-day ABIP-6 age gate, then remove AF-044 and AF-045."
 		}
 	]
 }
