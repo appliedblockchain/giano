@@ -2,7 +2,7 @@
 
 ## Context
 
-See proposal.md (Why) for the gateway restrictions. More facts that shape the approach:
+See proposal.md (Why) for the gateway restrictions. Giano adapts to the gateway as it is and expects no change from Silent Data. More facts that shape the approach:
 
 - **The gateway already knows Giano wallets.** `private-rollup/services/custom-rpc` verifies a signed request from a smart wallet: the `x-signer-swc` header, then ERC-1271 on the wallet. For type `giano` (the default), it wraps the hash in Giano's EIP-712 domain, `Giano Smart Wallet`, version `1`. That domain matches `GianoSmartWallet._domainNameAndVersion()`. With `x-signer-swc`, the gateway sets the call's `from` to the wallet. A delegate ticket can also be approved by the wallet, and then an ephemeral key signs each request.
 - **Delegate signing exists in the providers.** `silentdatarollup-core` (`Base.ts`) implements it with `smartWalletAddress` and `smartWalletType: 'giano'`. The delegate message is `chainId + JSON(ticket)`. For a smart wallet, the client signs `keccak256` of that message as bytes through `signMessage`.
@@ -45,7 +45,7 @@ With `false`, the bundler returns fixed limits and does not simulate.
   - call gas 300,000;
   - paymaster verification gas 200,000.
 - *Cost of the fixed values:* EntryPoint v0.9 does not charge unused verification gas. It charges 10% of unused call gas above 40,000. On a gasless chain the over-reservation costs nothing. On a chain that charges gas, the prefund must cover the maxima, so a wallet that knows its call gas sends it.
-- *Alternative:* the gateway accepts state overrides. That is Silent Data's decision and a gateway change. If they make it, the chain entry drops `stateOverride: false` and nothing else changes.
+- *Permanent:* the gateway refuses state overrides, and Giano expects no change to it. Fixed limits are the long-term approach on Silent Data, not a stopgap.
 
 ### 3. Accept a fee of 0 when the base fee is 0
 
@@ -115,7 +115,7 @@ The two chains, as read from their public RPC on 2026-11-16:
 
 ## Risks / Trade-offs
 
-- **[Risk]** The wallet's `personal_sign` signature over the ticket hash may not verify in the gateway's ERC-1271 path. The gateway may expect the raw hash where the wallet signs an EIP-191 hash, or the reverse. → Task 4.1 checks it first, against the local gateway on anvil. If it fails, the fix belongs in the demo's message encoding or in the gateway's `giano` type, not in the wallet contract.
+- **[Risk]** The wallet's `personal_sign` signature over the ticket hash may not verify in the gateway's ERC-1271 path. The gateway may expect the raw hash where the wallet signs an EIP-191 hash, or the reverse. → Task 4.1 checks it first, against the local gateway on anvil. If it fails, the fix belongs in the demo's message encoding, not in the wallet contract or the gateway.
 - **[Risk]** ERC-1271 needs deployed wallet code, so a counterfactual wallet cannot sign reads. → The demo's mint is the wallet's first operation and deploys it. Before that, the section says "deploy the wallet first", and no read is attempted.
 - **[Risk]** The `Upgraded` log walk costs one `eth_getLogs` per 10,000 blocks since the last upgrade. At 2-second blocks that is about 4 requests per day of age, and about 1,600 after a year. wallet-api runs it at boot and on each chain check. → Acceptable for now. If it becomes slow, a later change can bound the walk by the proxy's deployment block from the deployment record.
 - **[Risk]** On a gas-charging chain, the fixed limits raise the maximum charge. wallet-api's `computeMaxCost` adds every limit and multiplies by `maxFeePerGas`. With the fixed limits, the total is about 1.5 million gas plus pre-verification gas, compared with about 0.4 million for a simulated ETH transfer. The tenant reservation is about 4 times larger, and an operation can hit the tenant's `maxCostPerTxWei` or the platform's wallet-management cap where a simulated one would not. Settlement still charges what the paymaster's `Sponsored` event records (gas cost, fee and overhead), not the maximum. → `specs/CHAIN-ADOPTION.md` tells the operator to size the caps and the tenant balances for the fixed limits on such a chain (task 3.5). Task 2.8 checks the refusal and the settlement. Wallets that know their call gas send it, which lowers the maximum.
@@ -138,5 +138,4 @@ The work ships as one stack of PRs, listed at the top of `tasks.md`. It merges b
 
 ## Open Questions
 
-- Does the Silent Data team plan to accept `eth_call` state overrides in the gateway? If so, both chains can drop `stateOverride: false` and get simulated estimates. No change to this design.
-- Who funds the two presigned senders on copper-heron (0.01 ETH and 0.3 ETH)? Only the date of group 7 depends on it.
+None.

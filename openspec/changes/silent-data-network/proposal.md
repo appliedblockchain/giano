@@ -30,7 +30,7 @@ The work ships as one stack of PRs, merged bottom-up: the plan, three fix PRs, t
 Still to do:
 
 - Make the bundler's `eth_getUserOperationByHash` answer `null` when the bundle transaction's calldata is redacted. Today it fails to decode `0x` and returns an error.
-- Adopt both Silent Data testnets per `specs/CHAIN-ADOPTION.md`, at the same testnet-class addresses:
+- Adopt both Silent Data testnets per `specs/CHAIN-ADOPTION.md`, at the same testnet-class addresses. The goal is Giano deployed on both chains:
   - copper-heron (19877): CreateX and the Arachnid factory from their presigned keyless transactions, then EntryPoint v0.9;
   - iron-kestrel (19874): CreateX and the Arachnid factory are already there, so only EntryPoint v0.9 is needed;
   - on each chain: `core`, `testing`, `provision:paymaster`, `giano-doctor`, a `GIANO_CHAINS` entry in the dev environment, and one sponsored transaction.
@@ -46,8 +46,8 @@ Decided:
 **Non-goals:**
 
 - Signed reads in wallet-api and wallet-web. Their reads that the gateway restricts (receipts, the implementation slot) already have a public alternative, the `UserOperationEvent` log and the `Upgraded` log.
-- Changes to the Skandha bundler or the paymaster in `private-rollup`. Retiring them is the Silent Data team's decision.
-- Simulated gas estimation on Silent Data. The gateway refuses state overrides, so this needs a gateway change, which Silent Data owns.
+- Changes to the Skandha bundler or the paymaster in `private-rollup`. Giano does not use them.
+- Simulated gas estimation on Silent Data. The gateway refuses state overrides, and Giano expects no change to the gateway, so fixed gas limits are the permanent approach on Silent Data.
 - Creating the testnet canonical deployer key. That is a team action, shared with the Base Sepolia and Ethereum Sepolia adoption, and this change only depends on it.
 
 ## Capabilities
@@ -76,6 +76,9 @@ Decided:
   - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), vendored at a pinned commit.
   - The demo needs a client that signs Silent Data requests for a smart wallet (`x-signer-swc`). `@appliedblockchain/silentdatarollup-core` has one. The GitHub Packages scope caveat in `packages/connector/README.md` applies.
 - **Configuration:** a `GIANO_CHAINS` entry for 19877 and one for 19874. Each sets `bundler.rpcUrl` to that chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds them.
-- **Blocked:** contract deployment on both chains waits for the testnet canonical deployer key (`DEPLOYERS.testnet` is `null`). Copper-heron also waits for someone to fund the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX.
+- **Blocked:** contract deployment on both chains waits for the testnet canonical deployer key (`DEPLOYERS.testnet` is `null`). Copper-heron also needs funds for the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX.
+- **Funding:** both chains need funds.
+  - iron-kestrel: the key that deploys EntryPoint v0.9 (task 8.2), the paymaster deposit and the dev tenant's balance, sized for the fixed limits at the chain's gas price (task 8.4), and the bundler executor (task 8.4).
+  - copper-heron: 0.01 ETH for the Arachnid presigned sender and 0.3 ETH for the CreateX presigned sender (task 7.1), and the bundler executor (task 7.6).
 - **Docs:** `specs/CHAIN-ADOPTION.md`, `packages/contracts/README.md`, `services/bundler` README.
 - **Integrators:** no breaking change. `stateOverride` defaults to `true`, and `--signed-rpc` is opt-in.

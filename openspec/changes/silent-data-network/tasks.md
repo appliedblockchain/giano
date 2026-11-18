@@ -98,5 +98,4 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 
 ## Workflow follow-up
 
-- Ask the Silent Data team whether the gateway will accept `eth_call` state overrides (design, Open Questions), and whether any other client depends on the Skandha bundler in `private-rollup`.
-- Archive the change after PRs 0–5 merge and PRs 6a and 6b pass task 9.2. If one chain stays blocked for long, archive after the other chain's PR, and track the blocked chain in a new change.
+- Archive the change after PRs 0–5 merge and PRs 6a and 6b pass task 9.2. The change is complete only when Giano is deployed on both iron-kestrel and copper-heron.
