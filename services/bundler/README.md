@@ -98,9 +98,10 @@ The cost depends on whether the chain charges for gas:
 
 **A fee of 0** is accepted, at estimation and at submission, only where the chain charges nothing
 for gas. `chargesNoGas` (`@appliedblockchain/giano-contracts`, also used by wallet-api's
-`pm_getPaymasterData`) decides it: the gas price is 0 (the latest block's base fee, or `eth_gasPrice`
-where blocks carry none), and on an OP Stack chain the GasPriceOracle's L1 fee is also 0. The
-executor pays the L1 fee, and only the operation's gas price repays it.
+`pm_getPaymasterData`) decides it: the gas price is 0 (the latest block's base fee, where blocks
+carry one, and `eth_gasPrice`: a node can still ask for a tip when the base fee is 0), and on an OP
+Stack chain the GasPriceOracle's L1 fee is also 0. The executor pays the L1 fee, and only the
+operation's gas price repays it.
 
 Leave `stateOverride` at its default (`true`) on every chain whose RPC accepts state overrides.
 An explicit setting keeps a real simulation fault visible as an error: the bundler never falls
