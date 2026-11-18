@@ -405,7 +405,10 @@ test("deploy:cli handoff --signed-rpc without --execute plans unsigned and needs
 	});
 });
 
-/** Runs the wizard (`contracts:deploy`) with --plan against the stub RPC, for a testnet profile of its chain. */
+/**
+ * Runs the wizard (`contracts:deploy`) against the stub RPC, for a testnet profile of its chain. Without a
+ * terminal it stops after the read-only plan, so it sends no transaction. `flags` may add --plan.
+ */
 async function wizard(url: string, flags: string[], canonicalKey: string) {
 	const dir = mkdtempSync(join(tmpdir(), "giano-signed-wizard-"));
 	try {
@@ -429,7 +432,7 @@ async function wizard(url: string, flags: string[], canonicalKey: string) {
 			}),
 		);
 		return await runScript(
-			["deploy/guided.ts", "--config", profile, "--plan", ...flags],
+			["deploy/guided.ts", "--config", profile, ...flags],
 			"",
 			{ CANONICAL_DEPLOYER_PRIVATE_KEY: canonicalKey },
 		);
@@ -459,6 +462,25 @@ test("contracts:deploy --signed-rpc signs every request with CANONICAL_DEPLOYER_
 			assert.match(String(request.headers["x-timestamp"]), RFC_3339);
 			assert.equal(await payloadSigner(request), root.address, request.method);
 		}
+	}, REMOTE_CHAIN_ID);
+});
+
+test("contracts:deploy --plan --signed-rpc needs no CANONICAL_DEPLOYER_PRIVATE_KEY and sends no signature headers", async () => {
+	await withStubRpc(async (url, received) => {
+		const { stdout, stderr } = await wizard(
+			url,
+			["--plan", "--signed-rpc"],
+			"",
+		);
+		const output = `${stdout}${stderr}`;
+		assert.doesNotMatch(
+			output,
+			/--signed-rpc needs CANONICAL_DEPLOYER_PRIVATE_KEY/,
+		);
+		assert.match(output, /the plan only reads, so its requests go unsigned/);
+		assert.ok(received.length > 0);
+		for (const { headers, method } of received)
+			assert.equal(headers["x-signature"], undefined, method);
 	}, REMOTE_CHAIN_ID);
 });
 

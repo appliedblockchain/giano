@@ -77,7 +77,7 @@ async function main() {
 	});
 	if (values.help) {
 		console.log(
-			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan] [--accept-unverified-implementation] [--signed-rpc]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: the run refuses it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc signs every request with CANONICAL_DEPLOYER_PRIVATE_KEY, and refuses to start without it.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
+			"pnpm contracts:deploy [--chain <profile> | --config <file>] [--env-file <file>] [--role-admin ADDRESS] [--release v1] [--plan] [--accept-unverified-implementation] [--signed-rpc]\nProfiles are persisted under deploy/chains/. Interactive runs can save public admin/release choices; --plan never writes or signs.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: the run refuses it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc signs every request with CANONICAL_DEPLOYER_PRIVATE_KEY, and refuses to start without it. A --plan stays unsigned.\nProvide keys and credential-bearing RPC URLs through the environment; profiles store only public values and environment references.\nSee deploy/contracts/README.md.",
 		);
 		return;
 	}
@@ -176,9 +176,14 @@ async function main() {
 			);
 		}
 		// With --signed-rpc, the RPC keeps the canonical deployer as `from` only on a request it signed
-		// (Silent Data). Checked before the first request, so none leaves unsigned.
+		// (Silent Data). Checked before the first request, so none leaves unsigned. A --plan only reads,
+		// so it stays unsigned and needs no key.
 		let rpcSigner: ReturnType<typeof privateKeyToAccount> | undefined;
-		if (values["signed-rpc"]) {
+		if (values["signed-rpc"] && values.plan)
+			console.log(
+				"--signed-rpc: the plan only reads, so its requests go unsigned; a run without --plan signs with CANONICAL_DEPLOYER_PRIVATE_KEY",
+			);
+		else if (values["signed-rpc"]) {
 			try {
 				rpcSigner = privateKeyToAccount(
 					process.env.CANONICAL_DEPLOYER_PRIVATE_KEY as Hex,
