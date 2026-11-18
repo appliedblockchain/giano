@@ -3462,7 +3462,7 @@ one per chain — D3.)*
 
 | Variable | Value |
 |---|---|
-| `GIANO_CHAINS` | the backend chain document — **ASM** `giano-dev-chains`, the same secret as `wallet-api`'s ([§14.2](#142-wallet-api)). Each entry's optional `bundler` section (`enabled`, `rpcUrl`, `chainType`, `maxBlockRange`) is the bundler's own; every RPC must support `eth_call` state overrides |
+| `GIANO_CHAINS` | the backend chain document — **ASM** `giano-dev-chains`, the same secret as `wallet-api`'s ([§14.2](#142-wallet-api)). Each entry's optional `bundler` section (`enabled`, `rpcUrl`, `chainType`, `maxBlockRange`, `stateOverride`) is the bundler's own; every RPC must support `eth_call` state overrides, unless its entry sets `bundler.stateOverride: false` (fixed gas limits, see the bundler README) |
 | `BUNDLER_EXECUTOR_PRIVATE_KEYS` | **ASM** `giano-dev-alto-executor-key` — one key serving both chains (nonces are per chain), funded separately on each ([§13.2](#132-funded-accounts)) |
 | `GIANO_DEV_MODE` | unset; the Anvil-key guard stays armed |
 

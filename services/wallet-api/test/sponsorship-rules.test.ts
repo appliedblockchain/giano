@@ -575,6 +575,71 @@ describe("cost cap", () => {
 	});
 });
 
+/**
+ * A chain whose RPC refuses state overrides (`bundler.stateOverride: false`): the bundler returns
+ * fixed limits instead of simulated ones. wallet-api's stub sends paymaster verification 150,000
+ * and post-op 100,000; the bundler raises the first to its fixed 200,000 and keeps the second.
+ */
+describe("fixed gas limits from a bundler that cannot simulate", () => {
+	const fixed: CandidateOperation = {
+		...candidate,
+		verificationGasLimit: 1_000_000n,
+		callGasLimit: 300_000n,
+		paymasterVerificationGasLimit: 200_000n,
+		paymasterPostOpGasLimit: 100_000n,
+		preVerificationGas: 60_000n,
+		// iron-kestrel's order of magnitude: about 0.001 gwei
+		maxFeePerGas: 1_000_000n,
+	};
+	/** What a simulation returns for the same ERC-20 transfer. */
+	const simulated: CandidateOperation = {
+		...fixed,
+		verificationGasLimit: 250_000n,
+		callGasLimit: 60_000n,
+		paymasterVerificationGasLimit: 60_000n,
+	};
+	const chargeOf = (operation: CandidateOperation) =>
+		computeMaxCost(operation) +
+		FEE_WEI +
+		computeOverheadBound(operation, overhead);
+
+	it("refuses with the cap refusal when the fixed limits' maximum charge exceeds maxCostPerTxWei", () => {
+		// a cap the simulated operation fits under, and the fixed one does not
+		const capWei = chargeOf(simulated);
+		expect(chargeOf(fixed)).toBeGreaterThan(capWei);
+		const tenantConfig = config({ maxCostPerTxWei: capWei.toString() });
+
+		expect(
+			evaluate({ candidate: simulated, config: tenantConfig }).allowed,
+		).toBe(true);
+		const refused = evaluate({ candidate: fixed, config: tenantConfig });
+		expect(refused.allowed).toBe(false);
+		expect(refused.reason).toBe("cost-exceeds-cap");
+		expect(refused.maxChargeWei).toBe(chargeOf(fixed));
+		expect(refused.detail).toBe(
+			`maximum charge ${chargeOf(fixed)} wei (gas ${computeMaxCost(fixed)} + fee ${FEE_WEI} + overhead ${computeOverheadBound(fixed, overhead)}) exceeds the tenant cap of ${capWei} wei`,
+		);
+	});
+
+	it("charges the gas part from every fixed limit at maxFeePerGas", () => {
+		expect(computeMaxCost(fixed)).toBe(
+			(60_000n + 1_000_000n + 200_000n + 100_000n + 300_000n) * 1_000_000n,
+		);
+	});
+
+	it("has a gas part of 0 on a gasless chain, so only the fee is charged", () => {
+		const gasless = { ...fixed, maxFeePerGas: 0n };
+		expect(computeMaxCost(gasless)).toBe(0n);
+		expect(computeOverheadBound(gasless, overhead)).toBe(0n);
+		const decision = evaluate({
+			candidate: gasless,
+			config: config({ maxCostPerTxWei: FEE_WEI.toString() }),
+		});
+		expect(decision.allowed).toBe(true);
+		expect(decision.maxChargeWei).toBe(FEE_WEI);
+	});
+});
+
 describe("balance", () => {
 	it("refuses when available balance cannot cover the charge", () => {
 		const decision = evaluate({

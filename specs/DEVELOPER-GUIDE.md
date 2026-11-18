@@ -156,7 +156,7 @@ a request.
 | **wallet-api** | `ghcr.io/appliedblockchain/giano-wallet-api` (Fastify) | 8080 | **yes** — multi-tenant: WebAuthn ceremonies, sessions, policied userop relay for every tenant |
 | **wallet-web** | `ghcr.io/appliedblockchain/giano-wallet-web` (nginx + React) | 8080 | the passkey popup origin. Every tenant needs its own TLS host (= that tenant's irreversible RP ID), but **not** its own container: one per tenant, or one shared instance every tenant `CNAME`s to — see [§5.5a](#55a-two-topologies-per-tenant-container-or-shared-ui). Tenants bringing their own UI deploy their own SPA instead (reference: `e2e/wallet-byo/`) |
 | **ERC-4337 bundler** | `ghcr.io/appliedblockchain/giano-bundler` (in-house, `services/bundler`) | 4337 | **yes** — needs a funded executor EOA; any ERC-4337 bundler works |
-| **EVM RPC** | public or your own node | — | **yes** — must support `eth_call` state overrides (the bundler never calls `debug_traceCall`) |
+| **EVM RPC** | public or your own node | — | **yes** — must support `eth_call` state overrides (the bundler never calls `debug_traceCall`), unless the chain sets `bundler.stateOverride: false` |
 | **Deployed contracts** | factory + implementation (+ paymaster/test-ERC20 for demos) | — | **yes** — deployed per chain by the class's canonical deployer; no public chain carries a deployment of the current release yet |
 
 ---

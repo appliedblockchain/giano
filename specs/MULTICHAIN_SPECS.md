@@ -247,7 +247,7 @@ type BackendChainDescriptor = ChainDescriptor & {
     };
     bundlerUrl?: string;                  // defaults to <BUNDLER_BASE_URL>/<chainId>
   };
-  bundler?: { enabled?: boolean; rpcUrl?: string; chainType?: 'auto' | 'default' | 'op-stack'; maxBlockRange?: number };
+  bundler?: { enabled?: boolean; rpcUrl?: string; chainType?: 'auto' | 'default' | 'op-stack'; maxBlockRange?: number; stateOverride?: boolean };
   paymasterAdmin?: { walletRpcUrl?: string; refreshSeconds?: number };
 };
 

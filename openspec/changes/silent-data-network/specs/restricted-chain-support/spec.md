@@ -86,7 +86,7 @@ The pre-verification gas SHALL be computed the same way whether the bundler simu
 - **THEN** the estimated pre-verification gas includes the L1 data fee, as it does with simulation
 
 ### Requirement: A fee of 0 is accepted on a chain that charges no gas
-At estimation, the bundler SHALL refuse a user operation whose `maxFeePerGas` is 0 only when the latest block's base fee is above 0. On a chain whose base fee is 0 or absent, a fee of 0 SHALL be accepted.
+At estimation, the bundler SHALL refuse a user operation whose `maxFeePerGas` is 0 only when the latest block's base fee is above 0. On a chain whose base fee is 0 or absent, a fee of 0 SHALL be accepted. wallet-api's `pm_getPaymasterData` SHALL apply the same rule before it authorises sponsorship.
 
 #### Scenario: Gasless chain
 - **WHEN** the latest block's base fee is 0 and a wallet asks for an estimate with `maxFeePerGas` 0
@@ -95,6 +95,14 @@ At estimation, the bundler SHALL refuse a user operation whose `maxFeePerGas` is
 #### Scenario: Chain that charges gas
 - **WHEN** the latest block's base fee is above 0 and a wallet asks for an estimate with `maxFeePerGas` 0
 - **THEN** the bundler answers with invalid-params error "user operation max fee per gas must be larger than 0 during gas estimation"
+
+#### Scenario: Sponsorship with a fee of 0 on a gasless chain
+- **WHEN** the latest block's base fee is 0 and a wallet calls `pm_getPaymasterData` with `maxFeePerGas` 0
+- **THEN** wallet-api applies the sponsorship rules, with the tenant fee as the whole maximum charge, and authorises the operation when they pass
+
+#### Scenario: Sponsorship with a fee of 0 on a chain that charges gas
+- **WHEN** the latest block's base fee is above 0 and a wallet calls `pm_getPaymasterData` with `maxFeePerGas` 0
+- **THEN** wallet-api answers with invalid-params error "maxFeePerGas is required to authorise sponsorship", and no reservation is made
 
 ### Requirement: Fixed limits are sponsored and settled like simulated ones
 On a chain that charges gas and sets `stateOverride: false`, wallet-api SHALL compute the sponsorship maximum charge and the tenant reservation from the fixed limits the bundler returned, with the same rules as for simulated limits. The tenant SHALL be charged what the paymaster's `Sponsored` event records (gas cost, fee and overhead), as for simulated limits, and the rest of the reservation SHALL be released.

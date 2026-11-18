@@ -59,6 +59,16 @@ const PREFUND_TRANSFER_GAS = 30_000n;
 /** Assumed for a paymaster that did not say what its postOp needs. */
 const DEFAULT_POST_OP_GAS = 50_000n;
 const EXECUTE_USER_OP_SELECTOR = "0x8dd7712f";
+/**
+ * Limits for a chain whose RPC refuses state overrides, where nothing can be simulated. Unused
+ * verification gas is not charged. When more than 40,000 call gas goes unused, 10% of it is
+ * charged, so a caller that knows its call gas should send it.
+ */
+const FIXED = {
+	verificationGasLimit: 1_000_000n,
+	paymasterVerificationGasLimit: 200_000n,
+	callGasLimit: 300_000n,
+};
 
 export type Estimator = ReturnType<typeof createEstimator>;
 
@@ -69,8 +79,11 @@ export function createEstimator(options: {
 	chainType: ChainType;
 	/** `from` for the simulations, and the beneficiary the L1-fee transaction is sized for. */
 	executor: Address;
+	/** False when the RPC refuses eth_call state overrides: no simulation, fixed limits. */
+	stateOverride?: boolean;
 }) {
 	const { client, entryPoint, chainId, chainType, executor } = options;
+	const canSimulate = options.stateOverride ?? true;
 	// The SenderCreator EntryPointSimulations derives: the EntryPoint's first CREATE. A canonical
 	// deployment has it there already; anvil_setCode'd devnets do not, so it is always provided.
 	const senderCreator = getContractAddress({ from: entryPoint, nonce: 1n });
@@ -149,9 +162,73 @@ export function createEstimator(options: {
 		});
 	};
 
+	const preVerificationGasFor = async (estimated: UserOp) => {
+		let preVerificationGas = scale(
+			staticPreVerificationGas(estimated, "estimate"),
+			110n,
+		);
+		if (chainType === "op-stack") {
+			preVerificationGas += scale(
+				await l1FeeGas(
+					client,
+					{ ...estimated, preVerificationGas },
+					entryPoint,
+					executor,
+					chainId,
+				),
+				125n,
+			);
+		}
+		return preVerificationGas;
+	};
+
+	/** No simulation: fixed limits, raised to the caller's where those are higher. */
+	const fixedEstimate = async (
+		input: UserOp,
+		paymasterPostOpGasLimit: bigint,
+	): Promise<GasEstimate> => {
+		const hasPaymaster = Boolean(input.paymaster);
+		const verificationGasLimit = maxBigInt(
+			input.verificationGasLimit,
+			FIXED.verificationGasLimit,
+		);
+		const callGasLimit =
+			size(input.callData) === 0
+				? 0n
+				: input.callGasLimit > 0n
+					? input.callGasLimit
+					: FIXED.callGasLimit;
+		const paymasterVerificationGasLimit = hasPaymaster
+			? maxBigInt(
+					input.paymasterVerificationGasLimit ?? 0n,
+					FIXED.paymasterVerificationGasLimit,
+				)
+			: 0n;
+		const estimated: UserOp = {
+			...input,
+			verificationGasLimit,
+			callGasLimit,
+			...(hasPaymaster
+				? { paymasterVerificationGasLimit, paymasterPostOpGasLimit }
+				: {}),
+		};
+		return {
+			preVerificationGas: await preVerificationGasFor(estimated),
+			verificationGasLimit,
+			callGasLimit,
+			paymasterVerificationGasLimit,
+			paymasterPostOpGasLimit,
+		};
+	};
+
 	return {
 		async estimate(input: UserOp): Promise<GasEstimate> {
-			if (input.maxFeePerGas === 0n) {
+			// The simulation prices gas at 1 wei whatever the operation offers, so a fee of 0 only
+			// matters at submission: refuse it unless the chain charges nothing for gas (a gasless chain).
+			if (
+				input.maxFeePerGas === 0n &&
+				((await client.getBlock()).baseFeePerGas ?? 0n) > 0n
+			) {
 				throw new RpcError(
 					ERROR_CODES.invalidParams,
 					"user operation max fee per gas must be larger than 0 during gas estimation",
@@ -164,6 +241,8 @@ export function createEstimator(options: {
 			const paymasterPostOpGasLimit = hasPaymaster
 				? (givenPostOp ?? DEFAULT_POST_OP_GAS)
 				: 0n;
+
+			if (!canSimulate) return fixedEstimate(input, paymasterPostOpGasLimit);
 
 			const simOp: UserOp = {
 				...input,
@@ -268,25 +347,8 @@ export function createEstimator(options: {
 				false,
 			);
 
-			let preVerificationGas = scale(
-				staticPreVerificationGas(estimated, "estimate"),
-				110n,
-			);
-			if (chainType === "op-stack") {
-				preVerificationGas += scale(
-					await l1FeeGas(
-						client,
-						{ ...estimated, preVerificationGas },
-						entryPoint,
-						executor,
-						chainId,
-					),
-					125n,
-				);
-			}
-
 			return {
-				preVerificationGas,
+				preVerificationGas: await preVerificationGasFor(estimated),
 				verificationGasLimit,
 				callGasLimit,
 				paymasterVerificationGasLimit,
