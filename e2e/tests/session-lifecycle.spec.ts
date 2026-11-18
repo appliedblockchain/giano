@@ -1,13 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
 	addVirtualAuthenticator,
-	apiCall,
 	connectWallet,
 	openManagePopup,
-	platformSignIn,
 	seedCredentials,
 	TENANTS,
 } from "./helpers";
+import { platformCall, platformSignIn } from "./platform-api";
 
 /**
  * The wallet session lifecycle as the user meets it (G5, openspec change session-lifecycle):
@@ -68,12 +67,12 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 	);
 	expect(externalUserId).toBeTruthy();
 
-	const revoked = await apiCall("POST", "/v1/admin/sessions/revoke", {
+	const revoked = await platformCall("POST", "/v1/admin/sessions/revoke", {
 		body: { externalUserId },
 		headers: { authorization: `Bearer ${tenant.adminKey}` },
 	});
 	expect(revoked.status).toBe(200);
-	expect(revoked.json().revoked).toBeGreaterThanOrEqual(1);
+	expect(revoked.json<{ revoked: number }>().revoked).toBeGreaterThanOrEqual(1);
 
 	await rename(popup, "after revocation");
 	await expect(popup.getByTestId("manage-notice")).toHaveText(
@@ -93,21 +92,25 @@ test("a tenant admin revokes the user's sessions, and the wallet asks for a sign
 
 	// The revocation is in the tenant's history, attributed to the admin key.
 	const token = await platformSignIn();
-	const history = await apiCall(
+	const history = await platformCall(
 		"GET",
 		`/v1/platform/tenants/${tenant.slug}/history`,
 		{ headers: { authorization: `Bearer ${token}` } },
 	);
 	expect(history.status).toBe(200);
+	type HistoryEntry = { action: string; detail: { value?: string } | null };
 	const entry = history
-		.json()
+		.json<{ entries: HistoryEntry[] }>()
 		.entries.find(
-			(row: { action: string; detail: { value?: string } | null }) =>
+			(row: HistoryEntry) =>
 				row.action === "user-sessions-revoke" &&
 				row.detail?.value === externalUserId,
 		);
 	expect(entry).toMatchObject({
 		actor: expect.stringMatching(/^tenant-admin-key:/),
-		detail: { selector: "externalUserId", revoked: revoked.json().revoked },
+		detail: {
+			selector: "externalUserId",
+			revoked: revoked.json<{ revoked: number }>().revoked,
+		},
 	});
 });

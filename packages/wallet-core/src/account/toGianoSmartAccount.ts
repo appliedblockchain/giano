@@ -139,6 +139,13 @@ export async function toGianoSmartAccount(
 
 	const ownerBytes = owners_bytes[0];
 
+	// Signatures are bound to a chain id, so signing needs a client with a chain.
+	const requireChainId = (): number => {
+		if (!client.chain)
+			throw new BaseError("the account's client has no chain to sign for");
+		return client.chain.id;
+	};
+
 	async function signStaticCallPermission(
 		this: SmartAccount<GianoSmartAccountImplementation>,
 		{
@@ -238,7 +245,7 @@ export async function toGianoSmartAccount(
 
 			const typedData = toReplaySafeTypedData({
 				address,
-				chainId: client.chain!.id,
+				chainId: requireChainId(),
 				hash: parameters.hash,
 			});
 
@@ -257,7 +264,7 @@ export async function toGianoSmartAccount(
 
 			const typedData = toReplaySafeTypedData({
 				address,
-				chainId: client.chain!.id,
+				chainId: requireChainId(),
 				hash: hashMessage(message),
 			});
 
@@ -277,7 +284,7 @@ export async function toGianoSmartAccount(
 
 			const typedData = toReplaySafeTypedData({
 				address,
-				chainId: client.chain!.id,
+				chainId: requireChainId(),
 				hash: hashTypedData({
 					domain,
 					message,
@@ -296,7 +303,7 @@ export async function toGianoSmartAccount(
 		},
 
 		async signUserOperation(parameters) {
-			const { chainId = client.chain!.id, ...userOperation } = parameters;
+			const { chainId = requireChainId(), ...userOperation } = parameters;
 
 			const address = await this.getAddress();
 			const hash = getUserOperationHash({

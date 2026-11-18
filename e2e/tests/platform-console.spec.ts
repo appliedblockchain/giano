@@ -337,7 +337,8 @@ test.describe("admin console", () => {
 			openRegistration: true,
 		});
 		expect(created.status).toBe(201);
-		let version: number = created.json().tenant.version;
+		let version: number = created.json<{ tenant: { version: number } }>().tenant
+			.version;
 		for (let edit = 1; edit <= 51; edit++) {
 			const patched = await as(
 				"PATCH",
@@ -346,7 +347,7 @@ test.describe("admin console", () => {
 				{ "if-match": `"${version}"` },
 			);
 			expect(patched.status).toBe(200);
-			version = patched.json().version;
+			version = patched.json<{ version: number }>().version;
 		}
 
 		// opened from the list, not by URL: a reload signs the console out (its session is in memory)

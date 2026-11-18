@@ -1,9 +1,11 @@
+import assert from "node:assert";
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { pino } from "pino";
 import {
+	type Abi,
 	type Address,
 	createPublicClient,
 	createTestClient,
@@ -26,7 +28,7 @@ import type { Submitter } from "../src/submitter.js";
 const require = createRequire(import.meta.url);
 const artifact = (name: string) =>
 	require(`@account-abstraction/contracts/artifacts/${name}.json`) as {
-		abi: any;
+		abi: Abi;
 		bytecode: Hex;
 	};
 
@@ -98,7 +100,8 @@ export async function startDevnet(chainId = 31337): Promise<Devnet> {
 			chain: foundry,
 		});
 		const receipt = await client.waitForTransactionReceipt({ hash });
-		return getAddress(receipt.contractAddress!);
+		assert(receipt.contractAddress, `${name} deployment created no contract`);
+		return getAddress(receipt.contractAddress);
 	};
 
 	// Deploy canonically: v0.9 SenderCreator authenticates its EntryPoint via an immutable.
@@ -199,10 +202,12 @@ export async function startBundler(
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const { port } = server.address() as AddressInfo;
 	const base = `http://127.0.0.1:${port}`;
+	const services = registry.get(list[0].chainId)?.services;
+	assert(services, `chain ${list[0].chainId} has no services`);
 	return {
 		url: `${base}/${list[0].chainId}`,
 		base,
-		submitter: registry.get(list[0].chainId)!.services!.submitter,
+		submitter: services.submitter,
 		registry,
 		stop: () =>
 			new Promise((resolve) => {
@@ -213,7 +218,7 @@ export async function startBundler(
 }
 
 let rpcId = 0;
-export async function rpc<T = any>(
+export async function rpc<T = unknown>(
 	url: string,
 	method: string,
 	params: unknown[] = [],

@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -104,19 +105,20 @@ if (!hasState) {
 			"Generate it with `pnpm --filter @appliedblockchain/giano-e2e devnet:generate`.",
 	);
 }
-const devnet = hasState
+type DevnetAddresses = {
+	factory: Address;
+	sponsorshipPaymaster: Address;
+	sponsorshipSignerKey: Hex;
+	testErc20: Address;
+	tenants: Array<{ slug: string; id: string }>;
+};
+const devnetAddresses = hasState
 	? (JSON.parse(
 			fs.readFileSync(
 				STATE_PATH.replace("state.json", "addresses.json"),
 				"utf8",
 			),
-		) as {
-			factory: Address;
-			sponsorshipPaymaster: Address;
-			sponsorshipSignerKey: Hex;
-			testErc20: Address;
-			tenants: Array<{ slug: string; id: string }>;
-		})
+		) as DevnetAddresses)
 	: undefined;
 
 /** Anvil account 0 — funds the account and submits the bundle in place of a bundler. */
@@ -218,8 +220,12 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 
 	const owner = privateKeyToAccount(OWNER_KEY);
 	const bundler = privateKeyToAccount(BUNDLER_KEY);
+	/** Set in beforeAll; the suite only runs when the committed state, and so its addresses, exist. */
+	let devnet: DevnetAddresses;
 
 	beforeAll(async () => {
+		assert(devnetAddresses, `${STATE_PATH} has no addresses`);
+		devnet = devnetAddresses;
 		// A leftover container from an interrupted run would serve the wrong chain.
 		spawnSync("docker", ["rm", "-f", ANVIL_CONTAINER], { stdio: "ignore" });
 		const started = spawnSync(
@@ -283,10 +289,10 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 
 		// The tenant row must carry the *same* id the paymaster was registered against, or the service
 		// would bill a tenant the contract has never heard of.
-		tenantId = devnet!.tenants[0].id;
+		tenantId = devnet.tenants[0].id;
 		await db.insert(tenants).values({
 			id: tenantId,
-			slug: devnet!.tenants[0].slug,
+			slug: devnet.tenants[0].slug,
 			walletOrigin: "http://wallet.localhost:8081",
 			rpId: "wallet.localhost",
 			rpName: "Chain test",
@@ -295,7 +301,7 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 
 		paymaster = createPaymasterReader({
 			client,
-			address: devnet!.sponsorshipPaymaster,
+			address: devnet.sponsorshipPaymaster,
 			cacheTtlMs: 0,
 		});
 		ledger = createLedgerService(db);
@@ -306,7 +312,7 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 			paymaster,
 			ledger,
 			signer: createLocalSponsorshipSigner(
-				devnet!.sponsorshipSignerKey,
+				devnet.sponsorshipSignerKey,
 				"chain-test",
 			),
 			entryPoint: ENTRY_POINT,
@@ -328,7 +334,7 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 			lockRetryMs: 1000,
 			confirmations: 0,
 			reconcileIntervalMs: 1000,
-			tenantSlug: async () => devnet!.tenants[0].slug,
+			tenantSlug: async () => devnet.tenants[0].slug,
 		});
 
 		// Sponsorship rules, and the balance the reservation ledger reads.
@@ -339,7 +345,7 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 				enabled: true,
 				maxCostPerTxWei: parseEther("1").toString(),
 				allowlist: [
-					{ contract: devnet!.testErc20.toLowerCase(), functions: "all" },
+					{ contract: devnet.testErc20.toLowerCase(), functions: "all" },
 				],
 			},
 		});
@@ -406,14 +412,14 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 		];
 
 		const predicted = (await client.readContract({
-			address: devnet!.factory,
+			address: devnet.factory,
 			abi: gianoSmartWalletFactoryAbi,
 			functionName: "getAddress",
 			args: [owners, 0n],
 		})) as Address;
 
 		const hash = await wallet.writeContract({
-			address: devnet!.factory,
+			address: devnet.factory,
 			abi: gianoSmartWalletFactoryAbi,
 			functionName: "createAccount",
 			args: [owners, 0n],
@@ -541,7 +547,7 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 			abi: gianoSmartWalletAbi,
 			functionName: "execute",
 			args: [
-				devnet!.testErc20,
+				devnet.testErc20,
 				0n,
 				// transfer(address,uint256) to self, zero tokens: valid, not meaningful
 				`0xa9059cbb${walletAddress.slice(2).toLowerCase().padStart(64, "0")}${"0".repeat(64)}` as Hex,

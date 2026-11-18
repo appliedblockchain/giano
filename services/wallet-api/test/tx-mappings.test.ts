@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -74,7 +75,9 @@ beforeAll(async () => {
 	const rows = await ctx.db
 		.select({ id: tenants.id, slug: tenants.slug })
 		.from(tenants);
-	tenantAId = rows.find((r) => r.slug === TENANT_A.slug)!.id;
+	const rowA = rows.find((r) => r.slug === TENANT_A.slug);
+	assert(rowA, "expected tenant A to exist");
+	tenantAId = rowA.id;
 }, 180_000);
 
 afterAll(async () => {
@@ -175,8 +178,8 @@ describe("admin: write and read back", () => {
 		const bad = descriptorFor(USDC) as {
 			display: { formats: Record<string, { fields: Array<{ path: string }> }> };
 		};
-		bad.display.formats["transfer(address to, uint256 value)"]!
-			.fields[1]!.path = "recipient";
+		bad.display.formats["transfer(address to, uint256 value)"].fields[1].path =
+			"recipient";
 		const res = await ctx.app.inject({
 			method: "PUT",
 			url: `/v1/admin/tx-mappings/${USDC}`,
@@ -238,9 +241,9 @@ describe("admin: write and read back", () => {
 			.where(eq(tenantTxMappings.tenantId, tenantAId));
 		expect(rows).toHaveLength(1);
 		expect(
-			(rows[0]!.descriptor as ReturnType<typeof descriptorFor>).display.formats[
+			(rows[0].descriptor as ReturnType<typeof descriptorFor>).display.formats[
 				"transfer(address to, uint256 value)"
-			]!.intent,
+			].intent,
 		).toBe("Second");
 
 		const history = await ctx.app.inject({
@@ -257,10 +260,10 @@ describe("admin: write and read back", () => {
 			}
 		).revisions;
 		expect(revisions.map((r) => r.action)).toEqual(["put", "put"]);
+		const descriptor = revisions[1].descriptor;
+		assert(descriptor, "expected revision 1 to have a descriptor");
 		expect(
-			revisions[1]!.descriptor!.display.formats[
-				"transfer(address to, uint256 value)"
-			]!.intent,
+			descriptor.display.formats["transfer(address to, uint256 value)"].intent,
 		).toBe("First");
 	});
 });
@@ -365,16 +368,15 @@ describe("admin: list, delete, history, isolation", () => {
 			}
 		).revisions;
 		expect(revisions.map((r) => r.action)).toEqual(["delete", "put", "put"]);
-		expect(revisions[0]!.descriptor).toBeNull();
+		expect(revisions[0].descriptor).toBeNull();
+		const [, second, first] = revisions.map((r) => r.descriptor);
+		assert(second, "expected revision 1 to have a descriptor");
+		assert(first, "expected revision 2 to have a descriptor");
 		expect(
-			revisions[1]!.descriptor!.display.formats[
-				"transfer(address to, uint256 value)"
-			]!.intent,
+			second.display.formats["transfer(address to, uint256 value)"].intent,
 		).toBe("Second");
 		expect(
-			revisions[2]!.descriptor!.display.formats[
-				"transfer(address to, uint256 value)"
-			]!.intent,
+			first.display.formats["transfer(address to, uint256 value)"].intent,
 		).toBe("First");
 		for (const r of revisions) {
 			expect(r.contract).toBe(USDC);
@@ -580,6 +582,6 @@ describe("wallet read", () => {
 			[USDC, true],
 			[OTHER, false],
 		]);
-		expect(mappings[1]!.issues[0]!.path).toBe("display.formats");
+		expect(mappings[1].issues[0].path).toBe("display.formats");
 	});
 });

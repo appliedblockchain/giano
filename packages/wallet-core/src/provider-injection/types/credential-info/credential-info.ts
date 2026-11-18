@@ -61,7 +61,7 @@ export function assertCredentialInfo(
 		credentialId === "user-pick" ||
 		isNonEmptyBufferSource(credentialId) ||
 		// array of non-empty BufferSource items
-		(credentialId instanceof Array &&
+		(Array.isArray(credentialId) &&
 			credentialId.every((x) => isNonEmptyBufferSource(x)))
 	) {
 		return;

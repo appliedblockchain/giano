@@ -292,7 +292,7 @@ export function createSponsorshipService(
 					session,
 					method,
 					sender: candidate.sender,
-					reason: decision.reason!,
+					reason: decision.reason,
 					message: decision.detail ?? "sponsorship refused",
 					ruleResults: decision.results,
 					feeWei,

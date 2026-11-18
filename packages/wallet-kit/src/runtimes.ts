@@ -156,10 +156,15 @@ function paymasterHooks(
 		};
 	}
 
+	if (!sponsorshipClient) {
+		throw new Error(
+			`chain ${chain.chainId}: sponsorship is 'service' but no sponsorship client was created`,
+		);
+	}
 	return {
 		paymaster: {
-			getPaymasterData: sponsorshipClient!.getPaymasterData as never,
-			getPaymasterStubData: sponsorshipClient!.getPaymasterStubData as never,
+			getPaymasterData: sponsorshipClient.getPaymasterData as never,
+			getPaymasterStubData: sponsorshipClient.getPaymasterStubData as never,
 		},
 	};
 }

@@ -61,7 +61,7 @@ const app = await buildApp({
 	},
 });
 await app.ready();
-const spec = JSON.stringify(app.swagger(), null, 2) + "\n";
+const spec = `${JSON.stringify(app.swagger(), null, 2)}\n`;
 await app.close();
 await pool.end();
 

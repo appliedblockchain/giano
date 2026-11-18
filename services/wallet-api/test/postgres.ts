@@ -26,7 +26,7 @@ export async function stopPostgres(
 			const { rows } = await client.query<{ open: number }>(
 				`SELECT count(*)::int AS open FROM pg_stat_activity WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()`,
 			);
-			const open = rows[0]!.open;
+			const open = rows[0].open;
 			if (open === 0) break;
 			if (Date.now() > deadline)
 				throw new Error(

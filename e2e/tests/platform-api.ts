@@ -23,10 +23,10 @@ export function platformCall(
 		body,
 		headers = {},
 	}: { body?: unknown; headers?: Record<string, string> } = {},
-) {
+): Promise<{ status: number; json: <T>() => T }> {
 	const url = new URL(path, API);
 	const payload = body === undefined ? undefined : JSON.stringify(body);
-	return new Promise<{ status: number; json: () => any }>((resolve, reject) => {
+	return new Promise((resolve, reject) => {
 		const request = http.request(
 			url,
 			{
@@ -58,7 +58,7 @@ export async function platformSignIn(): Promise<string> {
 		body: { address: PLATFORM_ADMIN.address, chainId: 31337 },
 	});
 	expect(challenge.status).toBe(200);
-	const { message } = challenge.json();
+	const { message } = challenge.json<{ message: string }>();
 	const verify = await platformCall("POST", "/v1/platform/auth/verify", {
 		body: {
 			message,
@@ -66,5 +66,5 @@ export async function platformSignIn(): Promise<string> {
 		},
 	});
 	expect(verify.status).toBe(200);
-	return verify.json().token;
+	return verify.json<{ token: string }>().token;
 }

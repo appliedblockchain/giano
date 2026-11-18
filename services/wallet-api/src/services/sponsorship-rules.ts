@@ -42,10 +42,12 @@ export type SponsorshipRefusalReason =
 	| "tenant-in-deficit"
 	| "not-your-wallet";
 
-export type SponsorshipDecision = {
-	allowed: boolean;
+/** A refusal always names its reason: the first failed rule. An allowed decision has none. */
+export type SponsorshipDecision = (
+	| { allowed: true; reason?: undefined }
+	| { allowed: false; reason: SponsorshipRefusalReason }
+) & {
 	results: SponsorshipRuleResult[];
-	reason?: SponsorshipRefusalReason;
 	detail?: string;
 	/** What the operation would cost the tenant in total: gas + fee + overhead. */
 	maxChargeWei: bigint;
@@ -540,9 +542,10 @@ export function evaluateSponsorship(
 	}
 
 	return {
-		allowed: reason === undefined,
+		...(reason === undefined
+			? { allowed: true as const }
+			: { allowed: false as const, reason }),
 		results,
-		reason,
 		detail,
 		maxChargeWei,
 		feeWei,

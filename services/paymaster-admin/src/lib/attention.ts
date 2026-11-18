@@ -153,8 +153,7 @@ export function attentionItems({
 	// The registry rules wait for its first successful read: before it, every row lacks a registry
 	// row, which says nothing. "No registry row" also waits for the deleted tenants.
 	const registryKnown = registry === undefined || registry.known;
-	const rowlessKnown =
-		registry !== undefined && registry.known && !registry.deletedError;
+	const rowlessKnown = registry?.known === true && !registry.deletedError;
 
 	if (registry?.error)
 		items.push({

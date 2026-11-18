@@ -84,8 +84,12 @@ function parseArgs(argv: string[]): Record<string, string> {
 		const token = argv[i];
 		if (!token.startsWith("--")) continue;
 		const next = argv[i + 1];
-		flags[token.slice(2)] =
-			next && !next.startsWith("--") ? (i++, next) : "true";
+		if (next && !next.startsWith("--")) {
+			flags[token.slice(2)] = next;
+			i++;
+		} else {
+			flags[token.slice(2)] = "true";
+		}
 	}
 	return flags;
 }

@@ -161,7 +161,9 @@ export function createTxMappingService(db: Db) {
 						},
 					})
 					.returning();
-				return revalidate(row!);
+				// An upsert writes exactly one row, and returning() gives it back.
+				if (!row) throw new Error("the mapping upsert returned no row");
+				return revalidate(row);
 			});
 		},
 

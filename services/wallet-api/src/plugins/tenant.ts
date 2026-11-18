@@ -21,6 +21,20 @@ declare module "fastify" {
 }
 
 /**
+ * The tenant resolved for the request. A route reads it only after a guard that fails closed
+ * without one (requireTenant, requireTenantByHost, requireSession), so a missing value is a
+ * programming error (a route without its guard): this throws instead of continuing.
+ */
+export function requireTenantOf(request: FastifyRequest): Tenant {
+	if (!request.tenant) {
+		throw new Error(
+			"request.tenant is not set: the route is missing its tenant guard",
+		);
+	}
+	return request.tenant;
+}
+
+/**
  * Per-request tenant resolution (specs/DEVELOPER-GUIDE.md §1). The Origin header is
  * authoritative for ceremony routes because WebAuthn independently verifies the ceremony
  * ran on that origin (clientDataJSON.origin must match the resolved tenant's

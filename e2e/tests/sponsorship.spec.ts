@@ -168,7 +168,8 @@ async function readChain(fn: string, args: string[] = []): Promise<string> {
 		error?: { message: string };
 	};
 	if (body.error) throw new Error(`${fn}: ${body.error.message}`);
-	return body.result!;
+	if (body.result === undefined) throw new Error(`${fn}: no result`);
+	return body.result;
 }
 
 async function treasuryWei(): Promise<bigint> {
@@ -245,7 +246,12 @@ async function waitForDeploymentSettlement(
 		.toBeGreaterThan(0);
 	await waitForSettlements(
 		tenant,
-		logs.map((log) => log.args.userOpHash!),
+		logs.map((log) => {
+			const { userOpHash } = log.args;
+			if (!userOpHash)
+				throw new Error("a UserOperationEvent log has no userOpHash");
+			return userOpHash;
+		}),
 	);
 }
 
@@ -323,14 +329,14 @@ for (const slug of ["stock", "byo"] as const) {
 
 			const output = await page.getByTestId("out").textContent();
 			const hash = output?.match(/userOpHash: (0x[0-9a-fA-F]{64})/)?.[1];
-			expect(
-				hash,
-				"the dApp did not report its submitted operation hash",
-			).toBeDefined();
-			const spend = await waitForSettlements(tenant, [hash!]);
+			if (hash === undefined)
+				throw new Error("the dApp did not report its submitted operation hash");
+			const spend = await waitForSettlements(tenant, [hash]);
 			const settlement = spend.settlements.find(
-				(entry) => entry.useropHash.toLowerCase() === hash!.toLowerCase(),
-			)!;
+				(entry) => entry.useropHash.toLowerCase() === hash.toLowerCase(),
+			);
+			if (!settlement)
+				throw new Error(`no settlement was recorded for ${hash}`);
 
 			// Every component separately visible: what was gas, what was Giano's margin, what was overhead.
 			expect(BigInt(settlement.gasCostWei)).toBeGreaterThan(0n);
@@ -602,7 +608,9 @@ test.describe("wallet management — stock wallet UI", () => {
 		const spend = await waitForSettlements(tenant, added);
 		const settlement = spend.settlements.find(
 			(entry) => entry.useropHash.toLowerCase() === added[0],
-		)!;
+		);
+		if (!settlement)
+			throw new Error(`no settlement was recorded for ${added[0]}`);
 		expect(settlement.success).toBe(true);
 		await expectInvariantIntact();
 	});

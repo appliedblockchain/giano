@@ -284,7 +284,7 @@ export function renderManage(
 					{ className: "payload" },
 					flow.step === "error"
 						? flow.message
-						: `unexpected step: ${flow.step}`,
+						: `unexpected step: ${JSON.stringify(flow)}`,
 				),
 				el(
 					"div",

@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { requireChainOf } from "../plugins/chain.js";
+import { requireTenantOf } from "../plugins/tenant.js";
 import {
 	boundedLogsGuard,
 	createReadRelay,
@@ -47,10 +49,10 @@ export default async function rpcRelayRoutes(
 	});
 
 	const handle = (request: FastifyRequest) => {
-		const tenant = request.tenant!;
+		const tenant = requireTenantOf(request);
 		return relay.handle({
 			body: request.body as JsonRpcRequest,
-			chain: request.chain!,
+			chain: requireChainOf(request),
 			key: tenant.id,
 			log: request.log,
 			labels: { tenant: tenant.slug },

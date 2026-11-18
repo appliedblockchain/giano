@@ -3,6 +3,8 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Address, Hex } from "viem";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { requireSessionOf } from "../plugins/auth.js";
+import { requireChainOf } from "../plugins/chain.js";
 import { methodLabel } from "../plugins/metrics.js";
 import { BundlerRpcError } from "../services/bundler.js";
 import type { ChainServices } from "../services/chains.js";
@@ -144,8 +146,8 @@ export default async function bundlerRelayRoutes(
 	// Shared by both routes below, so typed against the plain request: the body has already
 	// passed `jsonRpcRequestSchema` by the time it gets here.
 	const handle = async (request: FastifyRequest): Promise<JsonRpcResponse> => {
-		const session = request.session!;
-		const chain = request.chain!;
+		const session = requireSessionOf(request);
+		const chain = requireChainOf(request);
 		const {
 			id,
 			method,

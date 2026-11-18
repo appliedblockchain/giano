@@ -2,7 +2,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { parseSiweMessage } from "viem/siwe";
 import { z } from "zod";
-import { PLATFORM_UNAUTHORIZED } from "../plugins/auth.js";
+import {
+	PLATFORM_UNAUTHORIZED,
+	requirePlatformAdminOf,
+} from "../plugins/auth.js";
 import type { PlatformSessionService } from "../services/platform-sessions.js";
 
 /**
@@ -167,7 +170,9 @@ export default async function platformAuthRoutes(
 			},
 		},
 		async (request, reply) => {
-			await opts.platformAdminSessions.revoke(request.platformAdmin!.sessionId);
+			await opts.platformAdminSessions.revoke(
+				requirePlatformAdminOf(request).sessionId,
+			);
 			return reply.code(204).send(null);
 		},
 	);

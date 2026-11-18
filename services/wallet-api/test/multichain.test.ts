@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import {
 	ENTRYPOINT_V09_ADDRESS,
 	entryPointRuntimeCode,
@@ -427,16 +428,21 @@ function fakeRegistry(chains: ChainServices[]): ChainRegistry {
 			return chains.length;
 		},
 		servedChainIds: () => chains.map((chain) => chain.chainId),
-		anyReady: () => chains.find((chain) => chain.status === "ready")!,
+		anyReady: () => {
+			const ready = chains.find((chain) => chain.status === "ready");
+			if (!ready) throw new Error("no chain is currently available");
+			return ready;
+		},
 	};
 }
 
 async function appWithChains(chains: ChainServices[]) {
 	const app = Fastify({ logger: false });
 	await app.register(chainPlugin, { registry: fakeRegistry(chains) });
-	app.post("/probe", { preHandler: app.requireChain }, async (request) => ({
-		resolved: request.chain!.chainId,
-	}));
+	app.post("/probe", { preHandler: app.requireChain }, async (request) => {
+		assert(request.chain, "expected requireChain to set request.chain");
+		return { resolved: request.chain.chainId };
+	});
 	return app;
 }
 

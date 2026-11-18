@@ -29,6 +29,7 @@ export async function readForwardPages<T>(
 		for (let to = end; to >= start; ) {
 			// After a narrowing, ask for the span the node accepted, not the rest of the window: the rest
 			// would be refused and narrowed again, from the top, for every `width` blocks.
+			// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 			const from = to - width + 1n > start ? to - width + 1n : start;
 			const page = await read({ fromBlock: from, toBlock: to });
 			pieces.unshift(page.items);

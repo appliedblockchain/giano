@@ -10,6 +10,8 @@ import {
 	tenantSponsorship,
 	tenantSponsorshipHistory,
 } from "../db/schema.js";
+import { requireAdminTenantOf } from "../plugins/auth.js";
+import { requireChainOf } from "../plugins/chain.js";
 import type { ChainRegistry } from "../services/chains.js";
 import {
 	type PaymasterReader,
@@ -126,8 +128,8 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.adminTenant!;
-			const chainId = request.chain!.chainId;
+			const tenant = requireAdminTenantOf(request);
+			const chainId = requireChainOf(request).chainId;
 			const [row] = await db
 				.select({
 					config: tenantSponsorship.config,
@@ -187,7 +189,7 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.adminTenant!;
+			const tenant = requireAdminTenantOf(request);
 			const parsed = sponsorshipConfigSchema.safeParse(request.body);
 			if (!parsed.success) {
 				return reply.code(400).send({
@@ -212,7 +214,7 @@ export default async function adminSponsorshipRoutes(
 				});
 			}
 
-			const chain = request.chain!;
+			const chain = requireChainOf(request);
 			await writeConfig(
 				tenant.id,
 				chain.chainId,
@@ -269,8 +271,8 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.adminTenant!;
-			const chain = request.chain!;
+			const tenant = requireAdminTenantOf(request);
+			const chain = requireChainOf(request);
 			const chainId = chain.chainId;
 			const [row] = await db
 				.select({ config: tenantSponsorship.config })
@@ -345,8 +347,8 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.adminTenant!;
-			const chainId = request.chain!.chainId;
+			const tenant = requireAdminTenantOf(request);
+			const chainId = requireChainOf(request).chainId;
 			const rows = await db
 				.select()
 				.from(tenantSponsorshipHistory)
@@ -408,8 +410,8 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.adminTenant!;
-			const chain = request.chain!;
+			const tenant = requireAdminTenantOf(request);
+			const chain = requireChainOf(request);
 			const chainId = chain.chainId;
 			const paymaster = chain.paymaster;
 			if (!paymaster) {
@@ -502,8 +504,8 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.adminTenant!;
-			const chainId = request.chain!.chainId;
+			const tenant = requireAdminTenantOf(request);
+			const chainId = requireChainOf(request).chainId;
 			const conditions = [
 				eq(sponsorshipSettlements.tenantId, tenant.id),
 				eq(sponsorshipSettlements.chainId, chainId),
@@ -590,8 +592,8 @@ export default async function adminSponsorshipRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.adminTenant!;
-			const chainId = request.chain!.chainId;
+			const tenant = requireAdminTenantOf(request);
+			const chainId = requireChainOf(request).chainId;
 			const conditions = [
 				eq(sponsorshipDecisions.tenantId, tenant.id),
 				eq(sponsorshipDecisions.chainId, chainId),

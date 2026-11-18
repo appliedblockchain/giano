@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
+import { requireAdminTenantOf } from "../plugins/auth.js";
+import { requireChainOf } from "../plugins/chain.js";
 import { sha256hex } from "../services/tenants.js";
 import {
 	checkMapping,
@@ -57,6 +59,17 @@ export default async function adminTxMappingRoutes(
 		return sha256hex(header.slice("Bearer ".length).trim());
 	};
 
+	/** The path's contract, lowercased. The params schema has already refused anything that is not an address. */
+	const contractOf = (request: { params: { contract: string } }) => {
+		const contract = normaliseContract(request.params.contract);
+		if (contract === null) {
+			throw new Error(
+				"the contract path parameter is not an address: the params schema should have refused it",
+			);
+		}
+		return contract;
+	};
+
 	const present = (row: Awaited<ReturnType<typeof mappings.get>> & object) => ({
 		id: row.id,
 		contract: row.contract,
@@ -83,8 +96,11 @@ export default async function adminTxMappingRoutes(
 			},
 		},
 		async (request) => {
-			const chainId = request.chain!.chainId;
-			const rows = await mappings.list(request.adminTenant!.id, chainId);
+			const chainId = requireChainOf(request).chainId;
+			const rows = await mappings.list(
+				requireAdminTenantOf(request).id,
+				chainId,
+			);
 			return { chainId, mappings: rows.map(present) };
 		},
 	);
@@ -118,8 +134,8 @@ export default async function adminTxMappingRoutes(
 		},
 		async (request) => {
 			const rows = await mappings.history(
-				request.adminTenant!.id,
-				request.chain!.chainId,
+				requireAdminTenantOf(request).id,
+				requireChainOf(request).chainId,
 				request.query.limit,
 			);
 			return {
@@ -148,10 +164,10 @@ export default async function adminTxMappingRoutes(
 			},
 		},
 		async (request, reply) => {
-			const contract = normaliseContract(request.params.contract)!;
+			const contract = contractOf(request);
 			const row = await mappings.get(
-				request.adminTenant!.id,
-				request.chain!.chainId,
+				requireAdminTenantOf(request).id,
+				requireChainOf(request).chainId,
 				contract,
 			);
 			if (!row)
@@ -181,9 +197,9 @@ export default async function adminTxMappingRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.adminTenant!;
-			const chainId = request.chain!.chainId;
-			const contract = normaliseContract(request.params.contract)!;
+			const tenant = requireAdminTenantOf(request);
+			const chainId = requireChainOf(request).chainId;
+			const contract = contractOf(request);
 
 			const check = checkMapping(request.body, chainId, contract);
 			if (!check.ok) {
@@ -222,10 +238,10 @@ export default async function adminTxMappingRoutes(
 			},
 		},
 		async (request, reply) => {
-			const contract = normaliseContract(request.params.contract)!;
+			const contract = contractOf(request);
 			const removed = await mappings.remove(
-				request.adminTenant!.id,
-				request.chain!.chainId,
+				requireAdminTenantOf(request).id,
+				requireChainOf(request).chainId,
 				contract,
 				keyHashOf(request),
 			);
@@ -234,7 +250,11 @@ export default async function adminTxMappingRoutes(
 					.code(404)
 					.send({ error: "not-found", message: "mapping not found" });
 			request.log.info(
-				{ txMappings: "delete", chainId: request.chain!.chainId, contract },
+				{
+					txMappings: "delete",
+					chainId: requireChainOf(request).chainId,
+					contract,
+				},
 				"transaction mapping removed",
 			);
 			return reply.code(204).send(null);

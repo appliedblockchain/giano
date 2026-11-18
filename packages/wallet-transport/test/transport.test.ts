@@ -19,6 +19,8 @@ function setup(
 		onRequest?: (method: string, params: unknown) => Promise<unknown>;
 		chainId?: number;
 		servedChainIds?: number[];
+		onConnected?: (context: { chainId: number }) => void;
+		onClosed?: () => void;
 	} = {},
 ) {
 	const pair = createWindowPair(DAPP, WALLET);
@@ -50,6 +52,8 @@ function setup(
 		servedChainIds: options.servedChainIds ?? [31337, 31338],
 		onRequest: options.onRequest ?? (async (method) => `handled:${method}`),
 		hostWindow: pair.hostWindow as unknown as Window,
+		onConnected: options.onConnected,
+		onClosed: options.onClosed,
 	});
 
 	const connect = async () => {
@@ -234,12 +238,13 @@ describe("chain negotiation", () => {
 
 	it("exposes the granted chain on the request context — what hosts route runtimes by", async () => {
 		let seenChainId: number | undefined;
-		const { client, host, connect } = setup({
+		const { client, connect } = setup({
 			chainId: 31338,
 			onRequest: async () => "ok",
+			onConnected: (context) => {
+				seenChainId = context.chainId;
+			},
 		});
-		host["options"].onConnected = (context: { chainId: number }) =>
-			(seenChainId = context.chainId);
 		await connect();
 		expect(seenChainId).toBe(31338);
 		expect(client.isConnected).toBe(true);
@@ -435,8 +440,11 @@ describe("hostile messages", () => {
 describe("teardown", () => {
 	it("client disconnect notifies the host", async () => {
 		let closed = false;
-		const pairSetup = setup();
-		pairSetup.host["options"].onClosed = () => (closed = true);
+		const pairSetup = setup({
+			onClosed: () => {
+				closed = true;
+			},
+		});
 		await pairSetup.connect();
 		pairSetup.client.disconnect();
 		await flush();

@@ -36,9 +36,6 @@ export { toBase64Url };
 const bytesToHex = (bytes: Uint8Array): `0x${string}` =>
 	`0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 
-const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
-	a.length === b.length && a.every((byte, i) => byte === b[i]);
-
 const sha256 = async (data: Uint8Array<ArrayBuffer>): Promise<Uint8Array> =>
 	new Uint8Array(await subtle.digest("SHA-256", data));
 

@@ -4,7 +4,9 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
 
-const root = createRoot(document.getElementById("root")!);
+const container = document.getElementById("root");
+if (!container) throw new Error("index.html has no #root element");
+const root = createRoot(container);
 
 // Runtime config: fetched from /config.json (rendered in the container at boot, MC-41).
 // The kit validates it and fails fatally, naming the chain and field (WK-06); the

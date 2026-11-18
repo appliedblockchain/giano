@@ -82,7 +82,10 @@ test.describe("admin tenant administration", () => {
 			openRegistration: true,
 		});
 		expect(created.status).toBe(201);
-		expect(created.json().tenant).toMatchObject({ slug, status: "active" });
+		expect(created.json<{ tenant: unknown }>().tenant).toMatchObject({
+			slug,
+			status: "active",
+		});
 
 		const wellKnown = await call("GET", "/.well-known/webauthn", {
 			headers: { host: `wallet-${slug}.localhost` },

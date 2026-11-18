@@ -228,7 +228,8 @@ export class TransportHost {
 				},
 			});
 			this.options.onConnected?.({
-				dappOrigin: this.pinnedOrigin!,
+				// The origin is pinned to event.origin above: either it already matched, or it was just set.
+				dappOrigin: event.origin,
 				sdkVersion: this.sdkVersion,
 				chainId: requested,
 			});

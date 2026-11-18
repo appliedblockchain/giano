@@ -75,16 +75,16 @@ test("one passkey transacts on both chains with an IDENTICAL account address (MC
 	const results = await readResults(page);
 	const onA = results.find((result) => result.chainId === CHAINS.a.chainId);
 	const onB = results.find((result) => result.chainId === CHAINS.b.chainId);
-	expect(onA, "a chain-A send result should have been reported").toBeTruthy();
-	expect(onB, "a chain-B send result should have been reported").toBeTruthy();
-	expect(onA!.receiptSuccess).toBe(true);
-	expect(onB!.receiptSuccess).toBe(true);
+	if (!onA) throw new Error("a chain-A send result should have been reported");
+	if (!onB) throw new Error("a chain-B send result should have been reported");
+	expect(onA.receiptSuccess).toBe(true);
+	expect(onB.receiptSuccess).toBe(true);
 
 	// The heart of the matter (MC-16): the SAME address on both chains, asserted directly
 	// from the fixture's own report rather than inferred.
-	expect(onA!.account.toLowerCase()).toBe(address.toLowerCase());
-	expect(onB!.account.toLowerCase()).toBe(address.toLowerCase());
-	expect(onA!.userOpHash).not.toBe(onB!.userOpHash); // two distinct operations on two chains
+	expect(onA.account.toLowerCase()).toBe(address.toLowerCase());
+	expect(onB.account.toLowerCase()).toBe(address.toLowerCase());
+	expect(onA.userOpHash).not.toBe(onB.userOpHash); // two distinct operations on two chains
 });
 
 test("a dApp requesting an unserved chain is refused at connection time, with the served chains reported (MC-109)", async ({
@@ -100,7 +100,8 @@ test("a dApp requesting an unserved chain is refused at connection time, with th
 	const out = (await page.locator("[data-testid=out]").textContent()) ?? "";
 	const line = out
 		.split("\n")
-		.find((entry) => entry.startsWith("unserved:refused: "))!;
+		.find((entry) => entry.startsWith("unserved:refused: "));
+	if (!line) throw new Error("the dApp did not log the unserved refusal");
 	const refusal = JSON.parse(line.slice("unserved:refused: ".length)) as {
 		code: number;
 		requestedChainId: number;

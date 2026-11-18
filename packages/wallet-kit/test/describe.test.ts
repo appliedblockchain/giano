@@ -105,9 +105,9 @@ describe("describeTransaction on a runtime", () => {
 		expect(result.intent).toBe("Send 10.5 USDC to 0x2222…2222");
 		expect(result.source).toBe("mapping");
 		expect(result.warnings).toEqual([]);
-		expect(String(fetch.mock.calls[0]![0])).toBe(
-			`/api/v1/tx-mappings?chainId=${CHAIN}`,
-		);
+		const [firstCall] = fetch.mock.calls;
+		if (!firstCall) throw new Error("fetch was not called");
+		expect(String(firstCall[0])).toBe(`/api/v1/tx-mappings?chainId=${CHAIN}`);
 	});
 
 	it("degrades to built-ins with a warning when the wallet service is unreachable", async () => {
@@ -225,6 +225,11 @@ describe("describeTransaction on a runtime", () => {
 });
 
 describe("nativeCurrency in the wallet config", () => {
+	const firstChain = (config: ReturnType<typeof resolveWalletConfig>) => {
+		const [chain] = config.chains;
+		if (!chain) throw new Error("the config has no chains");
+		return chain;
+	};
 	const raw = {
 		chainId: 31337,
 		factoryAddress: "0x1111111111111111111111111111111111111111" as const,
@@ -233,7 +238,7 @@ describe("nativeCurrency in the wallet config", () => {
 	};
 
 	it("defaults to ETH with 18 decimals", () => {
-		expect(resolveWalletConfig({ raw }).chains[0]!.nativeCurrency).toEqual({
+		expect(firstChain(resolveWalletConfig({ raw })).nativeCurrency).toEqual({
 			symbol: "ETH",
 			decimals: 18,
 			name: "Ether",
@@ -242,9 +247,11 @@ describe("nativeCurrency in the wallet config", () => {
 
 	it("accepts a well-formed currency and refuses a malformed one", () => {
 		expect(
-			resolveWalletConfig({
-				raw: { ...raw, nativeCurrency: { symbol: "MATIC", decimals: 18 } },
-			}).chains[0]!.nativeCurrency,
+			firstChain(
+				resolveWalletConfig({
+					raw: { ...raw, nativeCurrency: { symbol: "MATIC", decimals: 18 } },
+				}),
+			).nativeCurrency,
 		).toEqual({ symbol: "MATIC", decimals: 18 });
 		expect(() =>
 			resolveWalletConfig({

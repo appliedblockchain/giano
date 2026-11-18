@@ -46,7 +46,7 @@ export function parseInstructions(text) {
 		// a comment line inside a continuation is skipped, as Docker does
 		if (buf && /^\s*#/.test(line)) return;
 		if (line.endsWith("\\")) {
-			buf += line.slice(0, -1) + " ";
+			buf += `${line.slice(0, -1)} `;
 			return;
 		}
 		buf += line;

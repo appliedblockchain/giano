@@ -491,7 +491,8 @@ export function createManagementController({
 		error = null;
 		notify();
 		try {
-			me = (await api.me()) as Me;
+			const current = (await api.me()) as Me;
+			me = current;
 			signedOut = false;
 			notice = null;
 			credentials = await api.listCredentials();
@@ -502,7 +503,7 @@ export function createManagementController({
 						// WM-01: the owner set is read from the account contract, never the registry (WK-17).
 						const set = await readOwnerSet(
 							chainRuntime.publicClient,
-							me!.walletAddress,
+							current.walletAddress,
 						);
 						return { chainId, chainName: chainRuntime.chainName, set };
 					} catch (err) {

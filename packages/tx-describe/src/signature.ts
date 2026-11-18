@@ -53,8 +53,7 @@ function canonicalParam(param: string): string {
 		return `(${canonicalParams(inner)})${suffix}`;
 	}
 	// "uint256 indexed value", "address to", "uint256" — the type is the first token
-	const tokens = p.split(/\s+/);
-	const type = tokens[0]!;
+	const type = p.split(/\s+/)[0];
 	if (!/^[a-z][a-z0-9]*(\[\d*\])*$/.test(type))
 		throw new Error(`not a solidity type: ${type}`);
 	return type === "uint" ? "uint256" : type === "int" ? "int256" : type;
@@ -107,7 +106,7 @@ export function checksumAddress(address: string): string {
 	const hash = bytesToHex(keccak_256(utf8ToBytes(lower)));
 	let out = "0x";
 	for (let i = 0; i < lower.length; i++) {
-		out += parseInt(hash[i]!, 16) >= 8 ? lower[i]!.toUpperCase() : lower[i]!;
+		out += parseInt(hash[i], 16) >= 8 ? lower[i].toUpperCase() : lower[i];
 	}
 	return out;
 }

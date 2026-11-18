@@ -127,7 +127,7 @@ describe("caller-supplied mappings", () => {
 					chainId: CHAIN,
 					to: USDC,
 					data: transferData(RECIPIENT, 1n),
-					value: "0x" + 1_500_000_000_000_000_000n.toString(16),
+					value: `0x${1_500_000_000_000_000_000n.toString(16)}`,
 				},
 				{
 					mappings: [usdcMapping()],

@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
 import { and, eq, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
@@ -744,9 +745,9 @@ describe("userop relay", () => {
 		const send = ctx.bundlerCalls.find(
 			(c) => c.method === "eth_sendUserOperation",
 		);
-		expect(send).toBeTruthy();
+		assert(send, "expected an eth_sendUserOperation call");
 		// EntryPoint param comes from server config, never the request
-		expect(send!.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
+		expect(send.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 
 		// status endpoint sees it under the server-computed hash
 		const opRow = await ctx.app.inject({
@@ -794,9 +795,9 @@ describe("userop relay", () => {
 			policy: { rule: string; passed: boolean }[];
 		};
 		expect(body.error).toBe("policy-rejected");
-		expect(body.policy.find((r) => r.rule === "sender-binding")!.passed).toBe(
-			false,
-		);
+		const senderBinding = body.policy.find((r) => r.rule === "sender-binding");
+		assert(senderBinding, "expected a sender-binding rule result");
+		expect(senderBinding.passed).toBe(false);
 		expect(body.policy.length).toBeGreaterThan(1);
 	});
 
@@ -829,7 +830,8 @@ describe("userop relay", () => {
 		expect(res.statusCode).toBe(200);
 		const send = ctx.bundlerCalls
 			.filter((c) => c.method === "eth_sendUserOperation")
-			.at(-1)!;
+			.at(-1);
+		assert(send, "expected an eth_sendUserOperation call");
 		expect(send.params[1]).toBe("0x433709009B8330FDa32311DF1C2AFA402eD8D009");
 	});
 
@@ -1356,7 +1358,8 @@ describe("bundler relay (JSON-RPC)", () => {
 		expect(body.result).toMatchObject({ callGasLimit: "0x30000" });
 		const estimate = ctx.bundlerCalls
 			.filter((c) => c.method === "eth_estimateUserOperationGas")
-			.at(-1)!;
+			.at(-1);
+		assert(estimate, "expected an eth_estimateUserOperationGas call");
 		expect(estimate.params[1]).toBe(ENTRY_POINT);
 		expect((estimate.params[0] as { sender: string }).sender).toBe(
 			walletAddress,
@@ -1404,7 +1407,8 @@ describe("bundler relay (JSON-RPC)", () => {
 
 		const send = ctx.bundlerCalls
 			.filter((c) => c.method === "eth_sendUserOperation")
-			.at(-1)!;
+			.at(-1);
+		assert(send, "expected an eth_sendUserOperation call");
 		expect(send.params[1]).toBe(ENTRY_POINT);
 
 		// the same audit trail the REST door writes, under the same server-computed hash
@@ -1447,7 +1451,9 @@ describe("bundler relay (JSON-RPC)", () => {
 			rule: string;
 			passed: boolean;
 		}[];
-		expect(policy.find((r) => r.rule === "sender-binding")!.passed).toBe(false);
+		const senderBinding = policy.find((r) => r.rule === "sender-binding");
+		assert(senderBinding, "expected a sender-binding rule result");
+		expect(senderBinding.passed).toBe(false);
 
 		const overCap = await rpc("eth_sendUserOperation", [
 			makeOp(4, { callGasLimit: "0x4c4b4000" }),

@@ -5,10 +5,24 @@ import {
 	deploymentsOf,
 	formatUnits,
 	functionSelector,
+	type Mapping,
 	mappingCovers,
 	validateMapping,
 } from "../src/index";
-import { CHAIN, type ContractContext, USDC, usdcMapping } from "./fixtures";
+import { CHAIN, erc20Abi, USDC, usdcMapping } from "./fixtures";
+
+const TRANSFER = "transfer(address to, uint256 value)";
+
+function displayOf(m: Mapping) {
+	if (!m.display) throw new Error("mapping has no display");
+	return m.display;
+}
+
+function transferFormat(m: Mapping) {
+	const spec = m.display?.formats?.[TRANSFER];
+	if (!spec) throw new Error(`mapping has no format for ${TRANSFER}`);
+	return spec;
+}
 
 describe("validateMapping", () => {
 	it("accepts a valid descriptor", () => {
@@ -17,8 +31,8 @@ describe("validateMapping", () => {
 
 	it("accepts a selector-keyed format", () => {
 		const m = usdcMapping();
-		const spec = m.display!.formats!["transfer(address to, uint256 value)"]!;
-		m.display!.formats = { "0xa9059cbb": spec };
+		const spec = transferFormat(m);
+		displayOf(m).formats = { "0xa9059cbb": spec };
 		expect(validateMapping(m).ok).toBe(true);
 	});
 
@@ -27,7 +41,7 @@ describe("validateMapping", () => {
 			context: {
 				contract: {
 					deployments: [],
-					abi: (usdcMapping().context!.contract as ContractContext).abi,
+					abi: erc20Abi,
 				},
 			} as never,
 		});
@@ -43,10 +57,9 @@ describe("validateMapping", () => {
 
 	it("rejects a field path that is not an input of the function", () => {
 		const m = usdcMapping();
-		(
-			m.display!.formats!["transfer(address to, uint256 value)"]!
-				.fields as Array<{ path: string }>
-		)[1]!.path = "recipient";
+		const field = (transferFormat(m).fields as Array<{ path: string }>)[1];
+		if (!field) throw new Error("the transfer format has no second field");
+		field.path = "recipient";
 		const r = validateMapping(m);
 		expect(r.ok).toBe(false);
 		expect(r.issues[0]).toEqual({
@@ -58,8 +71,8 @@ describe("validateMapping", () => {
 
 	it("rejects a function key that is neither a selector nor a signature", () => {
 		const m = usdcMapping();
-		m.display!.formats = {
-			transfer: m.display!.formats!["transfer(address to, uint256 value)"]!,
+		displayOf(m).formats = {
+			transfer: transferFormat(m),
 		};
 		const r = validateMapping(m);
 		expect(r.ok).toBe(false);
@@ -71,7 +84,7 @@ describe("validateMapping", () => {
 
 	it("rejects a function key that is not in the ABI", () => {
 		const m = usdcMapping();
-		m.display!.formats = {
+		displayOf(m).formats = {
 			"burn(uint256 value)": {
 				intent: "Burn",
 				fields: [{ path: "value", label: "Amount", format: "raw" }],
@@ -87,12 +100,12 @@ describe("validateMapping", () => {
 	it("rejects a format with no intent", () => {
 		const m = usdcMapping();
 		delete (
-			m.display!.formats!["transfer(address to, uint256 value)"] as {
+			transferFormat(m) as {
 				intent?: unknown;
 			}
 		).intent;
 		delete (
-			m.display!.formats!["transfer(address to, uint256 value)"] as {
+			transferFormat(m) as {
 				interpolatedIntent?: unknown;
 			}
 		).interpolatedIntent;
@@ -131,10 +144,10 @@ describe("validateMapping", () => {
 
 	it("accepts container and metadata paths", () => {
 		const m = usdcMapping();
-		(
-			m.display!.formats!["transfer(address to, uint256 value)"]!
-				.fields as Array<{ path: string }>
-		).push({ path: "@.value" } as never, { path: "$.metadata.owner" } as never);
+		(transferFormat(m).fields as Array<{ path: string }>).push(
+			{ path: "@.value" } as never,
+			{ path: "$.metadata.owner" } as never,
+		);
 		expect(validateMapping(m).ok).toBe(true);
 	});
 });

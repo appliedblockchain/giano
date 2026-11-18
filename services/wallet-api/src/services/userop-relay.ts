@@ -272,9 +272,15 @@ export function createUseropRelay({
 					tenant: tenantSlug,
 					chain: chainLabel,
 				});
+				// evaluatePolicy refuses only on a failed rule, and names the first one as the reason.
+				// Checked after the audit row and metrics, so a refusal is always recorded.
+				const { rejectReason } = decision;
+				if (rejectReason === undefined) {
+					throw new Error("a refused policy decision carries no reject reason");
+				}
 				return {
 					kind: "rejected",
-					reason: decision.rejectReason!,
+					reason: rejectReason,
 					policy: decision.results,
 				};
 			}

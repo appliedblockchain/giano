@@ -320,8 +320,12 @@ export function createGianoWalletProvider(
 		},
 
 		on: (event, listener) => {
-			if (!listeners.has(event)) listeners.set(event, new Set());
-			listeners.get(event)!.add(listener);
+			let eventListeners = listeners.get(event);
+			if (!eventListeners) {
+				eventListeners = new Set();
+				listeners.set(event, eventListeners);
+			}
+			eventListeners.add(listener);
 			return provider;
 		},
 

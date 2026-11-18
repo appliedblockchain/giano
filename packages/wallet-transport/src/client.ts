@@ -158,9 +158,12 @@ export class TransportClient {
 	}
 
 	on(event: string, handler: EventHandler): () => void {
-		if (!this.eventHandlers.has(event))
-			this.eventHandlers.set(event, new Set());
-		this.eventHandlers.get(event)!.add(handler);
+		let handlers = this.eventHandlers.get(event);
+		if (!handlers) {
+			handlers = new Set();
+			this.eventHandlers.set(event, handlers);
+		}
+		handlers.add(handler);
 		return () => this.eventHandlers.get(event)?.delete(handler);
 	}
 

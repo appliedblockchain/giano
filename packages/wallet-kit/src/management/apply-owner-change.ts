@@ -90,7 +90,8 @@ export async function applyOwnerChange(
 		state: "waiting",
 	}));
 	const update = (chainId: number, patch: Partial<ChainProgress>) => {
-		const row = progress.find((entry) => entry.chainId === chainId)!;
+		const row = progress.find((entry) => entry.chainId === chainId);
+		if (!row) throw new Error(`no progress row for chain ${chainId}`);
 		Object.assign(row, patch);
 		onProgress([...progress.map((entry) => ({ ...entry }))]);
 	};

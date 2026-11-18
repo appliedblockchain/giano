@@ -306,7 +306,7 @@ async function readTenantRoster(
 		return { rows, source: "chain" };
 	} catch {
 		// Pre-roster deployment (no tenantCount) — fall back to the ids the caller named.
-		const ids = (flags["tenants"] ?? process.env.PAYMASTER_TENANT_IDS ?? "")
+		const ids = (flags.tenants ?? process.env.PAYMASTER_TENANT_IDS ?? "")
 			.split(",")
 			.map((t) => t.trim())
 			.filter(Boolean)
@@ -623,7 +623,7 @@ async function checkSponsorshipPaymaster(
 
 		const signers: string[] = await paymaster.getSigners();
 		const expectedSigners = (
-			flags["signers"] ??
+			flags.signers ??
 			process.env.SPONSORSHIP_SIGNERS ??
 			""
 		)
@@ -1370,7 +1370,7 @@ async function doctorWallet(flags: Record<string, string>) {
 					report(
 						"info",
 						`owner[${i}] address`,
-						getAddress("0x" + owner.slice(-40)),
+						getAddress(`0x${owner.slice(-40)}`),
 					);
 				} else if (bytes === 64) {
 					report(

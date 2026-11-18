@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import {
 	type Address,
 	concat,
@@ -14,6 +15,7 @@ import {
 } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { expect } from "vitest";
+import type { Lookup } from "../src/lookup.js";
 import {
 	type Devnet,
 	KEYS,
@@ -21,6 +23,9 @@ import {
 	simpleAccountFactoryAbi,
 	verifyingPaymasterAbi,
 } from "./harness.js";
+
+/** An eth_getUserOperationReceipt answer, as the bundler's lookup builds it. */
+export type UserOpReceipt = NonNullable<Awaited<ReturnType<Lookup["receipt"]>>>;
 
 /** Builds, estimates and signs SimpleAccount operations on one devnet, through one bundler endpoint. */
 
@@ -121,15 +126,16 @@ export function createOps(devnet: Devnet, url: string) {
 			[op, devnet.entryPoint],
 		);
 		expect(estimate.error).toBeUndefined();
+		const gas = estimate.result;
+		assert(gas, "eth_estimateUserOperationGas returned no result");
 		Object.assign(op, {
-			preVerificationGas: estimate.result!.preVerificationGas,
-			verificationGasLimit: estimate.result!.verificationGasLimit,
-			callGasLimit: estimate.result!.callGasLimit,
+			preVerificationGas: gas.preVerificationGas,
+			verificationGasLimit: gas.verificationGasLimit,
+			callGasLimit: gas.callGasLimit,
 			...(sponsored
 				? {
-						paymasterVerificationGasLimit:
-							estimate.result!.paymasterVerificationGasLimit,
-						paymasterPostOpGasLimit: estimate.result!.paymasterPostOpGasLimit,
+						paymasterVerificationGasLimit: gas.paymasterVerificationGasLimit,
+						paymasterPostOpGasLimit: gas.paymasterPostOpGasLimit,
 					}
 				: {}),
 		});
@@ -161,7 +167,11 @@ export function createOps(devnet: Devnet, url: string) {
 
 	async function waitForReceipt(hash: Hex) {
 		for (let i = 0; i < 200; i++) {
-			const { result } = await rpc(url, "eth_getUserOperationReceipt", [hash]);
+			const { result } = await rpc<UserOpReceipt>(
+				url,
+				"eth_getUserOperationReceipt",
+				[hash],
+			);
 			if (result) return result;
 			await new Promise((resolve) => setTimeout(resolve, 50));
 		}

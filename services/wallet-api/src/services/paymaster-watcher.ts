@@ -304,8 +304,8 @@ export function createPaymasterWatcher(
 				overheadWei: overheadWei.toString(),
 				totalWei: (gasCostWei + feeWei + overheadWei).toString(),
 				success,
-				blockNumber: entry.blockNumber!,
-				logIndex: entry.logIndex!,
+				blockNumber: entry.blockNumber,
+				logIndex: entry.logIndex,
 			})
 			.onConflictDoNothing({
 				target: [
@@ -317,7 +317,7 @@ export function createPaymasterWatcher(
 		await applyBalance({
 			tenantUuid,
 			balanceWei: newBalance,
-			blockNumber: entry.blockNumber!,
+			blockNumber: entry.blockNumber,
 		});
 		await ledger.settle({ chainId, sender, useropHash: userOpHash });
 	}
@@ -397,7 +397,7 @@ export function createPaymasterWatcher(
 				await applyBalance({
 					tenantUuid: bytes16ToUuid(args.tenantId),
 					balanceWei: 0n,
-					blockNumber: entry.blockNumber!,
+					blockNumber: entry.blockNumber,
 					withdrawAddress: args.withdrawAddress,
 				});
 			}
@@ -406,8 +406,8 @@ export function createPaymasterWatcher(
 			// watcher has reached, not only as of the last reconcile: drift compares them there.
 			for (const entry of [...addressChanges].sort((a, b) =>
 				a.blockNumber === b.blockNumber
-					? (a.logIndex ?? 0) - (b.logIndex ?? 0)
-					: a.blockNumber! < b.blockNumber!
+					? a.logIndex - b.logIndex
+					: a.blockNumber < b.blockNumber
 						? -1
 						: 1,
 			)) {
@@ -426,7 +426,7 @@ export function createPaymasterWatcher(
 							eq(paymasterTenants.chainId, chainId),
 							or(
 								isNull(paymasterTenants.lastSyncedBlock),
-								lte(paymasterTenants.lastSyncedBlock, entry.blockNumber!),
+								lte(paymasterTenants.lastSyncedBlock, entry.blockNumber),
 							),
 						),
 					);
@@ -443,7 +443,7 @@ export function createPaymasterWatcher(
 					// Funding clears a deficit on chain, so the cached deficit clears with it — which is
 					// what un-blocks that tenant's authorisations again.
 					deficitWei: 0n,
-					blockNumber: entry.blockNumber!,
+					blockNumber: entry.blockNumber,
 				});
 			}
 
@@ -455,7 +455,7 @@ export function createPaymasterWatcher(
 				await applyBalance({
 					tenantUuid: bytes16ToUuid(args.tenantId),
 					balanceWei: args.newBalance,
-					blockNumber: entry.blockNumber!,
+					blockNumber: entry.blockNumber,
 				});
 			}
 

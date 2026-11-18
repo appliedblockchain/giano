@@ -20,6 +20,7 @@ import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
 import { credentials, users } from "../db/schema.js";
 import { ApiError } from "../plugins/error-handler.js";
+import { requireTenantOf } from "../plugins/tenant.js";
 import type { ChainRegistry } from "../services/chains.js";
 import type { ChallengeService } from "../services/challenges.js";
 import type { SessionService } from "../services/sessions.js";
@@ -201,7 +202,7 @@ export default async function webauthnRoutes(
 			},
 		},
 		async (request, reply) => {
-			const tenant = request.tenant!;
+			const tenant = requireTenantOf(request);
 			if (!tenant.openRegistration) {
 				const admin = await app.resolveAdminTenant(request);
 				if (!admin || admin.id !== tenant.id) {
@@ -285,7 +286,7 @@ export default async function webauthnRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.tenant!;
+			const tenant = requireTenantOf(request);
 			const { externalUserId, credentialName, response } = request.body;
 
 			const challenge = extractChallenge(response.response.clientDataJSON);
@@ -497,7 +498,7 @@ export default async function webauthnRoutes(
 			},
 		},
 		async (request) => {
-			const tenant = request.tenant!;
+			const tenant = requireTenantOf(request);
 			const { response } = request.body;
 
 			const challenge = extractChallenge(response.response.clientDataJSON);
@@ -648,12 +649,18 @@ export default async function webauthnRoutes(
 			const user = await db.query.users.findFirst({
 				where: eq(users.id, credential.userId),
 			});
+			// A credential references its user by foreign key, so the row exists.
+			if (!user) {
+				throw new Error(
+					`user ${credential.userId} of the credential is missing`,
+				);
+			}
 			const session = await sessions.create(credential.userId, credential.id);
 			return {
 				verified: true as const,
 				walletAddress: credential.walletAddress,
 				credentialId: credential.credentialId,
-				externalUserId: user!.externalId,
+				externalUserId: user.externalId,
 				session: {
 					token: session.token,
 					expiresAt: session.expiresAt.toISOString(),

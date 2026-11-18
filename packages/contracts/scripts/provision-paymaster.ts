@@ -75,7 +75,11 @@ function parseArgs(argv: string[]): Args {
 		if (!token.startsWith("--")) continue;
 		const key = token.slice(2);
 		const next = argv[i + 1];
-		const value = next && !next.startsWith("--") ? (i++, next) : "true";
+		let value = "true";
+		if (next && !next.startsWith("--")) {
+			value = next;
+			i++;
+		}
 		flags[key] = value;
 		repeated[key] ??= [];
 		repeated[key].push(value);
