@@ -43,16 +43,23 @@ export type PostJsonRpcOptions = {
 	 * whichever ends first wins.
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Return the JSON-RPC error a non-2xx answer carries, read within `maxBytes`, as the answer. A
+	 * node that refuses a request this way (the Silent Data gateway: HTTP 403, -107486) then reaches
+	 * the caller with its code and message. A body that is not a JSON-RPC error still throws.
+	 */
+	errorBodies?: boolean;
 };
 
 /**
  * POSTs `payload` as JSON and returns the parsed response body. Throws `UpstreamLimitError` when a
- * limit is hit, and a plain `Error` naming the status when the upstream answers with a non-2xx code.
+ * limit is hit, and a plain `Error` naming the status when the upstream answers with a non-2xx code
+ * (unless `errorBodies` and the body is a JSON-RPC error).
  */
 export async function postJsonRpc(
 	url: string,
 	payload: unknown,
-	{ upstream, limits, fetchImpl, signal }: PostJsonRpcOptions,
+	{ upstream, limits, fetchImpl, signal, errorBodies }: PostJsonRpcOptions,
 ): Promise<unknown> {
 	const controller = new AbortController();
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -80,8 +87,13 @@ export async function postJsonRpc(
 				: controller.signal,
 		});
 		if (!response.ok) {
-			// Not read: the status is the whole answer, and the body could be any size.
-			await response.body?.cancel().catch(() => {});
+			if (errorBodies) {
+				const error = await jsonRpcError(response, upstream, limits.maxBytes);
+				if (error) return { error };
+			} else {
+				// Not read: the status is the whole answer, and the body could be any size.
+				await response.body?.cancel().catch(() => {});
+			}
 			throw new Error(`${capitalise(upstream)} HTTP ${response.status}`);
 		}
 		return JSON.parse(await readBounded(response, upstream, limits.maxBytes));
@@ -92,6 +104,27 @@ export async function postJsonRpc(
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/** The `error` of a JSON-RPC answer (an integer code and a string message), or undefined. */
+async function jsonRpcError(
+	response: Response,
+	upstream: string,
+	maxBytes: number,
+): Promise<{ code: number; message: string; data?: unknown } | undefined> {
+	try {
+		const body = JSON.parse(await readBounded(response, upstream, maxBytes));
+		const error = body?.error;
+		if (Number.isInteger(error?.code) && typeof error.message === "string")
+			return {
+				code: error.code,
+				message: error.message,
+				...(error.data === undefined ? {} : { data: error.data }),
+			};
+	} catch {
+		// Too large or not JSON: the status is the answer.
+	}
+	return undefined;
 }
 
 async function readBounded(

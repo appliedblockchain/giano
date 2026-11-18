@@ -35,7 +35,9 @@ type Behaviour =
 	| "stalled-body"
 	| "declared-large"
 	| "streamed-large"
-	| "rpc-error";
+	| "rpc-error"
+	| "refused-403"
+	| "unavailable-503";
 
 /** One upstream exchange, as the server saw it. */
 type Exchange = { closed: Promise<void>; written: () => number };
@@ -86,6 +88,24 @@ function startUpstream() {
 					}
 					return res.end();
 				}
+				case "refused-403":
+					// The Silent Data gateway's refusal of a parameter value.
+					res.writeHead(403);
+					return res.end(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: {
+								code: -107486,
+								message: "param values not whitelisted for JSON RPC method",
+								data: "Custom RPC: eth_getBlockByNumber",
+							},
+						}),
+					);
+				case "unavailable-503":
+					res.setHeader("content-type", "text/plain");
+					res.writeHead(503);
+					return res.end("Service Unavailable");
 				case "rpc-error":
 					return res.end(
 						JSON.stringify({
@@ -249,6 +269,36 @@ describe.each(Object.entries(clients))("%s client", (upstreamName, client) => {
 			// The connection was dropped long before the upstream finished sending.
 			expect(exchange.written()).toBeLessThan(FLOOD_BYTES / 4);
 		});
+	});
+});
+
+describe("a non-2xx answer", () => {
+	it("node client: passes the JSON-RPC error of a refusal through, code and all", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("refused-403")),
+		);
+		expect(error).toBeInstanceOf(NodeRpcError);
+		expect(error).toMatchObject({
+			code: -107486,
+			message: "param values not whitelisted for JSON RPC method",
+			data: "Custom RPC: eth_getBlockByNumber",
+		});
+	});
+
+	it("node client: a body that is not a JSON-RPC error throws the status", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("unavailable-503")),
+		);
+		expect(error).not.toBeInstanceOf(NodeRpcError);
+		expect((error as Error).message).toBe("Node HTTP 503");
+	});
+
+	it("bundler client: throws the status, as before", async () => {
+		const { error } = await failure(() =>
+			clients.bundler.call(upstream.url("refused-403")),
+		);
+		expect(error).not.toBeInstanceOf(BundlerRpcError);
+		expect((error as Error).message).toBe("Bundler HTTP 403");
 	});
 });
 

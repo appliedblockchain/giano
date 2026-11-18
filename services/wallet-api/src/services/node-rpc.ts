@@ -22,7 +22,7 @@ export function createNodeRpcService(
 			const body = (await postJsonRpc(
 				rpcUrl,
 				{ jsonrpc: "2.0", id: ++rpcId, method, params },
-				{ upstream: "node", limits, fetchImpl },
+				{ upstream: "node", limits, fetchImpl, errorBodies: true },
 			)) as {
 				result?: unknown;
 				error?: { code: number; message: string; data?: unknown };
