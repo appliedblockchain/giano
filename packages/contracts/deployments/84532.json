@@ -41,6 +41,16 @@
       "transactionHash": "0x8aca69de4c5d2710ba99b2927d976b6688b9602c82acec541dbfbe2db75339be",
       "expected": "0xb2C7081be89D88f1da020530Ebd5c14b8871615a",
       "deterministic": true
+    },
+    "testErc20": {
+      "address": "0x461E0641a3615336b7D2E4C5D71fB2BB88038C93",
+      "label": "giano.test.erc20",
+      "release": "v3",
+      "codehash": "0xaa61bb2ca0f006a0cfedc556c6b2addf4ff9afe5afb327267b2cae4b75358d29",
+      "fingerprint": "0xaa61bb2ca0f006a0cfedc556c6b2addf4ff9afe5afb327267b2cae4b75358d29",
+      "transactionHash": "0xb37e4709b0c9ae80a2890f0406e88957afb24ccee8faa87620c8d578db731ad4",
+      "expected": "0x461E0641a3615336b7D2E4C5D71fB2BB88038C93",
+      "deterministic": true
     }
   },
   "upgrades": [],
