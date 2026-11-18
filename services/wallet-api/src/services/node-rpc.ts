@@ -22,7 +22,12 @@ export function createNodeRpcService(
 			const body = (await postJsonRpc(
 				rpcUrl,
 				{ jsonrpc: "2.0", id: ++rpcId, method, params },
-				{ upstream: "node", limits, fetchImpl, errorBodies: true },
+				{
+					upstream: "node",
+					limits,
+					fetchImpl,
+					passErrorBody: (error) => error.code === GATEWAY_REFUSAL_CODE,
+				},
 			)) as {
 				result?: unknown;
 				error?: { code: number; message: string; data?: unknown };
@@ -38,6 +43,13 @@ export function createNodeRpcService(
 		},
 	};
 }
+
+/**
+ * The Silent Data gateway's refusal of a parameter value, sent with HTTP 403. The relay passes only
+ * this non-2xx error through, so `wait()` in the SDK can fall back. Any other non-2xx answer (a rate
+ * limit, a revoked key, an outage) stays "node unreachable": logged, and `-32023` to the caller.
+ */
+const GATEWAY_REFUSAL_CODE = -107486;
 
 export class NodeRpcError extends Error {
 	constructor(

@@ -44,22 +44,30 @@ export type PostJsonRpcOptions = {
 	 */
 	signal?: AbortSignal;
 	/**
-	 * Return the JSON-RPC error a non-2xx answer carries, read within `maxBytes`, as the answer. A
-	 * node that refuses a request this way (the Silent Data gateway: HTTP 403, -107486) then reaches
-	 * the caller with its code and message. A body that is not a JSON-RPC error still throws.
+	 * Which JSON-RPC errors a non-2xx answer may carry to the caller. The body is read within the
+	 * limits. An error this accepts is returned as the answer, so a node that refuses a request this
+	 * way (the Silent Data gateway: HTTP 403, -107486) reaches the caller with its code and message.
+	 * Any other non-2xx answer throws its status.
 	 */
-	errorBodies?: boolean;
+	passErrorBody?: (error: JsonRpcErrorBody) => boolean;
+};
+
+/** The `error` member of a JSON-RPC answer. */
+export type JsonRpcErrorBody = {
+	code: number;
+	message: string;
+	data?: unknown;
 };
 
 /**
  * POSTs `payload` as JSON and returns the parsed response body. Throws `UpstreamLimitError` when a
  * limit is hit, and a plain `Error` naming the status when the upstream answers with a non-2xx code
- * (unless `errorBodies` and the body is a JSON-RPC error).
+ * (unless the body is a JSON-RPC error that `passErrorBody` accepts).
  */
 export async function postJsonRpc(
 	url: string,
 	payload: unknown,
-	{ upstream, limits, fetchImpl, signal, errorBodies }: PostJsonRpcOptions,
+	{ upstream, limits, fetchImpl, signal, passErrorBody }: PostJsonRpcOptions,
 ): Promise<unknown> {
 	const controller = new AbortController();
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -87,9 +95,9 @@ export async function postJsonRpc(
 				: controller.signal,
 		});
 		if (!response.ok) {
-			if (errorBodies) {
+			if (passErrorBody) {
 				const error = await jsonRpcError(response, upstream, limits.maxBytes);
-				if (error) return { error };
+				if (error && passErrorBody(error)) return { error };
 			} else {
 				// Not read: the status is the whole answer, and the body could be any size.
 				await response.body?.cancel().catch(() => {});
@@ -106,12 +114,15 @@ export async function postJsonRpc(
 	}
 }
 
-/** The `error` of a JSON-RPC answer (an integer code and a string message), or undefined. */
+/**
+ * The `error` of a JSON-RPC answer (an integer code and a string message), or undefined. A body past
+ * a limit throws `UpstreamLimitError`, as on a 2xx answer.
+ */
 async function jsonRpcError(
 	response: Response,
 	upstream: string,
 	maxBytes: number,
-): Promise<{ code: number; message: string; data?: unknown } | undefined> {
+): Promise<JsonRpcErrorBody | undefined> {
 	try {
 		const body = JSON.parse(await readBounded(response, upstream, maxBytes));
 		const error = body?.error;
@@ -121,8 +132,9 @@ async function jsonRpcError(
 				message: error.message,
 				...(error.data === undefined ? {} : { data: error.data }),
 			};
-	} catch {
-		// Too large or not JSON: the status is the answer.
+	} catch (error) {
+		if (error instanceof UpstreamLimitError) throw error;
+		// Not JSON: the status is the answer.
 	}
 	return undefined;
 }
