@@ -110,9 +110,9 @@ role or funds on them once deployment ends ([`docs/key-ceremony.md`](../../docs/
 names the items). Load the key for the chain's class from its 1Password item into the deploying
 shell's environment only; never write it to a file in the repository or to a client's configuration.
 
-- **Verifying a chain needs no key.** Without `DEPLOYER_PRIVATE_KEY`, `core` and `testing` check that
-  every contract is already in place with a release's code, record it, and send nothing. A missing
-  contract fails the run.
+- **Verifying a chain needs no key.** Without `DEPLOYER_PRIVATE_KEY`, `core`, `testing` and
+  `test-token` check that every contract is already in place with a release's code, record it, and
+  send nothing. A missing contract fails the run.
 - **Adopting a chain** needs the class's canonical deployer key. Each run prints, per contract, the
   expected address, the address it will use and the code there.
 - **Mainnet deviations are gated.** On a mainnet, an override, another signing key or a contract
@@ -140,6 +140,8 @@ pnpm deploy:cli p256 --rpc <url>                                   # P-256 verif
 # With the class's deployer key in DEPLOYER_PRIVATE_KEY (this shell only):
 #   core --rpc <url> --chain <profile> --role-admin <timelock>     # a deviating mainnet: use deploy:guided
 #   testing --rpc <url> --holder <0x…> --owner <0x…>               # never on an R-29 chain
+#   test-token --rpc <url> --chain <profile> --holder <0x…>       # the test ERC-20 alone: served testnets
+#                                                                  # too, never a mainnet; canonical deployer only
 #   upgrade --rpc <url> --contract paymaster --release v2
 ```
 

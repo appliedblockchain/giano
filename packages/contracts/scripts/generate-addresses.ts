@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	CONTRACT_OF,
+	isMainnetChain,
 	isProductionChain,
 	type LabelKey,
 	LOCAL_CHAIN_IDS,
@@ -157,18 +158,37 @@ export function generateRegistry(
 		})
 		.join("\n");
 
-	// R-29 layer 2: a testing artifact on a production chain (the fixed list, or any chain recorded
-	// as mainnet) is a build failure, not a warning.
+	// R-29 layer 2: the permissive paymaster on a production chain (the fixed list, served testnets
+	// included, or any chain recorded as mainnet) is a build failure, not a warning. The test ERC-20
+	// moves no sponsorship funds: the served testnets may carry it for the reference dApp, a mainnet
+	// never does.
+	const testingRules: {
+		field: string;
+		forbiddenOn: (chainId: number, network?: NetworkClass) => boolean;
+		where: string;
+		message: string;
+	}[] = [
+		{
+			field: "testPaymaster",
+			forbiddenOn: isProductionChain,
+			where: "a production chain",
+			message:
+				"Testing contracts must never be deployed to a production chain.",
+		},
+		{
+			field: "testErc20",
+			forbiddenOn: isMainnetChain,
+			where: "a mainnet",
+			message: "The test ERC-20 must never be deployed to a mainnet.",
+		},
+	];
 	for (const [id, record] of Object.entries(chains)) {
 		const chainId = Number(id);
-		if (!isProductionChain(chainId, networks[chainId])) continue;
-		for (const field of ["testPaymaster", "testErc20"]) {
-			if (record[field]) {
+		for (const { field, forbiddenOn, where, message } of testingRules) {
+			if (record[field] && forbiddenOn(chainId, networks[chainId]))
 				throw new Error(
-					`chain ${chainId} is a production chain but carries ${field}=${record[field]}. ` +
-						"Testing contracts must never be deployed to a production chain.",
+					`chain ${chainId} is ${where} but carries ${field}=${record[field]}. ${message}`,
 				);
-			}
 		}
 	}
 
