@@ -13,11 +13,13 @@ import {
 	type PublicClient,
 	zeroAddress,
 } from "viem";
+import { UPGRADED_TOPIC } from "../erc1967";
 import { DEPLOYERS, LABELS } from "./config";
 import { create3Address } from "./create3";
 import { planCore } from "./plan";
 import {
 	assertRoleAdminNotDeployer,
+	GateError,
 	handOffScanStart,
 	inspectDeployment,
 	profileCoreConfig,
@@ -307,6 +309,67 @@ test("an existing paymaster is checked against the run's configuration, and no d
 			timelock,
 		}),
 		/Neither the profile's ROLE_ADMIN .* nor its timelock/,
+	);
+});
+
+test("an existing proxy's implementation read from Upgraded logs is refused unless the run accepts it", async () => {
+	const proxy = create3Address(CANONICAL_DEPLOYER, LABELS.paymasterProxy);
+	const implementation = create3Address(
+		CANONICAL_DEPLOYER,
+		LABELS.paymasterImplementation,
+	);
+	const config = profileCoreConfig(profile);
+	// An RPC that refuses eth_getStorageAt (Silent Data): the proxy's latest Upgraded event names
+	// the planned implementation.
+	const chain = client({
+		getCode: async ({ address }: { address: Address }) =>
+			address === proxy ? "0x6000" : undefined,
+		getStorageAt: async () => {
+			throw new Error("JSON RPC method not whitelisted");
+		},
+		getBlockNumber: async () => 100n,
+		request: async () => [
+			{
+				blockNumber: "0x1",
+				topics: [
+					UPGRADED_TOPIC,
+					`0x${"0".repeat(24)}${implementation.slice(2)}`,
+				],
+			},
+		],
+		readContract: async ({
+			functionName,
+			args,
+		}: {
+			functionName: string;
+			args?: [unknown, Address];
+		}) =>
+			({
+				ROLE_ADMIN: `0x${"0".repeat(64)}`,
+				hasRole: args?.[1] === admin,
+				entryPoint: config.entryPoint,
+				defaultFeeWei: config.defaultFeeWei,
+				postOpGasAllowance: config.postOpGasAllowance,
+				penaltyBps: config.penaltyBps,
+			})[functionName],
+	});
+	const plan = await planFor(chain);
+	await assert.rejects(
+		verifyCoreState(chain, admin, config, plan),
+		(error) =>
+			error instanceof GateError &&
+			error.message.includes(
+				`paymaster proxy at ${proxy}: the RPC refuses eth_getStorageAt, so its implementation ${implementation} was read from Upgraded logs and is not verified.`,
+			) &&
+			error.message.includes("--accept-unverified-implementation"),
+	);
+	assert.deepEqual(
+		await verifyCoreState(chain, admin, config, plan, {
+			acceptUnverifiedImplementation: true,
+		}),
+		[
+			`paymaster proxy at ${proxy}: implementation ${implementation} read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt); accepted.`,
+		],
 	);
 });
 

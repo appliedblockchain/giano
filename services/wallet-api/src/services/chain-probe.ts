@@ -6,6 +6,7 @@ import {
 	isFatalFailure,
 	recoveryDivergence,
 	recoveryVerified,
+	unverifiedImplementationWarning,
 	verifyChain,
 } from "./chain-verify.js";
 import type { ChainServices } from "./chains.js";
@@ -170,6 +171,11 @@ export async function probeChain(
 				{ chainId: chain.chainId },
 				"chain is reachable and verified — serving it again",
 			);
+			if (verification.paymasterImplementationUnverified)
+				log.warn(
+					{ chainId: chain.chainId },
+					unverifiedImplementationWarning(chain.chainId),
+				);
 			chain.status = "ready";
 		} else if (fatalFailures.length > 0) {
 			for (const failure of fatalFailures)

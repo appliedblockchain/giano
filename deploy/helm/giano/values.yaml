@@ -115,6 +115,10 @@ deployer:
   # (--set-file deployer.deploymentRecord=…). Set it for any chain adopted with an override or by
   # another key: without it the Job looks for the contracts at the deterministic addresses only.
   deploymentRecord: ""
+  # On an RPC that refuses eth_getStorageAt (Silent Data), the paymaster implementation can only be
+  # read from the proxy's Upgraded logs, which is not verified. The Job refuses it unless this is true;
+  # then it logs a warning.
+  acceptUnverifiedImplementation: false
   deployTesting: false
 
 ingress:

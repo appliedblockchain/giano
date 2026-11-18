@@ -27,6 +27,8 @@ spec:
               value: {{ .Values.config.chainId | quote }}
             - name: ROLE_ADMIN
               value: {{ required "deployer.roleAdmin is required (the paymaster ROLE_ADMIN)" .Values.deployer.roleAdmin | quote }}
+            - name: ACCEPT_UNVERIFIED_IMPLEMENTATION
+              value: {{ .Values.deployer.acceptUnverifiedImplementation | quote }}
             - name: DEPLOY_TESTING
               value: {{ .Values.deployer.deployTesting | quote }}
             {{- with .Values.deployer.network }}

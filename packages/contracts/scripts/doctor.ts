@@ -82,7 +82,13 @@ import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
-import { IMPLEMENTATION_SLOT, implementationFromSlot } from "../erc1967";
+import {
+	IMPLEMENTATION_SLOT,
+	implementationFromSlot,
+	implementationFromUpgradedLogs,
+	isMethodRefusedError,
+	UPGRADED_TOPIC,
+} from "../erc1967";
 import {
 	gianoPaymasterAbi,
 	gianoSmartWalletAbi,
@@ -395,9 +401,41 @@ async function checkSponsorshipPaymaster(
 	try {
 		// The proxy's code proves nothing about what it delegates to: the slot must hold paymaster
 		// release code.
-		const impl = implementationFromSlot(
-			await provider.getStorage(address, IMPLEMENTATION_SLOT),
-		);
+		let fromLogs = false;
+		const impl = await provider
+			.getStorage(address, IMPLEMENTATION_SLOT)
+			.then(implementationFromSlot)
+			// An RPC that refuses eth_getStorageAt (Silent Data): the latest Upgraded event instead.
+			// Any other storage-read error (a timeout, a rate limit) is reported as it is.
+			.catch(async (storageError: unknown) => {
+				if (!isMethodRefusedError(storageError)) throw storageError;
+				try {
+					const found = await implementationFromUpgradedLogs(
+						(fromBlock, toBlock) =>
+							provider.getLogs({
+								address,
+								topics: [UPGRADED_TOPIC],
+								fromBlock,
+								toBlock,
+							}),
+						BigInt(await provider.getBlockNumber()),
+					);
+					fromLogs = true;
+					return found;
+				} catch (logError) {
+					throw new Error(
+						`the RPC refused eth_getStorageAt, and reading the proxy's Upgraded logs failed: ${(logError as Error).message}`,
+						{ cause: storageError },
+					);
+				}
+			});
+		// The code the proxy delegates to can emit an Upgraded event that names another address.
+		if (fromLogs)
+			report(
+				"warn",
+				"implementation source",
+				"read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt)",
+			);
 		if (!impl)
 			report(
 				"fail",

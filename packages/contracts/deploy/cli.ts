@@ -4,6 +4,7 @@
  *   pnpm deploy:cli addresses
  *   pnpm deploy:cli core     --rpc <url> --role-admin <0x…> [--release vN] [paymaster options]
  *                            [--chain <profile> | --chain-config <file> | --network mainnet|testnet]
+ *                            [--accept-unverified-implementation]
  *   pnpm deploy:cli testing  --rpc <url> --holder <0x…> --owner <0x…> [--fund-eth <n>]
  *   pnpm deploy:cli test-token --rpc <url> [--holder <0x…>]      (--holder required to deploy)
  *       The test ERC-20 alone, for the reference dApp: allowed on the served testnets, never on a
@@ -36,7 +37,10 @@
  * `core` and `testing` only verify: every contract must already be in place with a release's code,
  * and nothing is sent. An existing paymaster proxy must already be configured as `core` would
  * deploy it (implementation, ROLE_ADMIN, EntryPoint, no deployer holding ROLE_ADMIN); fees that
- * differ from the paymaster flags, else the profile's, are only reported. The release is --release,
+ * differ from the paymaster flags, else the profile's, are only reported. On an RPC that refuses
+ * eth_getStorageAt (Silent Data), the paymaster implementation can only be read from the proxy's
+ * Upgraded logs, which the code it delegates to can forge: `core` refuses it unless
+ * --accept-unverified-implementation, and then warns. The release is --release,
  * else the profile's, else the latest; a verify-only run accepts existing code of any release. A deployment record that states another network
  * class than the one resolved here is refused: a chain's class never changes. The canonical deployer keys are development-team keys kept in 1Password
  * (docs/key-ceremony.md): load one into this shell's environment only, never into a file or a
@@ -180,6 +184,8 @@ const { positionals, values } = parseArgs({
 		"default-fee-wei": { type: "string" },
 		"post-op-gas-allowance": { type: "string" },
 		"penalty-bps": { type: "string" },
+		/** Accept a paymaster implementation read from Upgraded logs (header; deploy/plan.ts). */
+		"accept-unverified-implementation": { type: "boolean", default: false },
 		// testing
 		holder: { type: "string" },
 		owner: { type: "string" },
@@ -536,6 +542,7 @@ async function planOrRefuse(
 		record: ctx.record,
 		release: selected.version,
 		verifyOnly: !ctx.walletClient,
+		acceptUnverifiedImplementation: values["accept-unverified-implementation"],
 	});
 	for (const line of formatPlan(plan)) log(line);
 	if (plan.blockers.length)
@@ -676,6 +683,8 @@ async function main(): Promise<void> {
 					timelock: values.timelock
 						? address("timelock")
 						: ctx.target.profile?.timelock?.address,
+					acceptUnverifiedImplementation:
+						values["accept-unverified-implementation"],
 				},
 			))
 				log(`  ⚠ ${warning}`);

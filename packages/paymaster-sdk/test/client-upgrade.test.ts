@@ -32,6 +32,11 @@ describe("getImplementation", () => {
 		expect(reads).toEqual([
 			{ address: PROXY, slot: ERC1967_IMPLEMENTATION_SLOT },
 		]);
+		// From the slot: verified.
+		expect(await client.readImplementationWithSource()).toEqual({
+			address: IMPLEMENTATION,
+			source: "slot",
+		});
 	});
 });
 
@@ -44,6 +49,75 @@ describe("getImplementation on an empty slot", () => {
 		await expect(client.getImplementation()).rejects.toThrow(
 			/has no ERC-1967 implementation/,
 		);
+	});
+});
+
+describe("readImplementationSlot on an RPC that refuses eth_getStorageAt", () => {
+	it("reads the latest Upgraded event, in spans the platform read relay accepts", async () => {
+		const UPGRADED_TOPIC =
+			"0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b";
+		const UPGRADED_AT = 9_000n;
+		const spans: { from: bigint; to: bigint }[] = [];
+		let head = 25_000n;
+		const publicClient = {
+			getStorageAt: async () => {
+				throw new Error("method eth_getStorageAt is not allowed");
+			},
+			getBlockNumber: async () => head,
+			request: async ({
+				method,
+				params,
+			}: {
+				method: string;
+				params: [
+					{
+						address: string;
+						topics: string[];
+						fromBlock: Hex;
+						toBlock: Hex;
+					},
+				];
+			}) => {
+				expect(method).toBe("eth_getLogs");
+				const [filter] = params;
+				expect(filter.address).toBe(PROXY);
+				expect(filter.topics).toEqual([UPGRADED_TOPIC]);
+				const from = BigInt(filter.fromBlock);
+				const to = BigInt(filter.toBlock);
+				spans.push({ from, to });
+				return from <= UPGRADED_AT && UPGRADED_AT <= to
+					? [
+							{
+								blockNumber: `0x${UPGRADED_AT.toString(16)}`,
+								topics: [
+									UPGRADED_TOPIC,
+									`0x${"0".repeat(24)}${IMPLEMENTATION.slice(2).toLowerCase()}`,
+								],
+							},
+						]
+					: [];
+			},
+		} as unknown as PaymasterPublicClient;
+		const client = new GianoPaymasterClient({ address: PROXY, publicClient });
+
+		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
+		// newest span first, and the walk stops at the span that holds the event
+		expect(spans).toEqual([
+			{ from: 16_001n, to: 25_000n },
+			{ from: 7_001n, to: 16_000n },
+		]);
+		// rpc-read-relay.ts refuses an eth_getLogs span wider than PLATFORM_RPC_MAX_LOG_BLOCKS,
+		// which may be as low as 9,000, counted inclusively
+		for (const { from, to } of spans)
+			expect(to - from + 1n).toBeLessThanOrEqual(9_000n);
+
+		// A read on every block (the console's health check) does not repeat the walk: it reads only
+		// the blocks after the checkpoint, 64 blocks behind the head, in one request.
+		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
+		expect(spans.slice(2)).toEqual([{ from: 24_937n, to: 25_000n }]);
+		head = 25_002n;
+		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
+		expect(spans.slice(3)).toEqual([{ from: 24_937n, to: 25_002n }]);
 	});
 });
 

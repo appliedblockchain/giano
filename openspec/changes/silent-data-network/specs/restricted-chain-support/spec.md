@@ -7,23 +7,50 @@ Giano's bundler, its wallet-api chain checks and its operator tools work on a ch
 ## ADDED Requirements
 
 ### Requirement: The proxy implementation is read without storage access
-When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHALL be read from the proxy's latest ERC-1967 `Upgraded` event. This applies to wallet-api's chain check, `giano-doctor` and the paymaster SDK. Each log query SHALL span at most 10,000 blocks. When the storage read succeeds, it SHALL be used, and no logs SHALL be read.
+When an RPC refuses `eth_getStorageAt`, the paymaster proxy's implementation SHALL be read from the proxy's latest ERC-1967 `Upgraded` event. This applies to wallet-api's chain check, `giano-doctor` and the paymaster SDK. Each log query SHALL span at most 9,000 blocks, counted inclusively. When the storage read succeeds, it SHALL be used, and no logs SHALL be read. When the storage read fails for any other reason than a refusal of the method, that error SHALL be raised and no logs SHALL be read.
 
 #### Scenario: Storage read refused
 - **WHEN** the RPC refuses `eth_getStorageAt` and the proxy's latest `Upgraded` event names implementation `I`
 - **THEN** the implementation read returns `I`, and the release check runs against the code at `I`
 
 #### Scenario: Upgrade older than one span
-- **WHEN** the latest `Upgraded` event is more than 10,000 blocks before the latest block
-- **THEN** the reader queries earlier spans of at most 10,000 blocks each, from newest to oldest, and returns the implementation from the first span that holds an event
+- **WHEN** the latest `Upgraded` event is more than 9,000 blocks before the latest block
+- **THEN** the reader queries earlier spans of at most 9,000 blocks each, from newest to oldest, and returns the implementation from the first span that holds an event
 
 #### Scenario: No upgrade event
 - **WHEN** the storage read is refused and no span holds an `Upgraded` event for the proxy
 - **THEN** the read reports no implementation, and the check fails as it does for an empty slot
 
+#### Scenario: Walk limit reached
+- **WHEN** the storage read is refused and the walk sends its maximum number of log queries without finding an `Upgraded` event
+- **THEN** the read fails with an error that names the blocks searched, and no further log query is sent in that read
+- **AND** the next read through the same client continues the search further back from where the last one stopped
+
+#### Scenario: Repeated read through the same client
+- **WHEN** the storage read is refused and the implementation is read again through the same client
+- **THEN** the reader queries only the blocks after its checkpoint, 64 blocks behind the head, and returns the implementation of a newer `Upgraded` event when one is there
+- **AND** an `Upgraded` event newer than the checkpoint is not kept, so a reorganisation that removes it is seen on the next read
+
+#### Scenario: Other storage-read failure
+- **WHEN** the storage read fails with a timeout, a rate limit or any error other than a refusal of the method
+- **THEN** that error is raised unchanged, and no log query is sent
+
+#### Scenario: Storage refused and log read fails
+- **WHEN** the storage read is refused and a log query fails
+- **THEN** the read fails with an error that names both failures and carries the storage-read error as its cause
+
 #### Scenario: Storage refused and logs unavailable
 - **WHEN** the storage read is refused and the client cannot read logs
 - **THEN** the original storage-read error is raised unchanged
+
+#### Scenario: Implementation read from the logs
+- **WHEN** the storage read is refused and the implementation is read from the proxy's latest `Upgraded` event
+- **THEN** wallet-api's chain check (at boot, and when its background probe admits the chain later), `giano-doctor` and the paymaster SDK's health check report it as a warning: not verified against the implementation slot
+- **AND** the deploy tooling refuses it, and does not reconcile the deployment record to it, unless the operator passes `--accept-unverified-implementation` (the Helm value `deployer.acceptUnverifiedImplementation` for the deployer Job), or the same `contracts:deploy` run deployed the paymaster proxy and the proxy's only `Upgraded` event, up to the head, is the one in its deployment transaction
+
+#### Scenario: Long search in wallet-api's chain check
+- **WHEN** the storage read is refused and one wallet-api chain check sends 100 log queries (10 at boot, before the server listens) without finding an `Upgraded` event
+- **THEN** that check stops, the chain is unavailable, and the background probe's next check continues the search through the same client
 
 ### Requirement: Gas estimation without state overrides
 A chain's `bundler` section SHALL accept `stateOverride`, a boolean whose default is `true`. With `false`, the bundler SHALL estimate a user operation without any `eth_call` state override, and SHALL return fixed limits: verification gas of at least 1,000,000, and paymaster verification gas of at least 200,000 when there is a paymaster. A higher verification or paymaster verification gas that the caller sends SHALL be kept.

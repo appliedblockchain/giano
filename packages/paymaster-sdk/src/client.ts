@@ -2,12 +2,12 @@ import {
 	getGianoDeployment,
 	gianoPaymasterAbi,
 	iEntryPointAbi,
+	proxyImplementationWithSource,
 } from "@appliedblockchain/giano-contracts";
 import {
 	type Account,
 	type Address,
 	type Chain,
-	getAddress,
 	type Hash,
 	type Hex,
 	type PublicClient,
@@ -256,17 +256,23 @@ export class GianoPaymasterClient {
 	}
 
 	/**
-	 * The implementation's address and its runtime code, for `assessHealth` to match to a release.
-	 * Unlike {@link getImplementation} it does not throw on an empty slot: health reports that as a
-	 * failed check (the zero address, no code) rather than failing as a whole.
+	 * The implementation's address, its runtime code and where the address came from, for
+	 * `assessHealth` to match to a release. Unlike {@link getImplementation} it does not throw on an
+	 * empty slot: health reports that as a failed check (the zero address, no code) rather than
+	 * failing as a whole.
 	 */
 	async getImplementationCode(): Promise<{
 		address: Address;
 		code: Hex | undefined;
+		source: "slot" | "logs";
 	}> {
-		const address = await this.readImplementationSlot();
-		if (address === zeroAddress) return { address, code: undefined };
-		return { address, code: await this.publicClient.getCode({ address }) };
+		const { address, source } = await this.readImplementationWithSource();
+		if (address === zeroAddress) return { address, code: undefined, source };
+		return {
+			address,
+			code: await this.publicClient.getCode({ address }),
+			source,
+		};
 	}
 
 	/**
@@ -275,13 +281,24 @@ export class GianoPaymasterClient {
 	 * code, the size of a contract, only when it changes.
 	 */
 	async readImplementationSlot(): Promise<Address> {
-		const word = await this.publicClient.getStorageAt({
-			address: this.address,
-			slot: ERC1967_IMPLEMENTATION_SLOT,
-		});
-		return getAddress(
-			`0x${(word ?? "0x").slice(2).padStart(64, "0").slice(24)}`,
+		return (await this.readImplementationWithSource()).address;
+	}
+
+	/**
+	 * {@link readImplementationSlot}, and where the address came from: `"slot"` when it was read from
+	 * the implementation slot, `"logs"` when the RPC refuses `eth_getStorageAt` and it was read from
+	 * the proxy's latest `Upgraded` event. A `"logs"` address is not verified against the slot: the
+	 * code the proxy delegates to can emit an `Upgraded` event that names another address.
+	 */
+	async readImplementationWithSource(): Promise<{
+		address: Address;
+		source: "slot" | "logs";
+	}> {
+		const { implementation, source } = await proxyImplementationWithSource(
+			this.publicClient,
+			this.address,
 		);
+		return { address: implementation ?? zeroAddress, source };
 	}
 
 	async getConfig(): Promise<PaymasterConfig> {
@@ -642,8 +659,9 @@ export class GianoPaymasterClient {
 	 * The deployment's health, in the checks `giano-doctor` runs.
 	 *
 	 * Same thresholds and the same verdicts, so a panel and the CLI gate cannot disagree about
-	 * whether a deployment is usable. The implementation is matched to a release here; the
-	 * timelock, which the paymaster cannot name, is the caller's to pass (see `timelockDelays`).
+	 * whether a deployment is usable. The implementation is matched to a release here, and one read
+	 * from the proxy's `Upgraded` logs is a warning; the timelock, which the paymaster cannot name,
+	 * is the caller's to pass (see `timelockDelays`).
 	 */
 	async getHealth(
 		context: Omit<HealthContext, "implementation"> = {},

@@ -174,7 +174,8 @@ The `giano-contracts-deployer` image (`Dockerfile.deployer`) runs `core` (and `t
 `DEPLOY_TESTING=true`) from environment variables, with `NETWORK` naming the chain's class, and
 optionally `CHAIN_PROFILE_JSON` and `DEPLOYMENT_RECORD_JSON` (the chain's profile and committed record)
 so a chain at non-deterministic addresses is verified where it is; see
-`scripts/deployer-entrypoint.mjs`. Without `DEPLOYER_PRIVATE_KEY` it only verifies, which is how the
+`scripts/deployer-entrypoint.mjs`. On an RPC that refuses `eth_getStorageAt` (Silent Data),
+`ACCEPT_UNVERIFIED_IMPLEMENTATION=true` passes `--accept-unverified-implementation` to `core`. Without `DEPLOYER_PRIVATE_KEY` it only verifies, which is how the
 Helm pre-install Job runs in a client's cluster. Never give it a canonical deployer key there.
 
 ### Local chains
@@ -195,6 +196,61 @@ are not supported. Validation recovers the signing address and checks it against
 allowlist without inspecting or calling the signer. Safe-mode ERC-4337 bundlers reject
 `EXTCODESIZE` against an account with no code. Invalid signatures, including estimation stubs,
 return signature-validation failure.
+
+## Reading a proxy's implementation
+
+`erc1967.ts` reads which implementation an ERC-1967 proxy, such as the paymaster proxy, delegates
+to. The deploy tooling, `giano-doctor`, wallet-api's chain check and the paymaster SDK all use it.
+
+```ts
+import { proxyImplementation } from '@appliedblockchain/giano-contracts';
+
+// The implementation address, or null when the proxy has none.
+const implementation = await proxyImplementation(publicClient, paymasterProxy);
+```
+
+- `proxyImplementation(client, proxy, options?)` reads the implementation slot
+  (`IMPLEMENTATION_SLOT`) with `eth_getStorageAt`. When that read succeeds, it reads no logs.
+- When the RPC refuses the method `eth_getStorageAt` (a Silent Data gateway does), it falls back to
+  the proxy's latest `Upgraded` event (`UPGRADED_TOPIC`). ERC-1967 requires that event on every
+  implementation change, so the newest one names the current implementation.
+  `isMethodRefusedError(error)` decides what counts as a refusal: JSON-RPC code -32601, -32004 or
+  4200, or a message such as "method not whitelisted" or "method … is not allowed".
+- Any other storage-read error, such as a timeout or a rate limit, is raised unchanged, and no logs
+  are read. When the fallback fails too, the error names both failures and carries the
+  storage-read error as `cause`.
+- The fallback walks back from the latest block, newest first, in spans of at most 9,000 blocks,
+  counted inclusively (`UPGRADED_LOG_CHUNK`). Several public RPCs refuse exactly 10,000, and
+  wallet-api's platform read relay may be set as low as 9,000 (`PLATFORM_RPC_MAX_LOG_BLOCKS`). It
+  stops at the first span that holds an event.
+- The walk is bounded. It stops at `options.fromBlock` (default 0), for example the proxy's
+  deployment block. One read sends at most `options.maxChunks` requests (default
+  `UPGRADED_LOG_MAX_CHUNKS`, 1,000, that is 9,000,000 blocks). `maxChunks` must be a non-negative
+  safe integer; any other value throws before any request. When a read reaches the limit without
+  an event, it throws, and the next read through the same client continues the search further
+  back from where the last one stopped. When the search reaches `fromBlock` without an event, it
+  returns null.
+- The result is kept per client object, per proxy and per `fromBlock`, up to a checkpoint 64
+  blocks behind the head. Each read searches the blocks after the checkpoint again, so a caller
+  that reads on every block normally sends one `eth_getLogs` request each time. An upgrade newer
+  than the checkpoint is returned but not kept, so a reorganisation cannot leave a removed upgrade
+  behind. A head below the checkpoint starts the walk again. The head is read uncached
+  (`cacheTime: 0`), and concurrent reads of the same proxy through the same client share one walk.
+- The fallback needs `getBlockNumber` and `request` on the client. Without them, the call raises
+  the original storage-read error.
+- `proxyImplementationWithSource(client, proxy, options?)` returns
+  `{ implementation, source }`, where `source` is `"slot"` or `"logs"`. A `"logs"` answer is not
+  verified against the implementation slot: the code the proxy delegates to, such as an
+  implementation an upgrade installs, can emit an `Upgraded` event that names another address.
+  wallet-api's chain check, `giano-doctor` and the paymaster SDK's `getHealth` report such an
+  answer as a warning. The deploy tooling refuses it unless the operator passes
+  `--accept-unverified-implementation` ([runbook](../../deploy/contracts/README.md)).
+- `implementationFromUpgradedLogs(getLogs, latest, options?)` is the log walk alone, without the
+  per-client memory, for a caller with its own log reader. `implementationFromSlot(word)` decodes a
+  raw slot word.
+
+The first walk costs one `eth_getLogs` request per 9,000 blocks since the last upgrade, at most
+`maxChunks`. Each later read on the same client costs one request.
 
 ## Toolchain
 

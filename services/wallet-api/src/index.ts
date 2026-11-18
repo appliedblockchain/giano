@@ -12,8 +12,10 @@ import {
 import {
 	describeFailure,
 	isFatalFailure,
+	PAYMASTER_LOG_REQUESTS_AT_BOOT,
 	probeDivergence,
 	recoveryVerified,
+	unverifiedImplementationWarning,
 	verifyChain,
 } from "./services/chain-verify.js";
 import { isOwnDrift } from "./services/drift.js";
@@ -74,6 +76,8 @@ const servedProbes = new Map<number, string>();
 		const verification = await verifyChain(
 			chain.descriptor,
 			chain.publicClient,
+			undefined,
+			{ logRequests: PAYMASTER_LOG_REQUESTS_AT_BOOT },
 		);
 		for (const failure of verification.failures) {
 			const line = describeFailure(chain.chainId, failure);
@@ -88,6 +92,11 @@ const servedProbes = new Map<number, string>();
 			app.log.warn(
 				{ chainId: chain.chainId },
 				`chain ${chain.chainId}: no wallet implementation configured (walletApi.implementation, IMPLEMENTATION_ADDRESS) or registered — the factory's implementation was checked for release code and EntryPoint, but not compared with the chain's own`,
+			);
+		if (verification.paymasterImplementationUnverified)
+			app.log.warn(
+				{ chainId: chain.chainId },
+				unverifiedImplementationWarning(chain.chainId),
 			);
 		if (
 			verification.failures.some((failure) => failure.kind === "unreachable")

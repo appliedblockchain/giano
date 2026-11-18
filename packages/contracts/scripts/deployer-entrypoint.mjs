@@ -22,6 +22,11 @@
 //                              chain but a local one (31337/31338) unless CHAIN_PROFILE_JSON is set;
 //                              with it, it must agree with the profile.
 //   ROLE_ADMIN                 the paymaster's sole ROLE_ADMIN; a TimelockController in production
+//   ACCEPT_UNVERIFIED_IMPLEMENTATION=true
+//                              on an RPC that refuses eth_getStorageAt (Silent Data), accept the
+//                              paymaster implementation read from the proxy's Upgraded logs, with a
+//                              warning (`core --accept-unverified-implementation`). Without it, `core`
+//                              refuses that implementation, because it is not verified.
 //   RELEASE                    optional; the latest release by default
 //   DEPLOY_TESTING=true        also deploy PrivateERC20 + PermissivePaymaster (never on 8453/84532/11155111)
 //   PAYMASTER_FUND_ETH         the test paymaster's initial EntryPoint deposit (default 0)
@@ -110,7 +115,15 @@ function cli(args) {
 
 // The release defaults to the latest; RELEASE pins one. The record lands in OUT_DIR, so a re-run
 // against the same volume picks up where it left off.
-cli(["core", "--role-admin", roleAdmin, ...common]);
+cli([
+	"core",
+	"--role-admin",
+	roleAdmin,
+	...(env.ACCEPT_UNVERIFIED_IMPLEMENTATION === "true"
+		? ["--accept-unverified-implementation"]
+		: []),
+	...common,
+]);
 
 if (env.DEPLOY_TESTING === "true") {
 	cli([

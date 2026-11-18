@@ -9,7 +9,7 @@ import {
 	zeroAddress,
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
-import { proxyImplementation } from "../erc1967";
+import { proxyImplementationWithSource } from "../erc1967";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
 import { releaseOf } from "../release-code";
 import {
@@ -36,6 +36,7 @@ import {
 	IMPLEMENTATION_SLOT,
 	type Plan,
 	planCore,
+	unverifiedImplementation,
 } from "./plan";
 import { type ChainProfile, paymasterParams } from "./profiles";
 import type { DeploymentRecord } from "./records";
@@ -94,7 +95,9 @@ export function profileCoreConfig(profile: ChainProfile): CoreConfig {
 /**
  * An existing paymaster proxy, overridden or not, must be configured as this plan says: pointing at
  * the planned implementation, with `admin` holding ROLE_ADMIN, the EntryPoint of `config`, and (on
- * a non-local chain) no deployer holding ROLE_ADMIN. Those throw. The fees are operational
+ * a non-local chain) no deployer holding ROLE_ADMIN. Those throw. So does an implementation read
+ * from the proxy's `Upgraded` logs, because the RPC refuses `eth_getStorageAt`, unless
+ * `acceptUnverifiedImplementation`; then it is a warning. The fees are operational
  * parameters that FEE_ADMIN_ROLE / PARAM_ADMIN_ROLE change on purpose (setDefaultFee,
  * setPostOpGasAllowance, setPenaltyBps), so a fee that differs from `config` is returned as a
  * warning instead of refusing the run. Shared by the guided wizard and `deploy:cli core`, which both
@@ -111,6 +114,12 @@ export async function verifyCoreState(
 		 * bootstrap key, which renounced it), and a handed-off chain must still verify.
 		 */
 		timelock?: string | null;
+		/**
+		 * Accept an implementation read from the proxy's `Upgraded` logs, as a warning
+		 * (`--accept-unverified-implementation`). Without it, such an implementation throws: the code
+		 * the proxy delegates to can emit an `Upgraded` event that names another address.
+		 */
+		acceptUnverifiedImplementation?: boolean;
 	} = {},
 ): Promise<string[]> {
 	const proxy = planned(plan, "paymasterProxy");
@@ -118,7 +127,16 @@ export async function verifyCoreState(
 	const code = await client.getCode({ address: proxy.actual });
 	if (!code || code === "0x") return [];
 	const implementation = planned(plan, "paymasterImplementation")?.actual;
-	const current = await proxyImplementation(client, proxy.actual);
+	const { implementation: current, source } =
+		await proxyImplementationWithSource(client, proxy.actual);
+	const warnings: string[] = [];
+	if (source === "logs") {
+		if (!options.acceptUnverifiedImplementation)
+			throw new GateError(
+				unverifiedImplementation(proxy.actual, current, false),
+			);
+		warnings.push(unverifiedImplementation(proxy.actual, current, true));
+	}
 	if (!current || !implementation || current !== getAddress(implementation))
 		throw new GateError(
 			"Paymaster was upgraded or points to an unexpected implementation; use the upgrade procedure.",
@@ -158,7 +176,6 @@ export async function verifyCoreState(
 		throw new GateError(
 			"Existing paymaster EntryPoint differs from this plan. Review its configuration before continuing.",
 		);
-	const warnings: string[] = [];
 	for (const [name, live, planned] of [
 		["defaultFeeWei", fee, config.defaultFeeWei],
 		["postOpGasAllowance", allowance, config.postOpGasAllowance],
@@ -289,6 +306,8 @@ export type InspectOptions = {
 	record?: DeploymentRecord;
 	/** For tests: the class deployer instead of deploy/config.ts. */
 	deployer?: Address | null;
+	/** Accept a paymaster implementation read from `Upgraded` logs (see `PlanInput`). */
+	acceptUnverifiedImplementation?: boolean;
 };
 
 export type Inspection = {
@@ -357,6 +376,7 @@ export async function inspectDeployment(
 				record: options.record,
 				release,
 				deployer: options.deployer,
+				acceptUnverifiedImplementation: options.acceptUnverifiedImplementation,
 			});
 		} catch {
 			throw new GateError(
@@ -377,7 +397,11 @@ export async function inspectDeployment(
 					admin,
 					profileCoreConfig(profile),
 					plan as Plan,
-					{ timelock: profile.timelock?.address },
+					{
+						timelock: profile.timelock?.address,
+						acceptUnverifiedImplementation:
+							options.acceptUnverifiedImplementation,
+					},
 				);
 				if (warnings.length) return `⚠ ${warnings.join("; ")}`;
 			} catch (error) {

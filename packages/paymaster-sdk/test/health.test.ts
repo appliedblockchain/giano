@@ -1,6 +1,10 @@
 import { RELEASE_FINGERPRINTS } from "@appliedblockchain/giano-contracts";
 import { keccak256, parseEther, zeroAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
+import {
+	GianoPaymasterClient,
+	type PaymasterPublicClient,
+} from "../src/client";
 import { assessHealth, type HealthTimelock } from "../src/health";
 import { DEFAULT_ADMIN_ROLE, PAYMASTER_ROLES } from "../src/roles";
 import type { PaymasterOverview, RoleHolders, TenantView } from "../src/types";
@@ -461,5 +465,66 @@ describe("assessHealth and the implementation (B2)", () => {
 
 		expect(check(report, "implementation")?.level).toBe("fail");
 		expect(check(report, "implementation")?.detail).toMatch(/not a UUPS proxy/);
+	});
+
+	it("warns about a release read from Upgraded logs, as giano-doctor does, rather than passing it", () => {
+		const fromLogs = assessHealth(overview(), {
+			timelock: timelock(),
+			implementation: {
+				address: IMPLEMENTATION,
+				code: V2_CODE,
+				source: "logs",
+			},
+		});
+		expect(check(fromLogs, "implementation")).toMatchObject({
+			level: "warn",
+			label: "implementation is a release, but not verified",
+			detail: `release v2 at ${IMPLEMENTATION}, read from Upgraded logs, not verified against the implementation slot (the RPC refuses eth_getStorageAt)`,
+		});
+		expect(check(fromLogs, "implementation")?.remedy).toBeTruthy();
+
+		const fromSlot = assessHealth(overview(), {
+			timelock: timelock(),
+			implementation: {
+				address: IMPLEMENTATION,
+				code: V2_CODE,
+				source: "slot",
+			},
+		});
+		expect(check(fromSlot, "implementation")?.level).toBe("ok");
+	});
+
+	it("getHealth passes the source of the implementation to the check", async () => {
+		const UPGRADED_TOPIC =
+			"0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b";
+		const publicClient = {
+			// An RPC that refuses eth_getStorageAt (Silent Data): the latest Upgraded event instead.
+			getStorageAt: async () => {
+				throw new Error("JSON RPC method not whitelisted");
+			},
+			getBlockNumber: async () => 100n,
+			request: async () => [
+				{
+					blockNumber: "0x1",
+					topics: [
+						UPGRADED_TOPIC,
+						`0x${"0".repeat(24)}${IMPLEMENTATION.slice(2)}`,
+					],
+				},
+			],
+			getCode: async () => V2_CODE,
+		} as unknown as PaymasterPublicClient;
+		const client = new GianoPaymasterClient({
+			address: "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+			publicClient,
+		});
+		vi.spyOn(client, "getOverview").mockResolvedValue(overview());
+
+		expect(await client.readImplementationWithSource()).toEqual({
+			address: IMPLEMENTATION,
+			source: "logs",
+		});
+		const report = await client.getHealth({ timelock: timelock() });
+		expect(check(report, "implementation")?.level).toBe("warn");
 	});
 });

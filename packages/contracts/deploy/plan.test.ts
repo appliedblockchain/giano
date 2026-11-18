@@ -14,16 +14,21 @@ import {
 	type PublicClient,
 	pad,
 } from "viem";
+import { UPGRADED_TOPIC } from "../erc1967";
 import { RELEASE_FINGERPRINTS } from "../release-code";
 import { CONTRACT_OF, DEPLOYERS, LABELS, upgradeLabel } from "./config";
 import { create3Address } from "./create3";
 import {
 	CORE_KEYS,
 	type CoreKey,
+	deploymentProofFailure,
+	deploysPaymasterProxy,
 	deviationGate,
 	deviationWarning,
 	fixedAddresses,
+	formatPlan,
 	IMPLEMENTATION_SLOT,
+	onlyDeploymentUpgrade,
 	placements,
 	planCore,
 	undeclaredDeviations,
@@ -692,6 +697,258 @@ describe("upgrade targets", () => {
 			p.deviations.map((d) => [d.key, d.reason, d.actual]),
 			[["paymasterImplementation", "existing-elsewhere", elsewhere]],
 		);
+	});
+});
+
+/**
+ * `client` on an RPC that refuses eth_getStorageAt (Silent Data): the paymaster proxy's latest
+ * Upgraded event names `implementation`.
+ */
+function refusingStorage(
+	client: PublicClient,
+	implementation: Address,
+): PublicClient {
+	return {
+		...client,
+		getStorageAt: async () => {
+			throw new Error("JSON RPC method not whitelisted");
+		},
+		getBlockNumber: async () => 100n,
+		request: async () => [
+			{ blockNumber: "0x1", topics: [UPGRADED_TOPIC, pad(implementation)] },
+		],
+	} as unknown as PublicClient;
+}
+
+describe("a paymaster implementation read from Upgraded logs", () => {
+	const unverified = /Upgraded logs/;
+	const input = {
+		network: "mainnet" as const,
+		signer: null,
+		deployer: MAINNET,
+		verifyOnly: true,
+	};
+
+	it("blocks the plan unless the run accepts it, and then is a warning", async () => {
+		const implementation = expected("paymasterImplementation");
+		const refused = await planCore(
+			refusingStorage(deployedBy(MAINNET), implementation),
+			input,
+		);
+		assert.equal(refused.blockers.length, 1);
+		assert.match(
+			refused.blockers[0],
+			new RegExp(
+				`paymaster proxy at ${expected("paymasterProxy")}: the RPC refuses eth_getStorageAt, so its implementation ${implementation} was read from Upgraded logs and is not verified.*--accept-unverified-implementation`,
+			),
+		);
+		assert.deepEqual(refused.warnings, []);
+
+		const accepted = await planCore(
+			refusingStorage(deployedBy(MAINNET), implementation),
+			{ ...input, acceptUnverifiedImplementation: true },
+		);
+		assert.deepEqual(accepted.blockers, []);
+		assert.equal(accepted.warnings.length, 1);
+		assert.match(
+			accepted.warnings[0],
+			/read from Upgraded logs, not verified against the implementation slot \(the RPC refuses eth_getStorageAt\); accepted\./,
+		);
+		assert.ok(
+			formatPlan(accepted).includes(`  ⚠ ${accepted.warnings[0]}`),
+			formatPlan(accepted).join("\n"),
+		);
+		// An implementation the slot gives is proof: no warning.
+		const fromSlot = await planCore(deployedBy(MAINNET), input);
+		assert.deepEqual(
+			[fromSlot.blockers, fromSlot.warnings].map((lines) =>
+				lines.filter((line) => unverified.test(line)),
+			),
+			[[], []],
+		);
+	});
+
+	it("reconciles an executed upgrade only when the run accepts it", async () => {
+		// The record names the first implementation; the logs name a recorded upgrade target.
+		const label = upgradeLabel(LABELS.paymasterImplementation, "v3");
+		const target = create3Address(MAINNET, label);
+		const code: Record<string, Hex> = {
+			[target]: place("paymasterImplementation", target),
+		};
+		for (const key of CORE_KEYS)
+			code[expected(key)] = place(key, expected(key));
+		const stub = () =>
+			refusingStorage(
+				chain(code, { implementation: expected("walletImplementation") }),
+				target,
+			);
+		const record: DeploymentRecord = {
+			chainId: 8453,
+			deployer: MAINNET,
+			contracts: {
+				paymasterProxy: {
+					address: expected("paymasterProxy"),
+					label: LABELS.paymasterProxy,
+					release: "v3",
+					codehash: "0x00",
+				},
+				paymasterImplementation: {
+					address: expected("paymasterImplementation"),
+					label: LABELS.paymasterImplementation,
+					release: "v3",
+					codehash: "0x00",
+				},
+			},
+			upgrades: [
+				{
+					address: target,
+					label,
+					release: "v3",
+					codehash: "0x00",
+					of: "paymasterImplementation",
+				},
+			],
+		};
+
+		const refused = await planCore(stub(), { ...input, record });
+		assert.deepEqual(refused.reconciled, []);
+		assert.ok(
+			refused.blockers.some((b) => unverified.test(b)),
+			refused.blockers.join("\n"),
+		);
+
+		const accepted = await planCore(stub(), {
+			...input,
+			record,
+			acceptUnverifiedImplementation: true,
+		});
+		assert.deepEqual(accepted.reconciled, [
+			{
+				key: "paymasterImplementation",
+				from: expected("paymasterImplementation"),
+				to: target,
+			},
+		]);
+		assert.deepEqual(accepted.blockers, []);
+		assert.equal(accepted.warnings.length, 1);
+	});
+
+	it("knows whether the plan deploys the paymaster proxy", async () => {
+		assert.equal(deploysPaymasterProxy(await planCore(chain({}), input)), true);
+		assert.equal(
+			deploysPaymasterProxy(await planCore(deployedBy(MAINNET), input)),
+			false,
+		);
+	});
+});
+
+describe("onlyDeploymentUpgrade", () => {
+	const proxy = expected("paymasterProxy");
+	const implementation = expected("paymasterImplementation");
+	const deployment: Hex = `0x${"aa".repeat(32)}`;
+	const other: Hex = `0x${"bb".repeat(32)}`;
+	/** The deployment at block 1,000; `later` are the transactions of Upgraded logs after it. */
+	function stub({
+		status = "success",
+		named = implementation,
+		head = 20_000n,
+		later = [] as Hex[],
+	} = {}) {
+		const ranges: [bigint, bigint][] = [];
+		const client = {
+			getTransactionReceipt: async () => ({
+				status,
+				blockNumber: 1_000n,
+				logs: [{ address: proxy, topics: [UPGRADED_TOPIC, pad(named)] }],
+			}),
+			getBlockNumber: async () => head,
+			request: async ({
+				params: [{ fromBlock, toBlock }],
+			}: {
+				params: [{ fromBlock: string; toBlock: string }];
+			}) => {
+				ranges.push([BigInt(fromBlock), BigInt(toBlock)]);
+				return [deployment, ...(ranges.length === 1 ? later : [])].map(
+					(transactionHash) => ({ transactionHash }),
+				);
+			},
+		} as unknown as PublicClient;
+		return { client, ranges };
+	}
+
+	it("accepts a proxy whose only Upgraded event is its deployment's", async () => {
+		const { client, ranges } = stub();
+		assert.equal(
+			await onlyDeploymentUpgrade(client, proxy, deployment, implementation),
+			true,
+		);
+		// From the deployment block to the head, in spans of at most 9,000 blocks.
+		assert.deepEqual(ranges, [
+			[1_000n, 9_999n],
+			[10_000n, 18_999n],
+			[19_000n, 20_000n],
+		]);
+	});
+
+	it("refuses a later Upgraded event, another implementation, a failed deployment or a deployment too far back", async () => {
+		for (const options of [
+			{ later: [other] },
+			{ named: expected("walletImplementation") },
+			{ status: "reverted" },
+			{ head: 9_001_000n },
+		])
+			assert.equal(
+				await onlyDeploymentUpgrade(
+					stub(options).client,
+					proxy,
+					deployment,
+					implementation,
+				),
+				false,
+				JSON.stringify(options, (_, v) =>
+					typeof v === "bigint" ? v.toString() : v,
+				),
+			);
+	});
+
+	it("deploymentProofFailure explains a refusal, and never prints the provider's error", async () => {
+		assert.equal(
+			await deploymentProofFailure(
+				stub().client,
+				proxy,
+				deployment,
+				implementation,
+			),
+			undefined,
+		);
+		assert.match(
+			(await deploymentProofFailure(
+				stub({ later: [other] }).client,
+				proxy,
+				deployment,
+				implementation,
+			)) ?? "",
+			/its only Upgraded event is not the one in that transaction/,
+		);
+		// viem puts the request URL in its error message; the URL can hold an API key.
+		const secret = "https://rpc.example/v1/SECRET-API-KEY";
+		for (const failing of ["getTransactionReceipt", "request"] as const) {
+			const { client } = stub();
+			Object.assign(client, {
+				[failing]: async () => {
+					throw new Error(`HTTP request failed. URL: ${secret}`);
+				},
+			});
+			const message =
+				(await deploymentProofFailure(
+					client,
+					proxy,
+					deployment,
+					implementation,
+				)) ?? "";
+			assert.match(message, /reading its receipt or logs failed/, failing);
+			assert.doesNotMatch(message, /SECRET-API-KEY|rpc\.example/, failing);
+		}
 	});
 });
 

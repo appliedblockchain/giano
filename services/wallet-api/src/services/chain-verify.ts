@@ -5,7 +5,7 @@ import {
 	gianoSmartWalletFactoryAbi,
 	isCanonicalEntryPointCode,
 	isEntryPointAddress,
-	proxyImplementation,
+	proxyImplementationWithSource,
 	type ReleaseContractName,
 	releaseOf,
 } from "@appliedblockchain/giano-contracts";
@@ -98,10 +98,40 @@ export type ChainVerification = {
 	 */
 	implementationUnchecked?: boolean;
 	paymasterPresent?: boolean;
+	/**
+	 * True when the paymaster proxy's implementation was read from its `Upgraded` logs, because the
+	 * RPC refuses `eth_getStorageAt`. The code the proxy delegates to can emit an `Upgraded` event
+	 * that names another address, so the release check ran against an address the slot did not
+	 * confirm. A warning, not a failure: the chain is still served.
+	 */
+	paymasterImplementationUnverified?: boolean;
 	/** The address the chain's own factory derives for the probe owner (MC-22). */
 	probeAddress?: `0x${string}`;
 	failures: ChainVerificationFailure[];
 };
+
+/**
+ * The warning for a chain whose paymaster implementation came from `Upgraded` logs. Logged when
+ * the chain is checked at boot and when it is admitted later, after a failed check.
+ */
+export function unverifiedImplementationWarning(chainId: number): string {
+	return `chain ${chainId}: the paymaster implementation was read from Upgraded logs, not verified against the implementation slot — the RPC refuses eth_getStorageAt, and the code the proxy delegates to can emit an Upgraded event that names another address`;
+}
+
+/**
+ * At most this many `eth_getLogs` requests per check, when the RPC refuses `eth_getStorageAt` and
+ * the paymaster implementation comes from its `Upgraded` logs (Silent Data). A check that stops at
+ * this limit leaves the chain unavailable, and the background probe's next check continues the
+ * search through the same client.
+ */
+export const PAYMASTER_LOG_REQUESTS_PER_CHECK = 100;
+
+/**
+ * The same limit for the check at boot, which runs before the server listens. Kept small so a long
+ * search cannot delay `/healthz` past the liveness probe: the background probe, which runs after the
+ * server listens, continues the search with {@link PAYMASTER_LOG_REQUESTS_PER_CHECK}.
+ */
+export const PAYMASTER_LOG_REQUESTS_AT_BOOT = 10;
 
 /** True for a failure that must prevent the deployment from serving this chain. */
 export function isFatalFailure(failure: ChainVerificationFailure): boolean {
@@ -129,6 +159,10 @@ export async function verifyChain(
 	descriptor: ResolvedChain,
 	client: PublicClient,
 	releaseCheck: ReleaseCheck = releaseOf,
+	options: {
+		/** At most this many `eth_getLogs` requests for the paymaster implementation. */
+		logRequests?: number;
+	} = {},
 ): Promise<ChainVerification> {
 	const result: ChainVerification = {
 		chainId: descriptor.chainId,
@@ -287,8 +321,12 @@ export async function verifyChain(
 				// A stock ERC1967Proxy proves nothing about what it delegates to: the implementation
 				// slot must hold paymaster release code.
 				// An empty slot delegates to nothing: reported as no release code at the zero address.
-				const implementation =
-					(await proxyImplementation(client, paymaster)) ?? zeroAddress;
+				const read = await proxyImplementationWithSource(client, paymaster, {
+					maxChunks: options.logRequests ?? PAYMASTER_LOG_REQUESTS_PER_CHECK,
+				});
+				if (read.source === "logs")
+					result.paymasterImplementationUnverified = true;
+				const implementation = read.implementation ?? zeroAddress;
 				if (
 					releaseAt(
 						"paymaster-implementation",
