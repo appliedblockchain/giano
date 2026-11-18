@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	ERC1967_IMPLEMENTATION_SLOT,
 	GianoPaymasterClient,
+	IMPLEMENTATION_LOG_REQUESTS_PER_READ,
 	type PaymasterPublicClient,
 	type PaymasterWalletClient,
 } from "../src/client";
@@ -118,6 +119,65 @@ describe("readImplementationSlot on an RPC that refuses eth_getStorageAt", () =>
 		head = 25_002n;
 		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
 		expect(spans.slice(3)).toEqual([{ from: 24_937n, to: 25_002n }]);
+	});
+});
+
+describe("readImplementationWithSource bounds each read", () => {
+	/** Refuses eth_getStorageAt; no Upgraded event below `upgradedAt` is ever returned. */
+	function refusing(head: bigint, upgradedAt: bigint) {
+		const spans: { from: bigint; to: bigint }[] = [];
+		const publicClient = {
+			getStorageAt: async () => {
+				throw new Error("JSON RPC method not whitelisted");
+			},
+			getBlockNumber: async () => head,
+			request: async ({
+				params: [filter],
+			}: {
+				params: [{ fromBlock: Hex; toBlock: Hex }];
+			}) => {
+				const from = BigInt(filter.fromBlock);
+				const to = BigInt(filter.toBlock);
+				spans.push({ from, to });
+				return from <= upgradedAt && upgradedAt <= to
+					? [
+							{
+								blockNumber: `0x${upgradedAt.toString(16)}`,
+								topics: [
+									"0x",
+									`0x${"0".repeat(24)}${IMPLEMENTATION.slice(2).toLowerCase()}`,
+								],
+							},
+						]
+					: [];
+			},
+		} as unknown as PaymasterPublicClient;
+		return { publicClient, spans };
+	}
+
+	it("sends at most IMPLEMENTATION_LOG_REQUESTS_PER_READ requests, and the next read continues", async () => {
+		// The only upgrade is 150 spans back from the head.
+		const { publicClient, spans } = refusing(10_000_000n, 8_650_000n);
+		const client = new GianoPaymasterClient({ address: PROXY, publicClient });
+		await expect(client.readImplementationWithSource()).rejects.toThrow(
+			/no Upgraded event/,
+		);
+		expect(spans).toHaveLength(IMPLEMENTATION_LOG_REQUESTS_PER_READ);
+		expect(await client.readImplementationWithSource()).toEqual({
+			address: IMPLEMENTATION,
+			source: "logs",
+		});
+	});
+
+	it("starts at the configured deployment block, which a client rebound to a wallet keeps", async () => {
+		const { publicClient, spans } = refusing(10_000_000n, 9_999_000n);
+		const client = new GianoPaymasterClient({
+			address: PROXY,
+			publicClient,
+			deployBlock: 9_999_000n,
+		}).withWallet({} as PaymasterWalletClient);
+		expect(await client.readImplementationSlot()).toBe(IMPLEMENTATION);
+		expect(spans).toEqual([{ from: 9_999_000n, to: 10_000_000n }]);
 	});
 });
 

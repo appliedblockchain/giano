@@ -19,6 +19,7 @@ import {
 	type WalletClient,
 	zeroHash,
 } from "viem";
+import { waitForReceipt } from "../receipt";
 
 /** Arachnid's deterministic-deployment proxy and the account its keyless deployment comes from. */
 export const ARACHNID_PROXY: Address =
@@ -45,12 +46,12 @@ export async function deployP256Verifier(
 			to: ARACHNID_SIGNER,
 			value: parseEther("0.1"),
 		});
-		await publicClient.waitForTransactionReceipt({ hash: fund });
+		await waitForReceipt(publicClient, { hash: fund });
 		const hash = await publicClient.request({
 			method: "eth_sendRawTransaction",
 			params: [ARACHNID_PRESIGNED_TX],
 		});
-		await publicClient.waitForTransactionReceipt({ hash });
+		await waitForReceipt(publicClient, { hash });
 		log(`  + Arachnid CREATE2 proxy at ${ARACHNID_PROXY}`);
 	}
 	const verifierCode = await publicClient.getCode({
@@ -64,7 +65,7 @@ export async function deployP256Verifier(
 		to: ARACHNID_PROXY,
 		data: concat([zeroHash, P256_CREATION_CODE]),
 	});
-	const receipt = await publicClient.waitForTransactionReceipt({ hash });
+	const receipt = await waitForReceipt(publicClient, { hash });
 	if (receipt.status !== "success")
 		throw new Error(`P-256 verifier deployment reverted (${hash})`);
 	const deployed = await publicClient.getCode({

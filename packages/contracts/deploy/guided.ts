@@ -9,6 +9,7 @@ import {
 	createPublicClient,
 	createWalletClient,
 	defineChain,
+	getAddress,
 	type Hex,
 	http,
 } from "viem";
@@ -31,6 +32,7 @@ import {
 	type Plan,
 	planCore,
 	reconcileRecord,
+	unverifiedImplementation,
 } from "./plan";
 import {
 	inspectDeployment,
@@ -387,11 +389,13 @@ async function main() {
 			{
 				timelock: profile.timelock?.address,
 				acceptUnverifiedImplementation: acceptAfter,
+				record,
 			},
 		);
 		// The plan relied on an Upgraded log (after.warnings). Accept it only when the proxy's sole
 		// Upgraded event, up to the current head, is its deployment's, for the implementation this
 		// run deployed and verified above.
+		let proven: string | undefined;
 		if (proxyTransaction && after.warnings.length) {
 			const proxy = record.contracts.paymasterProxy?.address;
 			const implementation = record.contracts.paymasterImplementation?.address;
@@ -405,8 +409,16 @@ async function main() {
 			console.log(
 				`The paymaster proxy's only Upgraded event is the one in its deployment transaction ${proxyTransaction}, for implementation ${implementation}.`,
 			);
+			// The proof above settles what the "not verified … accepted" warning says it could not.
+			if (proxy && implementation)
+				proven = unverifiedImplementation(
+					getAddress(proxy),
+					getAddress(implementation),
+					true,
+				);
 		}
-		for (const warning of coreWarnings) console.warn(`⚠ ${warning}`);
+		for (const warning of coreWarnings)
+			if (warning !== proven) console.warn(`⚠ ${warning}`);
 		writeRecord(record);
 		const addressEnv = rehearsal
 			? join(REHEARSAL_DIR, `${chain.id}.addresses.env`)

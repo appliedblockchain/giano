@@ -3,6 +3,8 @@ import {
 	gianoPaymasterAbi,
 	iEntryPointAbi,
 	proxyImplementationWithSource,
+	type UpgradedLogWalkOptions,
+	waitForReceipt,
 } from "@appliedblockchain/giano-contracts";
 import {
 	type Account,
@@ -96,7 +98,21 @@ export type PaymasterClientConfig = {
 	 * skip that one discovery round trip.
 	 */
 	logWindow?: bigint;
+	/**
+	 * The block that deployed the proxy. On an RPC that refuses `eth_getStorageAt`, the search
+	 * through the proxy's `Upgraded` logs starts here instead of at block 0. {@link
+	 * GianoPaymasterClient.fromRegistry} sets it from the contracts registry.
+	 */
+	deployBlock?: bigint;
 };
+
+/**
+ * At most this many `eth_getLogs` requests per implementation read, when the RPC refuses
+ * `eth_getStorageAt`. A read that stops at the limit throws, and the next read through the same
+ * public client continues the search. Kept well below the platform read relay's 1,200 requests a
+ * minute, so one read cannot use a console session's budget.
+ */
+export const IMPLEMENTATION_LOG_REQUESTS_PER_READ = 100;
 
 /**
  * How a caller asks for slugs alongside the roster.
@@ -136,12 +152,14 @@ export class GianoPaymasterClient {
 	 * so a provider with a tighter cap is discovered once rather than at every read.
 	 */
 	private logWindow: bigint;
+	private readonly deployBlock?: bigint;
 
 	constructor(config: PaymasterClientConfig) {
 		this.address = config.address;
 		this.publicClient = config.publicClient;
 		this.walletClient = config.walletClient;
 		this.logWindow = config.logWindow ?? DEFAULT_LOG_WINDOW;
+		this.deployBlock = config.deployBlock;
 	}
 
 	/**
@@ -162,6 +180,10 @@ export class GianoPaymasterClient {
 			);
 		}
 		return new GianoPaymasterClient({
+			deployBlock:
+				deployment.sponsorshipPaymasterDeployBlock === undefined
+					? undefined
+					: BigInt(deployment.sponsorshipPaymasterDeployBlock),
 			...config,
 			address: deployment.sponsorshipPaymaster,
 		});
@@ -179,6 +201,7 @@ export class GianoPaymasterClient {
 			publicClient: this.publicClient,
 			walletClient,
 			logWindow: this.logWindow,
+			deployBlock: this.deployBlock,
 		});
 	}
 
@@ -289,14 +312,26 @@ export class GianoPaymasterClient {
 	 * the implementation slot, `"logs"` when the RPC refuses `eth_getStorageAt` and it was read from
 	 * the proxy's latest `Upgraded` event. A `"logs"` address is not verified against the slot: the
 	 * code the proxy delegates to can emit an `Upgraded` event that names another address.
+	 *
+	 * The log search starts at the configured `deployBlock` (default 0) and sends at most
+	 * {@link IMPLEMENTATION_LOG_REQUESTS_PER_READ} requests; `options` overrides either. A read that
+	 * stops at the limit, or at a failed request, throws, and the next read through the same public
+	 * client continues from where it stopped.
 	 */
-	async readImplementationWithSource(): Promise<{
+	async readImplementationWithSource(
+		options: UpgradedLogWalkOptions = {},
+	): Promise<{
 		address: Address;
 		source: "slot" | "logs";
 	}> {
 		const { implementation, source } = await proxyImplementationWithSource(
 			this.publicClient,
 			this.address,
+			{
+				fromBlock: this.deployBlock,
+				maxChunks: IMPLEMENTATION_LOG_REQUESTS_PER_READ,
+				...options,
+			},
 		);
 		return { address: implementation ?? zeroAddress, source };
 	}
@@ -856,7 +891,7 @@ export class GianoPaymasterClient {
 			return {
 				hash,
 				wait: (confirmations?: number) =>
-					this.publicClient.waitForTransactionReceipt({ hash, confirmations }),
+					waitForReceipt(this.publicClient, { hash, confirmations }),
 			};
 		} catch (error) {
 			throw translateContractError(error, {

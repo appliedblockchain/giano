@@ -5,10 +5,12 @@ import {
 	implementationFromSlot,
 	implementationFromUpgradedLogs,
 	isMethodRefusedError,
+	isUpgradedLogWalkLimitError,
 	proxyImplementation,
 	proxyImplementationWithSource,
 	UPGRADED_LOG_CHUNK,
 	UPGRADED_LOG_MAX_CHUNKS,
+	UpgradedLogWalkLimitError,
 } from "../erc1967";
 
 const implementation = getAddress("0x326549c3600bfa31cb44213df0576ae79e70e4ac");
@@ -318,6 +320,111 @@ test("a walk that hits maxChunks continues back on the next read through the sam
 		implementation,
 	);
 	assert.deepEqual(requests.slice(6), [[99_937n, 100_000n]]);
+});
+
+/** `client` with eth_getLogs failing on the requests numbered in `failOn` (1-based), as a rate limit does. */
+function failingOn(client: unknown, failOn: Set<number>) {
+	let calls = 0;
+	const inner = client as { request: (args: unknown) => Promise<unknown> };
+	return {
+		...(client as object),
+		request: async (args: unknown) => {
+			calls++;
+			if (failOn.has(calls))
+				throw Object.assign(new Error("HTTP request failed. Status: 429"), {
+					status: 429,
+				});
+			return inner.request(args);
+		},
+	} as never;
+}
+
+test("a walk stopped at its limit is an UpgradedLogWalkLimitError naming the proxy; a failed request is not", async () => {
+	const { client } = refusingClient(new Map([[60_000n, implementation]]), {
+		block: 100_000n,
+	});
+	await assert.rejects(
+		proxyImplementationWithSource(client, proxy, { maxChunks: 1 }),
+		(error) => {
+			assert.ok(error instanceof UpgradedLogWalkLimitError);
+			assert.ok(isUpgradedLogWalkLimitError(error));
+			assert.match(
+				(error as Error).message,
+				new RegExp(`could not read the implementation of ${proxy}`),
+			);
+			return true;
+		},
+	);
+	const failing = refusingClient(new Map([[60_000n, implementation]]), {
+		block: 100_000n,
+	});
+	await assert.rejects(
+		proxyImplementationWithSource(
+			failingOn(failing.client, new Set([1])),
+			proxy,
+		),
+		(error) => {
+			assert.equal(isUpgradedLogWalkLimitError(error), false);
+			assert.match((error as Error).message, /Status: 429/);
+			return true;
+		},
+	);
+	// The type is found through a cause chain too.
+	assert.ok(
+		isUpgradedLogWalkLimitError(
+			new Error("outer", { cause: new UpgradedLogWalkLimitError("inner") }),
+		),
+	);
+	assert.equal(isUpgradedLogWalkLimitError("not an error"), false);
+});
+
+test("a failed eth_getLogs request keeps the blocks already answered: the next read continues below them", async () => {
+	const head = { block: 100_000n };
+	const { client, requests } = refusingClient(
+		new Map([[60_000n, implementation]]),
+		head,
+	);
+	// The third request fails.
+	const flaky = failingOn(client, new Set([3]));
+	await assert.rejects(proxyImplementation(flaky, proxy), /Status: 429/);
+	assert.deepEqual(requests, [
+		[91_001n, 100_000n],
+		[82_001n, 91_000n],
+	]);
+	// The next read checks the newest blocks, then retries the failed chunk and goes on back.
+	assert.equal(await proxyImplementation(flaky, proxy), implementation);
+	assert.deepEqual(requests.slice(2), [
+		[99_937n, 100_000n],
+		[73_001n, 82_000n],
+		[64_001n, 73_000n],
+		[55_001n, 64_000n],
+	]);
+});
+
+test("a failed request after a complete walk keeps the answer it found", async () => {
+	const head = { block: 100_000n };
+	const { client, requests } = refusingClient(
+		new Map([[60_000n, implementation]]),
+		head,
+	);
+	// The sixth request, the first of the second read, fails.
+	const flaky = failingOn(client, new Set([6]));
+	assert.equal(await proxyImplementation(flaky, proxy), implementation);
+	assert.equal(requests.length, 5);
+	await assert.rejects(proxyImplementation(flaky, proxy), /Status: 429/);
+	// The answer was kept: one request for the newest blocks, no new walk.
+	assert.equal(await proxyImplementation(flaky, proxy), implementation);
+	assert.deepEqual(requests.slice(5), [[99_937n, 100_000n]]);
+});
+
+test("a failed request in the stateless walk is raised as it is", async () => {
+	const failure = new Error("HTTP request failed. Status: 429");
+	await assert.rejects(
+		implementationFromUpgradedLogs(async () => {
+			throw failure;
+		}, 100_000n),
+		failure,
+	);
 });
 
 test("maxChunks must be a non-negative safe integer, checked before any request", async () => {

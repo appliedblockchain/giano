@@ -268,6 +268,22 @@ describe("chainChecks", () => {
 		});
 		expect(checks.some((check) => check.id.endsWith("watcher"))).toBe(false);
 	});
+
+	it("shows an unfinished Upgraded-log search as a warning, not a failed verification", () => {
+		const checks = chainChecks({
+			...healthy,
+			verification: {
+				checkedAt: "2026-11-03T12:00:00Z",
+				failures: [{ kind: "paymaster-implementation-unresolved" }],
+			},
+		});
+		expect(
+			checks.find((check) => check.id.endsWith("paymaster-search")),
+		).toMatchObject({ level: "warn" });
+		expect(checks.some((check) => check.id.endsWith("verification"))).toBe(
+			false,
+		);
+	});
 });
 
 describe("signerCheck", () => {

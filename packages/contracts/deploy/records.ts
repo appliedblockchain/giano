@@ -4,7 +4,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Address, Hex } from "viem";
+import { type Address, getAddress, type Hex } from "viem";
 import {
 	type LabelKey,
 	type NetworkClass,
@@ -62,6 +62,12 @@ export type DeployedContract = {
 	deterministic?: boolean;
 	/** Absent when the contract was already there when the CLI ran. */
 	transactionHash?: Hex;
+	/**
+	 * The block of `transactionHash`, from its receipt. For the paymaster proxy, the block of its
+	 * first `Upgraded` event: a walk through its logs starts here, not at block 0. Absent in a
+	 * record written before it was added.
+	 */
+	blockNumber?: number;
 };
 
 /** A deviation from the deterministic addresses, as the run reported it and the operator confirmed it. */
@@ -101,6 +107,22 @@ export type DeploymentRecord = {
 	/** Every deviation from the deterministic addresses, oldest first. Never removed. */
 	deviations?: RecordedDeviation[];
 };
+
+/**
+ * The block the record says deployed the paymaster proxy at `proxy`: where a walk through its
+ * `Upgraded` logs can start. Undefined when the record names another proxy or has no block, and the
+ * walk then starts at block 0.
+ */
+export function paymasterProxyDeployBlock(
+	record: DeploymentRecord | undefined,
+	proxy: Address,
+): bigint | undefined {
+	const entry = record?.contracts.paymasterProxy;
+	return entry?.blockNumber !== undefined &&
+		getAddress(entry.address) === getAddress(proxy)
+		? BigInt(entry.blockNumber)
+		: undefined;
+}
 
 export function recordPath(chainId: number, dir = deploymentsDir()): string {
 	return path.join(dir, `${chainId}.json`);

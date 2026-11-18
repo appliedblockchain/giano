@@ -207,6 +207,34 @@ const privateToken = (
 	deterministic: true,
 });
 
+test("the paymaster proxy's deployment block enters the registry as a number, and only when recorded", () => {
+	const withBlock = record();
+	withBlock.contracts.paymasterProxy = {
+		...(withBlock.contracts.paymasterProxy as NonNullable<
+			DeploymentRecord["contracts"]["paymasterProxy"]
+		>),
+		blockNumber: 1_234_567,
+	};
+	assert.match(
+		generate(withBlock).text,
+		/8453: \{[^}]*sponsorshipPaymasterDeployBlock: 1234567,/,
+	);
+	assert.doesNotMatch(
+		generate(record()).text,
+		/8453: \{[^}]*sponsorshipPaymasterDeployBlock/,
+	);
+	withBlock.contracts.paymasterProxy = {
+		...(withBlock.contracts.paymasterProxy as NonNullable<
+			DeploymentRecord["contracts"]["paymasterProxy"]
+		>),
+		blockNumber: -1,
+	};
+	assert.throws(
+		() => generate(withBlock),
+		/chain 8453: invalid paymasterProxy blockNumber -1/,
+	);
+});
+
 test("a testnet that carries the private test token lists it in its registry entry", () => {
 	const testnet = { ...record(), chainId: 19877, network: "testnet" as const };
 	testnet.contracts.privateTestErc20 = privateToken();

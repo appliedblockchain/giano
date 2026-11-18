@@ -96,6 +96,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { waitForReceipt } from "../receipt";
 import {
 	formatDuration,
 	parseDuration,
@@ -728,6 +729,7 @@ async function main(): Promise<void> {
 						: ctx.target.profile?.timelock?.address,
 					acceptUnverifiedImplementation:
 						values["accept-unverified-implementation"],
+					record: ctx.record,
 				},
 			))
 				log(`  ⚠ ${warning}`);
@@ -878,7 +880,7 @@ async function main(): Promise<void> {
 				to: proxy,
 				data: calldata,
 			});
-			const receipt = await ctx.publicClient.waitForTransactionReceipt({
+			const receipt = await waitForReceipt(ctx.publicClient, {
 				hash,
 			});
 			if (receipt.status !== "success")
@@ -1063,7 +1065,7 @@ async function main(): Promise<void> {
 					to: proxy,
 					data: call.data,
 				});
-				const receipt = await publicClient.waitForTransactionReceipt({ hash });
+				const receipt = await waitForReceipt(publicClient, { hash });
 				if (receipt.status !== "success")
 					throw new Error(`${call.description} reverted (${hash})`);
 				log(`  + ${call.description}  ${hash}`);

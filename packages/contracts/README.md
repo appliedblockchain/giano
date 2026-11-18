@@ -256,9 +256,15 @@ const implementation = await proxyImplementation(publicClient, paymasterProxy);
   deployment block. One read sends at most `options.maxChunks` requests (default
   `UPGRADED_LOG_MAX_CHUNKS`, 1,000, that is 9,000,000 blocks). `maxChunks` must be a non-negative
   safe integer; any other value throws before any request. When a read reaches the limit without
-  an event, it throws, and the next read through the same client continues the search further
-  back from where the last one stopped. When the search reaches `fromBlock` without an event, it
-  returns null.
+  an event, it throws `UpgradedLogWalkLimitError`, and the next read through the same client
+  continues the search further back from where the last one stopped. When an `eth_getLogs` request
+  fails (a timeout, a rate limit), the read throws that error, and the next read through the same
+  client continues below the blocks that were answered. `isUpgradedLogWalkLimitError(error)` tells
+  the two apart. When the search reaches `fromBlock` without an event, it returns null.
+- The deploy CLI records the block of each contract it deploys (`blockNumber` in
+  `deployments/<chainId>.json`), and the registry carries the paymaster proxy's as
+  `sponsorshipPaymasterDeployBlock`. wallet-api's chain check, `giano-doctor`, the deploy tooling
+  and the paymaster SDK's `fromRegistry` client start the walk there, for the registry's proxy only.
 - The result is kept per client object, per proxy and per `fromBlock`, up to a checkpoint 64
   blocks behind the head. Each read searches the blocks after the checkpoint again, so a caller
   that reads on every block normally sends one `eth_getLogs` request each time. An upgrade newer

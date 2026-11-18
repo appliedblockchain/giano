@@ -22,6 +22,7 @@ import {
 	zeroAddress,
 } from "viem";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { waitForReceipt } from "../receipt";
 import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
 	delayPolicyProblems,
@@ -220,7 +221,7 @@ export async function deployLabel(
 
 	const transactionHash = await walletClient.writeContract(request);
 	ctx.log(`  → ${label}: submitted ${transactionHash}; waiting for receipt`);
-	const receipt = await ctx.publicClient.waitForTransactionReceipt({
+	const receipt = await waitForReceipt(ctx.publicClient, {
 		hash: transactionHash,
 	});
 	if (receipt.status !== "success")
@@ -234,6 +235,7 @@ export async function deployLabel(
 	return {
 		...releaseCode(label, release, contract, address, code),
 		transactionHash,
+		blockNumber: Number(receipt.blockNumber),
 	};
 }
 
@@ -478,7 +480,7 @@ export async function deployTesting(
 			to: testPaymaster.address,
 			value: params.fundWei,
 		});
-		await ctx.publicClient.waitForTransactionReceipt({ hash });
+		await waitForReceipt(ctx.publicClient, { hash });
 		ctx.log(
 			`  + funded the test paymaster's deposit with ${params.fundWei} wei`,
 		);
@@ -582,7 +584,7 @@ export async function deployTimelock(
 	if (!ctx.walletClient) throw new Error("Timelock deployment needs a signer");
 	const hash = await ctx.walletClient.sendTransaction({ data: initCode });
 	ctx.log(`  → GianoTimelock: submitted ${hash}; waiting for receipt`);
-	const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash });
+	const receipt = await waitForReceipt(ctx.publicClient, { hash });
 	if (receipt.status !== "success" || !receipt.contractAddress)
 		throw new Error(`deploying GianoTimelock reverted (${hash})`);
 	const address = getAddress(receipt.contractAddress);
