@@ -7,6 +7,9 @@ import {UCEFOwned} from "../../lib/ucef-contracts/packages/ucef/contracts/UCEFOw
 /// @notice Test fixture for chains whose RPC enforces private reads (Silent Data). Only the holder
 ///         can read its balance; any other caller reverts with `UCEFUnauthorizedBalanceAccess`.
 ///         Transfer and approval events are `PrivateEvent` logs that only the parties can see.
+///         `totalSupply()` is public (UCEF), and every mint changes it: comparing it before
+///         and after a block shows the amounts minted, and while one account holds the whole
+///         supply, it is that account's balance.
 /// @dev Anyone can mint to themselves. Deployed by `deploy:cli testing` under
 ///      `giano.test.private-erc20`, never on a production chain (R-29). On a public chain the
 ///      privacy is not enforced: anyone can read storage and calldata.

@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Hex } from "viem";
+import { FIXTURE_CONTRACTS } from "../deploy/fixtures";
 import {
 	latestRelease,
 	listReleases,
@@ -50,7 +51,17 @@ function hex(object: string): Hex {
 	return (object.startsWith("0x") ? object : `0x${object}`) as Hex;
 }
 
-/** A clean Foundry build of src/ (no tests or scripts), returned as solc's input and output. */
+/**
+ * The fixtures' source files (deploy/fixtures.ts). A release never carries a fixture, so the release
+ * build leaves them, and everything only they import (UCEF), out of standard-input.json.
+ */
+const FIXTURE_SOURCES = Object.values(FIXTURE_CONTRACTS).map(
+	({ source }) => source,
+);
+
+/**
+ * A clean Foundry build of src/ (no tests, scripts or fixtures), returned as solc's input and output.
+ */
 function foundryBuild(): BuildInfo {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "giano-release-"));
 	try {
@@ -62,6 +73,8 @@ function foundryBuild(): BuildInfo {
 				"test",
 				"--skip",
 				"script",
+				// forge skips every file whose path contains the filter.
+				...FIXTURE_SOURCES.flatMap((source) => ["--skip", source]),
 				"--force",
 				"--build-info",
 				"--build-info-path",
@@ -77,9 +90,17 @@ function foundryBuild(): BuildInfo {
 			throw new Error(
 				`expected one build-info file from forge, got ${files.length}`,
 			);
-		return JSON.parse(
+		const build = JSON.parse(
 			fs.readFileSync(path.join(dir, files[0]), "utf8"),
 		) as BuildInfo;
+		const fixtures = FIXTURE_SOURCES.filter((source) =>
+			Object.hasOwn(build.input.sources, source),
+		);
+		if (fixtures.length)
+			throw new Error(
+				`the release build includes the fixture source ${fixtures.join(", ")}`,
+			);
+		return build;
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}

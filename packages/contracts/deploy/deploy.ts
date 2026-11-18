@@ -108,7 +108,7 @@ export type TestingParams = {
 /**
  * Whether `testing` deploys GianoTestPrivateErc20 (openspec silent-data-network, design D7). Its
  * privacy holds only where the RPC enforces private reads, so a remote chain needs its profile to opt
- * in (`privateTestErc20: true`; a mainnet profile cannot, R-29). A local chain always gets it, for the
+ * in (`privateTestErc20: true`; a production chain's profile cannot, R-29). A local chain always gets it, for the
  * local Silent Data gateway. It comes from a committed artifact (deploy/fixtures.ts), so the release
  * plays no part.
  */
@@ -458,6 +458,26 @@ export async function deployTesting(
 	params: TestingParams,
 ): Promise<void> {
 	const c = release.contracts;
+	const privateToken = {
+		label: LABELS.privateTestErc20,
+		release: FIXTURE_RELEASE,
+		contract: CONTRACT_OF.privateTestErc20,
+	};
+	if (params.privateTestErc20) {
+		// Checked before the first send: code at its address that is not the artifact's would
+		// otherwise stop the run after the other fixtures are deployed and funded, before the CLI
+		// saves their record entries.
+		const address = create3Address(ctx.deployer, privateToken.label);
+		const existing = await ctx.publicClient.getCode({ address });
+		if (existing && existing !== "0x")
+			releaseCode(
+				privateToken.label,
+				privateToken.release,
+				privateToken.contract,
+				address,
+				existing,
+			);
+	}
 	await deployTestToken(ctx, release, params.holder);
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
@@ -490,10 +510,8 @@ export async function deployTesting(
 			ctx,
 			"privateTestErc20",
 			await deployLabel(ctx, {
-				label: LABELS.privateTestErc20,
-				release: FIXTURE_RELEASE,
-				contract: CONTRACT_OF.privateTestErc20,
-				initCode: loadFixture(CONTRACT_OF.privateTestErc20).creationCode,
+				...privateToken,
+				initCode: loadFixture(privateToken.contract).creationCode,
 			}),
 		);
 }

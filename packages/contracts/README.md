@@ -160,19 +160,22 @@ operator commands `pnpm contracts:deploy`, `contracts:provision`, `contracts:tim
 `testing` deploys the test fixtures: `PrivateERC20` (`giano.test.erc20`) and `PermissivePaymaster`
 (`giano.test.paymaster`). It refuses a production chain (R-29). It also deploys the private test token
 `GianoTestPrivateErc20` (`giano.test.private-erc20`), a UCEF token whose balance only the holder can
-read. It builds on UCEF's `UCEFOwned`, from the `lib/ucef-contracts` git submodule.
+read. Its `totalSupply()` stays public, so it shows the amounts minted (`fixtures/README.md`). It
+builds on UCEF's `UCEFOwned`, from the `lib/ucef-contracts` git submodule.
 The npm package leaves its source out: the source imports `lib/`, which the package does not ship,
 and no consumer needs it. Its ABI is in `generated.ts`.
 
 - On a remote chain, only when the chain's profile sets `"privateTestErc20": true`. Set it only where
   the RPC enforces private reads (Silent Data): on a public chain anyone can read the token's storage,
-  so a "private" token would mislead. A mainnet profile cannot set it.
+  so a "private" token would mislead. A production chain's profile (a mainnet, Base Sepolia or
+  Sepolia) cannot set it.
 - On a local chain, always.
 
 No release carries the token: it exists only for the demo. The CLI deploys it from the committed
 artifact `fixtures/private-test-erc20.json`, whatever the release (`fixtures/README.md`). Regenerate
 the artifact with `pnpm gen:fixtures` after a change to the token or to UCEF; CI fails on drift. The
-record names its release as `fixture`, with the artifact's fingerprint. The registry lists it as
+record names its release as `fixture`, with the artifact's fingerprint. The artifact keeps the
+fingerprints of its earlier versions, so a chain that holds an earlier token still matches. The registry lists it as
 `privateTestErc20`, and `gen:addresses` fails on a production chain that carries it.
 
 The CLI takes a chain's class and overrides from `--chain <profile>`, else from the committed profile

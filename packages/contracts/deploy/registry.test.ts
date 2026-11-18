@@ -253,6 +253,13 @@ test("the private test token's code is checked against its committed artifact", 
 		() => generate(testnet),
 		/privateTestErc20 at 0x7777777777777777777777777777777777777777 .* matches no release's GianoTestPrivateErc20 \(release-fingerprints.ts\) nor its fixture artifact/,
 	);
+	// An earlier version of the artifact: the chain keeps the code it was deployed with.
+	const [earlier] = loadFixture("GianoTestPrivateErc20").previous;
+	testnet.contracts.privateTestErc20 = privateToken(earlier.fingerprint);
+	assert.match(
+		generate(testnet).text,
+		/19877: \{[^}]*privateTestErc20: '0x7777777777777777777777777777777777777777'/,
+	);
 	// The artifact's code recorded under a release: the record must name `fixture`.
 	testnet.contracts.privateTestErc20 = { ...privateToken(), release: "v3" };
 	assert.throws(
