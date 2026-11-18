@@ -11,6 +11,7 @@
 		"lint": "biome check .",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
+		"test": "node --test test/*.test.ts",
 		"build": "pnpm lint && tsc --noEmit && vite build && node scripts/scan-bundle.mjs",
 		"preview": "vite preview --port 4410"
 	},

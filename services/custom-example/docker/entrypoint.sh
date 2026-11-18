@@ -12,7 +12,7 @@ set -eu
 #
 # Contract (see .env.development for the same names under `pnpm dev`):
 #   GIANO_WALLET_URL          required  the TENANT wallet origin
-#   GIANO_CHAINS              primary   JSON array of { chainId, name, rpcUrl, explorerUrl?, defaultToken? }
+#   GIANO_CHAINS              primary   JSON array of { chainId, name, rpcUrl, explorerUrl?, defaultToken?, privateToken? }
 #   GIANO_OTHER_WALLET_URL    optional  a wallet origin that does not allow-list this dApp (failure lab)
 #   GIANO_APP_LABEL           optional  free-text tag beside the title
 #   GIANO_RPC_UPSTREAM_<id>   optional  keyed RPC for chain <id>, proxied same-origin at /rpc/<id>

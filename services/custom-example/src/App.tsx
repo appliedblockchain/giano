@@ -24,6 +24,7 @@ import { IdentityCard } from "./components/IdentityCard";
 import { EventsCard, LedgerCard } from "./components/LedgerCard";
 import { ManagementCard } from "./components/ManagementCard";
 import { PreflightCard, PreflightLine } from "./components/PreflightCard";
+import { PrivateTokenCard } from "./components/PrivateTokenCard";
 import { RawUserOpCard } from "./components/RawUserOpCard";
 import { SetupInfoCard } from "./components/SetupInfoCard";
 import { SigningCard } from "./components/SigningCard";
@@ -84,7 +85,7 @@ const TAB_INTRO: Record<TabId, string> = {
 	transactions:
 		"Send value or call a contract, and sign messages. Declare who you expect to pay for gas; the receipt says who did.",
 	tokens:
-		"Giano's test ERC-20, deployed at the same address on every chain: mint it, move it, approve a spender, sign a permit.",
+		"Giano's test ERC-20, deployed at the same address on every chain: mint it, move it, approve a spender, sign a permit. On a chain that names one, a private token whose balance only the holder can read.",
 	advanced:
 		"The pieces behind the simple buttons: the raw user-operation pipeline, and the wagmi and RainbowKit adapters.",
 	"failure-lab":
@@ -175,7 +176,12 @@ function TabBody({ id }: { id: TabId }) {
 				</>
 			);
 		case "tokens":
-			return <Erc20Card />;
+			return (
+				<>
+					<Erc20Card />
+					<PrivateTokenCard />
+				</>
+			);
 		case "advanced":
 			return (
 				<>

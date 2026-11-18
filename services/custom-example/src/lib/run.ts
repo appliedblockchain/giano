@@ -36,6 +36,11 @@ export type ActionSpec = {
 	token?: Address;
 	/** A deliberate failure control: a failure is the expected outcome and is recorded as `refused`. */
 	expected?: boolean;
+	/**
+	 * With `expected`, the one failure that is the expected outcome. Any other failure is recorded as
+	 * `failed`, and the entry is no longer marked expected. Without it, every failure counts.
+	 */
+	expectedError?: (error: ErrorRecord) => boolean;
 	/** A 4001 after a sponsored send is ambiguous (finding G5); annotate it. */
 	sponsoredSend?: boolean;
 	/** Skip balance captures (signing, reads). */
@@ -150,9 +155,12 @@ export async function runAction<T>(
 		console.error(`[giano-demo] ${spec.section}/${spec.method} failed`, raw);
 		const timedOut =
 			error.name === "TransportError" && error.code === "REQUEST_TIMEOUT";
+		const refused =
+			spec.expected === true && (spec.expectedError?.(error) ?? true);
 		patch({
-			status: timedOut ? "timed-out" : spec.expected ? "refused" : "failed",
+			status: timedOut ? "timed-out" : refused ? "refused" : "failed",
 			error,
+			...(spec.expected && !refused ? { expected: false } : {}),
 		});
 		if (isSessionEnded(raw)) ctx.onSessionEnded?.(spec.chainId, error);
 	}

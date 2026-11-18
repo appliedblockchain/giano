@@ -16,6 +16,7 @@ export type Section =
 	| "signing"
 	| "raw-userop"
 	| "erc20"
+	| "private-token"
 	| "management"
 	| "adapters"
 	| "failure-lab";
