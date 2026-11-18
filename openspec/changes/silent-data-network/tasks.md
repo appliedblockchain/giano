@@ -1,0 +1,101 @@
+# Tasks
+
+## Delivery: pull requests
+
+The work lands in these PRs, in this order, as one stack managed with `gh stack`. Each PR carries the tests and docs of its own tasks, and passes `pnpm lint` and the tests and typecheck of each package it touches. Branches follow AGENTS.md (`feat/`, `fix/`, `chore/`, `docs/`). No commit, push or PR is made without the user's explicit instruction each time.
+
+| PR | Title | Tasks | Base | Changeset |
+|---|---|---|---|---|
+| 0 | `openspec(contracts, bundler): Silent Data network support (H6)` | this change folder only | `main` (bottom of the stack) | none |
+| 1 | `fix(contracts): read the proxy implementation from Upgraded logs (H6)` | group 1 | PR 0 | `giano-contracts` minor, `giano-paymaster-sdk` patch |
+| 2 | `feat(bundler): estimate without state overrides; accept fee 0 on gasless chains (H6)` | group 2 | PR 1 | `giano-contracts` minor (`chains.ts` schema) |
+| 3 | `feat(contracts): sign RPC requests with --signed-rpc (H6)` | group 3 | PR 2 | `giano-contracts` minor |
+| 4 | `feat(contracts): private test ERC-20 for Silent Data chains (H6)` | group 5 | PR 3 | `giano-contracts` minor |
+| 5 | `feat(custom-example): private token section (H6)` | task 4.2, group 6, task 9.1 | PR 4 | none (private package) |
+| 6a | `chore(contracts): adopt iron-kestrel (H6)` | group 8 | PR 5 | `giano-contracts` patch (`addresses.ts`) |
+| 6b | `chore(contracts): adopt copper-heron (H6)` | group 7 | PR 6a (top of the stack) | `giano-contracts` patch (`addresses.ts`) |
+
+- Every PR is one layer of the same stack, based on the PR in the row above. The stack merges bottom-up with `gh stack merge`, with merge commits, never squash. `gh stack merge` merges every PR up to the one chosen in one operation, so the lower layers can merge while a higher layer waits.
+- The stack follows the per-chain-contract-addresses stack (#196–#201). PR 0's branch is `docs/openspec-silent-data-network`. Its description has `## Summary`, `## Open questions` and `## Test plan` (`openspec validate silent-data-network --strict`, `biome ci .`), and says the implementation follows as a `gh stack` set out in this file. Every other PR's description starts "Layer N of the `silent-data-network` stack (OpenSpec change in #<PR 0>, tasks …)", where N is its position from the bottom (PR 0 is layer 1), then has `## What` and `## Verification`.
+- PRs 1, 2 and 3 change separate files, so a rebase of the stack (`gh stack rebase`) does not conflict between them.
+- Task 4.1 is a check, not a PR. It runs before PR 5 is written. If it fails, PR 5 waits, and PRs 0–4 still merge. PRs 6a and 6b sit above PR 5 and wait with it: task 9.2 needs the demo's private token section anyway.
+- PRs 6a and 6b wait for the testnet canonical deployer key. PR 6b also waits for funding of the copper-heron presigned senders. Each commits one `deployments/<chainId>.json` and the `addresses.ts` that `gen:addresses` regenerates from it. The published registry changes, so each carries a `giano-contracts` patch changeset. Each is added to the top of the stack when its work can start.
+- Task 9.2 is recorded in the description of PR 6a and PR 6b, one chain each. PR 6b also records the checks across both chains.
+
+- [x] 0.1 Split the uncommitted work on `feat/silent-data-network` into the branches for PRs 0–3. Each file goes to one branch: the change folder to PR 0; `erc1967.ts`, `deploy/erc1967.test.ts`, `scripts/doctor.ts` and paymaster-sdk `client.ts` to PR 1; `chains.ts`, bundler `config.ts`, `estimator.ts`, `registry.ts` and `test/config.test.ts` to PR 2; `deploy/signed-rpc.ts`, `deploy/cli.ts` and `scripts/provision-paymaster.ts` to PR 3. Verify that each branch passes lint, tests and typecheck on its own, on top of `main`.
+- [x] 0.2 Replace `.changeset/silent-data-rpc-limits.md` with one changeset per PR, as in the table above. Verify that `pnpm changeset status` lists the expected bumps on each branch.
+- [ ] 0.3 After the user approves a commit on each of the PR 0–3 branches, rebase PR 1 onto PR 0, PR 2 onto PR 1 and PR 3 onto PR 2, and register them as one stack with `gh stack init`, bottom first. Verify with `gh stack view` that each layer is based on the one below, and that each branch still passes lint, tests and typecheck.
+
+## 1. Proxy implementation without storage reads (contracts, doctor, paymaster SDK)
+
+- [x] 1.1 Add `UPGRADED_TOPIC`, `UPGRADED_LOG_CHUNK`, `implementationFromUpgradedLogs` and `proxyImplementation` to `packages/contracts/erc1967.ts` (design D1). Verified: `deploy/erc1967.test.ts` covers the chunked walk and the fallback-then-rethrow; `pnpm -F @appliedblockchain/giano-contracts test:deploy` passes 92/92.
+- [x] 1.2 `scripts/doctor.ts` falls back to the `Upgraded` logs when `getStorage` fails. Verified: `giano-doctor` through the local gateway prints "✓ paymaster implementation runs release code: GianoPaymaster v3".
+- [x] 1.3 `packages/paymaster-sdk/src/client.ts` `readImplementationSlot()` uses `proxyImplementation`. Verified: paymaster-sdk tests pass 157/157, and wallet-api `/v1/version` reports the gateway chain `ready`.
+- [x] 1.4 Add a paymaster-sdk test: with a client whose `getStorageAt` throws, `readImplementationSlot()` returns the implementation from a mocked `eth_getLogs`, and every requested span is at most 10,000 blocks, so it passes the platform read relay's limit. Verify with `pnpm -F @appliedblockchain/giano-paymaster-sdk test`.
+- [x] 1.5 Document the fallback in `packages/contracts/README.md` (the `erc1967` exports). Verify that the README names `proxyImplementation` and the 10,000-block span.
+
+## 2. Bundler on restricted chains
+
+- [x] 2.1 Add `bundler.stateOverride` (default `true`) to `packages/contracts/chains.ts` and `services/bundler/src/config.ts`, and pass it through `registry.ts` to the estimator. Verified: `services/bundler/test/config.test.ts` expects the default `stateOverride: true`.
+- [x] 2.2 Estimator: with `stateOverride: false`, return the fixed limits from `fixedEstimate`. `preVerificationGasFor` is shared by both paths (design D2). Verified: an estimate through the local gateway returned verification gas `0xf4240` and call gas `0x493e0`.
+- [x] 2.3 Estimator: refuse `maxFeePerGas` 0 only when the latest base fee is above 0 (design D3). Verified manually: refused at base fee above 0, accepted after `anvil_setNextBlockBaseFeePerGas 0`.
+- [ ] 2.4 Add estimator unit tests in `services/bundler/test/`. Each spec scenario of "Gas estimation without state overrides" and "A fee of 0 is accepted on a chain that charges no gas" gets a test. Include the assertion that no `eth_call` carries a third parameter when `stateOverride` is `false`, and that OP Stack pre-verification gas includes the L1 fee on the fixed path. Verify with `pnpm -F giano-bundler test`.
+- [ ] 2.5 `lookup.ts` `byHash`: answer `null` when the bundle transaction's input is `0x` or does not decode as `handleOps` (design D5). Add tests for a redacted transaction (`null`, and the receipt still answers) and a readable one (unchanged). Verify with `pnpm -F giano-bundler test`.
+- [ ] 2.6 Add a test that the user operation receipt reports `success` and `actualGasUsed` from `UserOperationEvent` when the transaction receipt has `from` `0x0` and `gasUsed` `0`. Verify with `pnpm -F giano-bundler test`.
+- [ ] 2.7 Document `stateOverride` in the bundler README and in `packages/contracts/chains.ts` doc comments: when to set it, the fixed limits, and their cost on a gas-charging chain. Verify that the README section exists and matches the constants in `estimator.ts`.
+- [ ] 2.8 Add wallet-api tests for fixed limits on a gas-charging chain: the maximum charge from the fixed limits is refused when it exceeds `maxCostPerTxWei`, and a sponsored operation reserves the maximum and settles at the event's actual cost. Also test that a gasless chain (`maxFeePerGas` 0) has a gas part of 0. Verify with `pnpm -F wallet-api test`.
+
+## 3. Operator tools with signed RPC requests
+
+- [x] 3.1 Add `packages/contracts/deploy/signed-rpc.ts` (`signedHttp`, `delegateTicketMessage`) and `deploy:cli --signed-rpc`. Without a key, the flag throws (design D4). Verified: `deploy:cli core --signed-rpc` deployed through the local gateway on a fresh anvil, and without the flag the run fails with "CreateX would deploy…".
+- [x] 3.2 Add `provision:paymaster --signed-rpc` (ethers `FetchRequest` pre-flight, batch size 1). Verified: provisioning through a second local gateway succeeded, and without the flag it fails with `AccessControlUnauthorizedAccount`.
+- [ ] 3.3 Add unit tests for `signed-rpc.ts`: the `x-signature` recovers to the signer over `chainId + body + timestamp`; `x-timestamp` is RFC 3339; the delegate headers are present only with a delegate. Verify with `pnpm -F @appliedblockchain/giano-contracts test:deploy`.
+- [ ] 3.4 Add a test that `deploy:cli core --signed-rpc` without `DEPLOYER_PRIVATE_KEY` exits non-zero and sends no request. Verify with the same command.
+- [ ] 3.5 Update `specs/CHAIN-ADOPTION.md`: a note under the EntryPoint paragraph for RPCs that refuse state overrides or `eth_getStorageAt` (set `bundler.stateOverride: false`; the log fallback is automatic), and `--signed-rpc` in steps 4 and 7 for a gateway that rewrites `from`. For a gas-charging chain with `stateOverride: false`, add the sizing of the paymaster deposit, the tenant balances, `maxCostPerTxWei` and the wallet-management cap for the fixed limits. Verify that the checklist names all three.
+- [x] 3.6 Add the changeset `.changeset/silent-data-rpc-limits.md` (`giano-contracts` minor, `giano-paymaster-sdk` patch). Task 0.2 splits it per PR.
+
+## 4. Signed reads for a Giano wallet (demo foundation)
+
+- [ ] 4.1 Run a script against the local gateway on anvil to prove that a deployed Giano wallet can approve a delegate ticket through `personal_sign` over `keccak256(chainId + JSON(ticket))`. A signed `eth_call` with `x-signer-swc` must then run with `from` set to the wallet. Use a call to code that returns `CALLER`. Record the exact message encoding that works in design D6. If no encoding works, stop and raise it with the Silent Data team before tasks 4.2 to 6.x.
+- [ ] 4.2 Add a demo module (viem only) that holds the ephemeral key in memory, builds and caches the delegate ticket (expiry at most 1 hour), asks the wallet for one `personal_sign`, and signs each read. Add unit tests for the header set and the expiry renewal. Verify with `pnpm --dir services/custom-example typecheck` and its tests.
+
+## 5. Private test token
+
+- [ ] 5.1 Copy `UCEF.sol`, `UCEFOwned.sol` and the interfaces they import from `appliedblockchain/ucef-contracts` commit `03913b1` into `packages/contracts/vendor/ucef/`, with the MIT licence and a README naming the commit (design D7). Verify that `forge build` passes.
+- [ ] 5.2 Add `GianoTestPrivateErc20 is UCEFOwned` with an open `mint(amount)` to the caller. Add Forge tests: the holder reads its balance; another caller reverts with `UCEFUnauthorizedBalanceAccess`; mint increases the holder's balance. Verify with `forge test`.
+- [ ] 5.3 Add the label `giano.test.private-erc20` and deploy it from `deploy:cli testing` only for profiles that enable it. It is never deployed to a production chain (R-29). Add a deploy test for both cases. Verify with `pnpm -F @appliedblockchain/giano-contracts test:deploy`.
+- [ ] 5.4 Expose the private token in the address registry for chains that carry it. Extend `gen:addresses`, and add a registry test that a production chain has no entry. Verify with `pnpm -F @appliedblockchain/giano-contracts gen:addresses` and the tests.
+
+## 6. Demo private token section
+
+- [ ] 6.1 Accept `privateToken?` in the demo's `GIANO_CHAINS` entries. An invalid address renders the configuration-error screen naming `privateToken`. Add tests for both cases. Verify with the demo's config tests.
+- [ ] 6.2 Add the private token section: signed balance read, mint, transfer, and the ledger entries. The section is hidden when the chain has no `privateToken`, and says "deploy the wallet first" for a counterfactual wallet. Verify against the local gateway: mint then transfer, and the signed balance changes by each amount.
+- [ ] 6.3 Add the outsider view: an unsigned balance read (refused), a read for another address (refused), and the latest transfer's bundle transaction read unsigned (placeholders). A returned balance raises a persistent violation banner and a ledger entry. Verify against the local gateway that all three show as refused or redacted.
+- [ ] 6.4 Document the section in the demo README and in `specs/INTEGRATION.md`, as a snippet of the delegate flow. The snippet must match the demo code, per the demo-dapp rule "The demo is the documented integration". Verify that the snippet and the code agree.
+
+## 7. Copper-heron adoption: gasless, not OP Stack (blocked: testnet canonical deployer key, and funding of the presigned senders)
+
+- [ ] 7.1 After the Arachnid sender (0.01 ETH) and the CreateX sender (0.3 ETH) are funded, confirm that the Arachnid factory is mined and send the CreateX presigned transaction. Verify that `eth_getCode` is non-empty at both addresses on 19877.
+- [ ] 7.2 Deploy EntryPoint v0.9 through Arachnid. Verify that `eth_getCode` at `0x433709009B8330FDa32311DF1C2AFA402eD8D009` matches the canonical runtime code.
+- [ ] 7.3 Run `deploy:cli core --rpc <write URL> --chain <profile> --signed-rpc --role-admin <admin>` with the testnet canonical key, in the shell environment only. Commit `deployments/19877.json`. Verify that `gen:addresses` passes and the record lists no deviation.
+- [ ] 7.4 Run `deploy:cli testing --signed-rpc` to deploy the private test token. Verify that the address equals the one planned for the testnet class.
+- [ ] 7.5 Run `provision:paymaster --signed-rpc` (signer, stake, dev tenant). Verify that `giano-doctor chain --rpc <url> --chain-id 19877` is green.
+- [ ] 7.6 Add the 19877 entry to the dev `chains` secret (`bundler.rpcUrl` = write URL, `bundler.stateOverride: false`), and add `privateToken` to the demo's dev chain list. Fund the bundler executor on 19877. Verify that `GET /v1/version` lists 19877 as `ready`.
+
+## 8. Iron-kestrel adoption: gas-charging, OP Stack (blocked: testnet canonical deployer key)
+
+- [x] 8.1 Confirm the RIP-7212 P-256 precompile on 19874 with an `eth_call` to `0x…0100` using a known valid test vector. Verify that the call returns 1. If it does not, deploy the FreshCryptoLib verifier (checklist step 3). Done on 2026-11-16: a fresh valid signature returned 1, and a tampered one returned `0x`.
+- [ ] 8.2 Deploy EntryPoint v0.9 through the Arachnid factory, which is already on 19874, from any funded key. Verify that `eth_getCode` at `0x433709009B8330FDa32311DF1C2AFA402eD8D009` matches the canonical runtime code.
+- [ ] 8.3 Run `deploy:cli core --signed-rpc` with the testnet canonical key, then `deploy:cli testing --signed-rpc`. Commit `deployments/19874.json`. Verify that `gen:addresses` passes, the record lists no deviation, and every address equals copper-heron's.
+- [ ] 8.4 Run `provision:paymaster --signed-rpc`, and fund the paymaster deposit and the dev tenant's balance for the fixed limits at the chain's gas price. Fund the bundler executor on 19874. Verify that `giano-doctor chain --rpc <url> --chain-id 19874` is green.
+- [ ] 8.5 Add the 19874 entry to the dev `chains` secret (`bundler.rpcUrl` = write URL, `bundler.stateOverride: false`; `chainType` stays `auto`, which detects OP Stack), and add `privateToken` to the demo's dev chain list. Verify that `GET /v1/version` lists 19874 as `ready`.
+
+## 9. Integration checks
+
+- [ ] 9.1 Local end to end through the gateway on anvil, with `stateOverride: false`, run twice: once with anvil's default base fee (gas-charging) and once with base fee 0 (`anvil_setNextBlockBaseFeePerGas 0`, gasless). Each run covers wallet deploy, a sponsored ETH transfer, mint and transfer of the private test token, and the demo's outsider view. Verify that every step succeeds in both runs, that the tenant ledger settles at the actual cost in the gas-charging run, and that wallet-api and the bundler log no WARN or ERROR.
+- [ ] 9.2 On copper-heron and on iron-kestrel (after groups 7 and 8): one sponsored transaction and the demo's private token section, end to end, on each chain. Connect the same passkey on both, so the demo's identity panel shows the same wallet address on both chains. On iron-kestrel, check that the tenant was charged the actual cost, including the L1 fee. Record the transaction hashes and the wallet address in the PR description.
+- [ ] 9.3 Before each PR is opened, run `pnpm lint`, and the tests and typecheck of each package that PR touches (giano-contracts, giano-paymaster-sdk, giano-bundler, wallet-api, custom-example). For PRs 1 and 4, also run `forge test`. Verify that all pass on each PR's branch.
+
+## Workflow follow-up
+
+- Archive the change after PRs 0–5 merge and PRs 6a and 6b pass task 9.2. The change is complete only when Giano is deployed on both iron-kestrel and copper-heron.
