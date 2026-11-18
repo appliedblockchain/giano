@@ -455,13 +455,21 @@ function rpcSigner(keyEnv: string): LocalAccount | undefined {
 	return privateKeyToAccount(key as `0x${string}`);
 }
 
-/** UPGRADER_PRIVATE_KEY, for `upgrade --execute`: an account holding UPGRADER_ROLE. */
+/**
+ * UPGRADER_PRIVATE_KEY, for `upgrade --execute`: an account holding UPGRADER_ROLE. Parsed here, so a
+ * malformed key stops the run before the upgrade target is deployed.
+ */
 function upgraderPrivateKey(): `0x${string}` {
 	const key = process.env.UPGRADER_PRIVATE_KEY;
 	if (!key)
 		throw new Error(
 			"--execute needs UPGRADER_PRIVATE_KEY (an account holding UPGRADER_ROLE)",
 		);
+	try {
+		privateKeyToAccount(key as `0x${string}`);
+	} catch {
+		throw new Error("UPGRADER_PRIVATE_KEY is not a valid private key");
+	}
 	return key as `0x${string}`;
 }
 

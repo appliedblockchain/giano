@@ -358,6 +358,30 @@ test("deploy:cli upgrade --execute without UPGRADER_PRIVATE_KEY and without --si
 	});
 });
 
+test("deploy:cli upgrade --execute with a malformed UPGRADER_PRIVATE_KEY and without --signed-rpc exits non-zero and sends no request", async () => {
+	await withStubRpc(async (url, received) => {
+		const { code, stdout, stderr } = await runScript(
+			[
+				"deploy/cli.ts",
+				"upgrade",
+				"--rpc",
+				url,
+				"--contract",
+				"paymaster",
+				"--execute",
+			],
+			ROOT_KEY,
+			{ UPGRADER_PRIVATE_KEY: "0x1234" },
+		);
+		assert.notEqual(code, 0);
+		assert.match(
+			`${stdout}${stderr}`,
+			/UPGRADER_PRIVATE_KEY is not a valid private key/,
+		);
+		assert.deepEqual(received, []);
+	});
+});
+
 test("deploy:cli handoff --signed-rpc without --execute plans unsigned and needs no ROLE_ADMIN_PRIVATE_KEY", async () => {
 	await withStubRpc(async (url, received) => {
 		const { stdout, stderr } = await runScript(
