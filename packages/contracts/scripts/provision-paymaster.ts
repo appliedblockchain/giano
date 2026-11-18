@@ -20,6 +20,10 @@
  *     --tenant <uuid>:<withdrawAddress>:<slug>:<fundEth> \
  *     [--tenant ...] \
  *     [--role-holder-signer-admin 0x.. --role-holder-pauser 0x.. …] | [--grant-all-to 0x..]
+ *     [--signed-rpc]
+ *
+ * `--signed-rpc` signs every RPC request with the key, for an RPC that replaces `from` on an
+ * unsigned eth_call or eth_estimateGas (Silent Data). Without it every role check fails there.
  *
  * `--role-holder-<role> <address>` gives one role to one holder (signer-admin, param-admin, pauser,
  * stake-admin, tenant-admin, fee-collector; fee-admin, withdraw-address-admin and upgrader are the
@@ -31,11 +35,14 @@
  */
 import {
 	Contract,
+	FetchRequest,
 	formatEther,
 	getAddress,
 	isAddress,
 	JsonRpcProvider,
+	Network,
 	parseEther,
+	toUtf8String,
 	Wallet,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
@@ -102,6 +109,34 @@ function ether(what: string, value: string): bigint {
 	}
 }
 
+/**
+ * A provider that signs every request the way a Silent Data RPC verifies it: an EIP-191 signature
+ * of `chainId + body + timestamp` over the exact HTTP body (see deploy/signed-rpc.ts). One request
+ * per body, so each carries its own signature.
+ */
+function signedProvider(
+	rpcUrl: string,
+	chainId: number,
+	key: string,
+): JsonRpcProvider {
+	const signer = new Wallet(key);
+	const request = new FetchRequest(rpcUrl);
+	request.preflightFunc = async (req) => {
+		const body = req.body ? toUtf8String(req.body) : "";
+		const timestamp = new Date().toISOString();
+		req.setHeader("x-timestamp", timestamp);
+		req.setHeader(
+			"x-signature",
+			await signer.signMessage(`${chainId}${body}${timestamp}`),
+		);
+		return req;
+	};
+	return new JsonRpcProvider(request, Network.from(chainId), {
+		staticNetwork: true,
+		batchMaxCount: 1,
+	});
+}
+
 function log(message: string): void {
 	console.log(message);
 }
@@ -152,8 +187,14 @@ function parseTenant(spec: string): TenantSpec {
 async function main(): Promise<void> {
 	const { flags, repeated } = parseArgs(process.argv.slice(2));
 
+	// Refused before the first request, so no request leaves unsigned.
+	if (
+		flags["signed-rpc"] &&
+		!(flags["private-key"] ?? process.env.DEPLOYER_PRIVATE_KEY)
+	)
+		throw new Error("--signed-rpc needs DEPLOYER_PRIVATE_KEY to sign with");
 	const rpcUrl = flags.rpc ?? process.env.RPC_URL ?? "http://localhost:8545";
-	const provider = new JsonRpcProvider(rpcUrl);
+	let provider = new JsonRpcProvider(rpcUrl);
 	const chainId = Number((await provider.getNetwork()).chainId);
 
 	let registryAddress: string | undefined;
@@ -179,6 +220,7 @@ async function main(): Promise<void> {
 		(chainId === 31337 ? ANVIL_KEY : undefined);
 	if (!key)
 		throw new Error("DEPLOYER_PRIVATE_KEY is required outside a local devnet");
+	if (flags["signed-rpc"]) provider = signedProvider(rpcUrl, chainId, key);
 	const wallet = new Wallet(key, provider);
 
 	const paymaster = new Contract(

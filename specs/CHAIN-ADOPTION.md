@@ -26,6 +26,29 @@ EntryPoint v0.9 requires Cancun EVM opcodes (including `MCOPY`, `TLOAD`, and `TS
 an EIP-1559 `basefee`. Confirm RPC support for `eth_call` state overrides and gas estimation.
 See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.md).
 
+**An RPC that restricts reads** (a Silent Data gateway, for example) needs three settings, and
+no code change:
+
+- **No `eth_call` state overrides:** set `bundler.stateOverride: false` in the chain's
+  `GIANO_CHAINS` entry. The bundler then returns fixed gas limits instead of simulating
+  (`services/bundler/README.md`). On a gas-charging chain, size the caps and balances for them
+  (step 7).
+- **No `eth_getStorageAt`:** nothing to set. wallet-api, giano-doctor and the paymaster SDK read
+  the proxy implementation from its `Upgraded` logs when the RPC refuses the storage read, in spans
+  of at most 9,000 blocks. That answer is not verified, so they report it as a warning. Once the
+  paymaster proxy exists, the deploy tooling refuses it unless you pass
+  `--accept-unverified-implementation`.
+- **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `deploy:cli` (step 4),
+  `provision:paymaster` (step 7) and `deploy:cli timelock` and `handoff` (step 7a). Each request
+  is then signed with the key the command sends from, so the RPC keeps the operator as `from`:
+  `DEPLOYER_PRIVATE_KEY` for steps 4 and 7, `ROLE_ADMIN_PRIVATE_KEY` for step 7a. A later
+  `deploy:cli upgrade --execute --signed-rpc` signs with `DEPLOYER_PRIVATE_KEY`, and the
+  upgrader's own requests with `UPGRADER_PRIVATE_KEY`. Without the flag, role-gated calls fail
+  with `AccessControlUnauthorizedAccount`, and the CreateX simulation runs from a random address.
+  The wizard (`pnpm contracts:deploy`), `pnpm contracts:provision`, `pnpm contracts:timelock` and
+  `pnpm contracts:handoff` do not sign their requests, so on such an RPC run the low-level
+  commands directly.
+
 ## The checklist
 
 ```
@@ -67,8 +90,14 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       <profile>` typed in the wizard. The low-level `deploy:cli core` runs the same chain
       prerequisite checks (CreateX codehash, EntryPoint v0.9, Cancun) but has no prompt, so it
       refuses every mainnet deviation.
+      Where the RPC rewrites `from` on unsigned calls (see above), deploy with the low-level command
+      instead: the wizard does not sign its requests. Load the same key as DEPLOYER_PRIVATE_KEY; the
+      command refuses to start without it:
+        pnpm --filter @appliedblockchain/giano-contracts \
+          deploy:cli core --rpc <url> --chain <profile> --role-admin <bootstrap operator EOA> --signed-rpc
       Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
-      code and sends nothing.
+      code and sends nothing. Drop --signed-rpc for that run too: the flag refuses to start without
+      a key, and the verification only reads.
       From a committed release, never a fresh build (MC-26): the release's creation code is
       what every chain gets. Idempotent; commit the record it writes
       (packages/contracts/deployments/<chainId>.json).
@@ -95,6 +124,21 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       address). Sponsorship is per chain: every tenant
       that sponsors here funds a balance HERE, and configures its rules HERE — nothing is
       inherited from another chain (MC-67).
+      contracts:provision does not sign its requests. Where the RPC rewrites `from` on unsigned
+      calls, run provision:paymaster directly with the flags that deploy/contracts/provision-paymaster.sh
+      builds, plus --signed-rpc.
+      On a gas-charging chain with bundler.stateOverride: false, every operation carries the
+      bundler's fixed limits: verification 1,000,000, call 300,000 (unless the wallet sends its
+      own), paymaster verification 200,000 and post-op 100,000. The maximum charge is then about
+      1.6 million gas plus pre-verification gas, times maxFeePerGas, about four times that of a
+      simulated ETH transfer. Settlement still charges the actual cost. Size for that maximum:
+        - the paymaster deposit: it must cover the prefund of every operation in flight;
+        - each tenant's balance on this chain: wallet-api reserves the maximum charge before
+          it signs;
+        - each tenant's maxCostPerTxWei rule, and the platform's wallet-management cap
+          (SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI): a cap below the maximum charge refuses the
+          operation.
+      A gasless chain (base fee 0) needs none of this: the gas part of the charge is 0.
 
 7a. Hand the timelocked roles to the timelock (G9; docs/PAYMASTER-TIMELOCK-RUNBOOK.md §2).
       pnpm contracts:timelock, then pnpm contracts:handoff. The hand-off first checks the timelock
@@ -103,6 +147,10 @@ See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.
       because it renounces the operator's ROLE_ADMIN and cannot be undone. From then on
       contracts:provision refuses (ROLE_ADMIN is the timelock's); role changes are timelock
       proposals.
+      contracts:timelock and contracts:handoff do not sign their requests. Where the RPC rewrites
+      `from` on unsigned calls, run deploy:cli timelock and deploy:cli handoff directly, with the
+      flags that packages/contracts/deploy/operations.ts builds, plus --signed-rpc. Both sign with
+      ROLE_ADMIN_PRIVATE_KEY and refuse to start without it.
 
 8.  giano-doctor chain --rpc <url> --chain-id <id> …  → must be green.
       The same checks the wallet-api runs at boot: endpoint identity, EntryPoint, factory +
