@@ -127,7 +127,7 @@ function normalise(raw: unknown): unknown {
 								explorerUrl: str(
 									(chain as Record<string, unknown>).explorerUrl,
 								),
-								defaultToken: str(
+								defaultToken: blankAsUnset(
 									(chain as Record<string, unknown>).defaultToken,
 								),
 								privateToken: blankAsUnset(

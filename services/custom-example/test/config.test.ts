@@ -63,3 +63,23 @@ describe("GIANO_CHAINS privateToken", () => {
 		]);
 	});
 });
+
+describe("GIANO_CHAINS defaultToken", () => {
+	afterEach(() => {
+		delete (globalThis as { window?: unknown }).window;
+	});
+
+	it("treats an empty value as unset, and names defaultToken when the value is not a string", () => {
+		const blank = load([chain({ defaultToken: "" })]);
+		assert.ok(blank.ok);
+		assert.equal(blank.config.chains[0].defaultToken, undefined);
+		for (const defaultToken of [123, {}]) {
+			const result = load([chain({ defaultToken })]);
+			assert.ok(!result.ok);
+			assert.deepEqual(
+				result.issues.map((issue) => issue.path),
+				["chains.0.defaultToken"],
+			);
+		}
+	});
+});

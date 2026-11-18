@@ -28,7 +28,11 @@ import {
 } from "../lib/private-token";
 import type { RunOutcome } from "../lib/run";
 import { submitTransaction } from "../lib/run";
-import { type DelegateTicket, SignedReader } from "../lib/signed-reads";
+import {
+	DELEGATE_RENEW_MARGIN_MS,
+	type DelegateTicket,
+	SignedReader,
+} from "../lib/signed-reads";
 import {
 	type Demo,
 	useDemo,
@@ -151,6 +155,8 @@ function PrivateTokenSection({ token }: { token: Address }) {
 			setDeployed(undefined);
 			return;
 		}
+		// A deployed wallet stays deployed. Setting it cancels a check still running.
+		if (deployed === true) return;
 		let live = true;
 		entry.publicClient
 			.getCode({ address: account })
@@ -163,14 +169,29 @@ function PrivateTokenSection({ token }: { token: Address }) {
 		return () => {
 			live = false;
 		};
-	}, [entry, account, settled]);
+	}, [entry, account, settled, deployed]);
 
 	const latestTransfer = useMemo(
 		() => findLatestTransfer(state.ledger.entries, chainId, account),
 		[state.ledger.entries, chainId, account],
 	);
 
-	if (!account) {
+	const reader = account ? readerFor(run, chainId, account) : undefined;
+	// Render again when the delegate stops being valid, so the card does not show it as approved.
+	const [, setExpired] = useState(0);
+	const validUntil = reader?.delegate
+		? reader.delegate.expiresAt - DELEGATE_RENEW_MARGIN_MS
+		: undefined;
+	useEffect(() => {
+		if (validUntil === undefined) return;
+		const timer = setTimeout(
+			() => setExpired((n) => n + 1),
+			Math.max(0, validUntil - Date.now()),
+		);
+		return () => clearTimeout(timer);
+	}, [validUntil]);
+
+	if (!account || !reader) {
 		return (
 			<Frame entries={entries}>
 				<StatusText tone="gray">
@@ -180,7 +201,6 @@ function PrivateTokenSection({ token }: { token: Address }) {
 		);
 	}
 	const wallet = account;
-	const reader = readerFor(demo, wallet);
 	const signedClient = () =>
 		createPublicClient({
 			chain: entry.chain,
@@ -290,14 +310,11 @@ function PrivateTokenSection({ token }: { token: Address }) {
 					return receipt;
 				},
 			);
-			if (outcome.error || outcome.result?.success === false) return;
-			// The first mint deploys the wallet, so check again before reading.
-			const code = await entry.publicClient
-				.getCode({ address: wallet })
-				.catch(() => undefined);
-			const isDeployed = Boolean(code && code !== "0x");
-			setDeployed(isDeployed);
-			if (!isDeployed) return;
+			if (outcome.error || !outcome.result) return;
+			// The operation was included, so the wallet is deployed: the EntryPoint deploys it (ERC-4337
+			// initCode) before it runs the call, even when the call reverts. The first mint deploys it.
+			setDeployed(true);
+			if (outcome.result.success === false) return;
 			// Read again only with an approved delegate. Otherwise the read would open the wallet's
 			// approval popup long after the click, and the browser would block it (POPUP_BLOCKED).
 			if (reader.delegate)
@@ -511,7 +528,7 @@ function PrivateTokenSection({ token }: { token: Address }) {
 						"Read delegate",
 						delegate
 							? `${delegate.ticket.ephemeralAddress}, approved until ${formatTime(delegate.ticket.expires)}`
-							: "none yet: the first signed read asks your wallet once (one passkey prompt), for 1 hour",
+							: "none approved: the next signed read asks your wallet once (one passkey prompt), for 1 hour",
 					],
 				]}
 			/>
@@ -634,9 +651,15 @@ function Frame({
 	);
 }
 
-/** The reader for this chain and wallet, created on first use. Its one prompt goes through `run`, so the ledger records it. */
-function readerFor(demo: Demo, wallet: Address): SignedReader {
-	const chainId = demo.selected.chainId;
+/**
+ * The reader for this chain and wallet, created on first use. Its one prompt goes through `run`, so
+ * the ledger records it. It keeps only `run`, not the render's whole context, which holds the ledger.
+ */
+function readerFor(
+	run: Demo["run"],
+	chainId: number,
+	wallet: Address,
+): SignedReader {
 	const key = readerKey(chainId, wallet);
 	let reader = readers.get(key);
 	if (!reader) {
@@ -644,21 +667,26 @@ function readerFor(demo: Demo, wallet: Address): SignedReader {
 			chainId,
 			wallet,
 			personalSign: (message, context) =>
-				approveDelegate(demo, chainId, wallet, message, context),
+				approveDelegate(run, chainId, wallet, message, context),
 		});
 		readers.set(key, reader);
 	}
 	return reader;
 }
 
+/**
+ * Asks the wallet to approve the read delegate. A failure rethrows the wallet's own error, so the read
+ * that needed the approval records the same type and code: a timeout stays `timed-out`.
+ */
 async function approveDelegate(
-	demo: Demo,
+	run: Demo["run"],
 	chainId: number,
 	wallet: Address,
 	message: Hex,
 	{ ticket, renewed }: { ticket: DelegateTicket; renewed: boolean },
 ): Promise<Hex> {
-	const outcome = await demo.run(
+	let failure: unknown;
+	const outcome = await run(
 		{
 			section: "private-token",
 			label: renewed
@@ -671,10 +699,15 @@ async function approveDelegate(
 			noBalances: true,
 		},
 		async (api) => {
-			const signature = await api.provider.request<Hex>({
-				method: "personal_sign",
-				params: [message, wallet],
-			});
+			const signature = await api.provider
+				.request<Hex>({
+					method: "personal_sign",
+					params: [message, wallet],
+				})
+				.catch((error: unknown) => {
+					failure = error;
+					throw error;
+				});
 			api.update({
 				note: `delegate ${ticket.ephemeralAddress} may sign reads for ${wallet} until ${ticket.expires}`,
 			});
@@ -682,8 +715,12 @@ async function approveDelegate(
 		},
 	);
 	if (!outcome.result)
-		throw new Error(
-			outcome.error?.message ?? "the wallet did not approve the read delegate",
+		throw (
+			failure ??
+			new Error(
+				outcome.error?.message ??
+					"the wallet did not approve the read delegate",
+			)
 		);
 	return outcome.result;
 }
