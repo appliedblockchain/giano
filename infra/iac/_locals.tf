@@ -43,10 +43,11 @@ locals {
 
   # The reference dApp's chain list (services/custom-example), rendered once and shared by both
   # example services. rpcUrl is the same-origin proxy path; the keyed upstreams are secrets.
-  # defaultToken is Giano's test ERC-20, deployed to both testnets at the same address.
+  # defaultToken is Giano's test ERC-20 in dev, at the same address on both testnets; blank (unset
+  # for the dApp) in stg and prd.
   example_dapp_chains = jsonencode([
-    { chainId = tonumber(var.chain_id), name = var.chain_name, rpcUrl = "/rpc/${var.chain_id}", defaultToken = var.test_erc20_address },
-    { chainId = tonumber(var.chain_b_id), name = var.chain_b_name, rpcUrl = "/rpc/${var.chain_b_id}", defaultToken = var.test_erc20_address },
+    { chainId = tonumber(var.chain_id), name = var.chain_name, rpcUrl = "/rpc/${var.chain_id}", defaultToken = var.test_erc20_address[terraform.workspace] },
+    { chainId = tonumber(var.chain_b_id), name = var.chain_b_name, rpcUrl = "/rpc/${var.chain_b_id}", defaultToken = var.test_erc20_address[terraform.workspace] },
   ])
 
   # The application database name — matches the compose reference's POSTGRES_DB default (§8, §7.4).

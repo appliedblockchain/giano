@@ -185,7 +185,7 @@ module "svc-custom-example" {
     # The chains the dApp can address (services/custom-example/src/config.ts). Each rpcUrl is the
     # same-origin `/rpc/<chainId>` path nginx proxies to the keyed upstream in secret_arns below,
     # so the provider API key never reaches the browser (R17). Each entry's `defaultToken` is
-    # Giano's test ERC-20 (var.test_erc20_address).
+    # Giano's test ERC-20 in dev (var.test_erc20_address).
     GIANO_CHAINS           = local.example_dapp_chains
     GIANO_WALLET_URL       = "https://${local.tenant_hosts.example.wallet}"
     GIANO_OTHER_WALLET_URL = var.byo_wallet_enabled[terraform.workspace] ? "https://${local.tenant_hosts.byoui.wallet}" : ""

@@ -72,13 +72,18 @@ variable "factory_address" {
   default     = "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635"
 }
 
-# Giano's test ERC-20 (PrivateERC20, anyone may mint): the reference dApp's default token. The same
-# CREATE3 address on both testnets (deploy:cli test-token; registry field testErc20). Never on a
-# mainnet (R-29).
+# Giano's test ERC-20 (PrivateERC20, anyone may mint): the reference dApp's default token, per
+# workspace. dev only: the same CREATE3 address on both testnets (deploy:cli test-token; registry
+# field testErc20). Empty elsewhere, so stg and prd get no defaultToken (the dApp reads a blank one
+# as unset); a mainnet never carries the token (R-29).
 variable "test_erc20_address" {
-  description = "the reference dApp's default token on both testnets: Giano's test ERC-20"
-  type        = string
-  default     = "0x461E0641a3615336b7D2E4C5D71fB2BB88038C93"
+  description = "the reference dApp's default token per workspace (dev: Giano's test ERC-20); empty for none"
+  type        = map(string)
+  default = {
+    dev = "0x461E0641a3615336b7D2E4C5D71fB2BB88038C93"
+    stg = ""
+    prd = ""
+  }
 }
 
 # rpc_origin / rpc_b_origin (wallet-web's CSP connect-src for direct browser RPC) are gone: the
