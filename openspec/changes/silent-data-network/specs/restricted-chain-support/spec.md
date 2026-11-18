@@ -94,7 +94,7 @@ The pre-verification gas SHALL be computed the same way whether the bundler simu
 - **THEN** the estimated pre-verification gas includes the L1 data fee, as it does with simulation
 
 ### Requirement: A fee of 0 is accepted on a chain that charges no gas
-A chain charges no gas when its gas price is 0 (the latest block's base fee, or `eth_gasPrice` when the block has no base fee) and, on an OP Stack chain, the GasPriceOracle's L1 fee is also 0. At estimation and at submission, the bundler SHALL refuse a user operation whose `maxFeePerGas` is 0 unless the chain charges no gas. wallet-api's `pm_getPaymasterData` SHALL apply the same rule before it authorises sponsorship.
+A chain charges no gas when its gas price is 0 (the latest block's base fee, when the block has one, and `eth_gasPrice`) and, on an OP Stack chain, the GasPriceOracle's L1 fee is also 0. At estimation and at submission, the bundler SHALL refuse a user operation whose `maxFeePerGas` is 0 unless the chain charges no gas. wallet-api's `pm_getPaymasterData` SHALL apply the same rule before it authorises sponsorship.
 
 #### Scenario: Gasless chain
 - **WHEN** the latest block's base fee is 0 and a wallet asks for an estimate with `maxFeePerGas` 0
@@ -106,6 +106,10 @@ A chain charges no gas when its gas price is 0 (the latest block's base fee, or 
 
 #### Scenario: Legacy-priced chain that charges gas
 - **WHEN** the latest block has no base fee, `eth_gasPrice` is above 0, and a wallet asks for an estimate with `maxFeePerGas` 0
+- **THEN** the bundler refuses it with the same invalid-params error
+
+#### Scenario: Chain with base fee 0 that still asks for a tip
+- **WHEN** the latest block's base fee is 0, `eth_gasPrice` is above 0, and a wallet asks for an estimate with `maxFeePerGas` 0
 - **THEN** the bundler refuses it with the same invalid-params error
 
 #### Scenario: OP Stack chain with an L1 fee

@@ -4,8 +4,9 @@
  * and wallet-api's `pm_getPaymasterData` refuses to sponsor one. All three use this one check.
  *
  * A chain charges nothing when:
- * - its gas price is 0: the latest block's base fee, or `eth_gasPrice` on a chain whose blocks
- *   carry no base fee (legacy gas pricing);
+ * - its gas price is 0: the latest block's base fee, where blocks carry one, and `eth_gasPrice`.
+ *   A base fee of 0 is not enough on its own: a node can still require a tip (geth's
+ *   `--txpool.pricelimit`), and `eth_gasPrice` then answers above 0;
  * - and, on an OP Stack chain, its L1 data fee is also 0. The executor pays that fee, and the
  *   user operation repays it only through its gas price, so at a fee of 0 nobody would.
  */
@@ -43,8 +44,8 @@ export type GasPriceReader = {
 
 /**
  * True when the chain charges nothing for gas (see the module comment). Reads only what it needs:
- * a chain that charges a base fee costs one block read. A failed read is thrown, never taken as
- * "gasless".
+ * a chain that charges a base fee costs one block read, and `eth_gasPrice` is read only after that.
+ * A failed read is thrown, never taken as "gasless".
  *
  * @param options.block - the latest block, when the caller has already read it.
  * @param options.opStack - whether the chain is OP Stack, when the caller knows it; otherwise the
@@ -58,8 +59,8 @@ export async function chargesNoGas(
 	} = {},
 ): Promise<boolean> {
 	const block = options.block ?? (await client.getBlock());
-	const gasPrice = block.baseFeePerGas ?? (await client.getGasPrice());
-	if (gasPrice > 0n) return false;
+	if (block.baseFeePerGas != null && block.baseFeePerGas > 0n) return false;
+	if ((await client.getGasPrice()) > 0n) return false;
 
 	const opStack =
 		options.opStack ??

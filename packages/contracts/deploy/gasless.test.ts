@@ -55,7 +55,13 @@ test("a chain with a base fee above 0 charges for gas, after one block read", as
 test("a chain with base fee 0 and no GasPriceOracle charges nothing (copper-heron)", async () => {
 	const { client, reads } = reader({ baseFee: 0n });
 	assert.equal(await chargesNoGas(client), true);
-	assert.deepEqual(reads, ["getBlock", "getCode"]);
+	assert.deepEqual(reads, ["getBlock", "getGasPrice", "getCode"]);
+});
+
+test("a chain with base fee 0 that still asks for a tip charges for gas", async () => {
+	const { client, reads } = reader({ baseFee: 0n, gasPrice: 1n });
+	assert.equal(await chargesNoGas(client), false);
+	assert.deepEqual(reads, ["getBlock", "getGasPrice"]);
 });
 
 test("a legacy chain is priced by eth_gasPrice", async () => {
@@ -70,7 +76,12 @@ test("a legacy chain is priced by eth_gasPrice", async () => {
 test("an OP Stack chain with base fee 0 charges for gas while its L1 fee is above 0", async () => {
 	const charging = reader({ baseFee: 0n, l1Fee: 1_000n });
 	assert.equal(await chargesNoGas(charging.client), false);
-	assert.deepEqual(charging.reads, ["getBlock", "getCode", "getL1Fee"]);
+	assert.deepEqual(charging.reads, [
+		"getBlock",
+		"getGasPrice",
+		"getCode",
+		"getL1Fee",
+	]);
 
 	const free = reader({ baseFee: 0n, l1Fee: 0n });
 	assert.equal(await chargesNoGas(free.client), true);
@@ -85,11 +96,11 @@ test("a block and the chain type the caller already has are not read again", asy
 		}),
 		false,
 	);
-	assert.deepEqual(known.reads, ["getL1Fee"]);
+	assert.deepEqual(known.reads, ["getGasPrice", "getL1Fee"]);
 
 	const declared = reader({ baseFee: 0n, l1Fee: 1_000n });
 	assert.equal(await chargesNoGas(declared.client, { opStack: false }), true);
-	assert.deepEqual(declared.reads, ["getBlock"]);
+	assert.deepEqual(declared.reads, ["getBlock", "getGasPrice"]);
 });
 
 test("a failed read is thrown, never taken as gasless", async () => {
