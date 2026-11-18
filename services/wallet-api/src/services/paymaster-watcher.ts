@@ -406,7 +406,7 @@ export function createPaymasterWatcher(
 			// watcher has reached, not only as of the last reconcile: drift compares them there.
 			for (const entry of [...addressChanges].sort((a, b) =>
 				a.blockNumber === b.blockNumber
-					? (a.logIndex ?? 0) - (b.logIndex ?? 0)
+					? a.logIndex - b.logIndex
 					: a.blockNumber < b.blockNumber
 						? -1
 						: 1,

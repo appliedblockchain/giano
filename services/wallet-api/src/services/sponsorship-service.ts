@@ -288,10 +288,6 @@ export function createSponsorshipService(
 			});
 
 			if (!decision.allowed) {
-				// evaluateSponsorship refuses only on a failed rule, and names the first one as the reason.
-				if (decision.reason === undefined) {
-					throw new Error("a refused sponsorship decision carries no reason");
-				}
 				return refuse({
 					session,
 					method,

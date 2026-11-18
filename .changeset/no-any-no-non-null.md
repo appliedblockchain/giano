@@ -4,6 +4,7 @@
 "@appliedblockchain/giano-connector": patch
 "@appliedblockchain/giano-tx-describe": patch
 "@appliedblockchain/giano-wallet-kit": patch
+"@appliedblockchain/giano-paymaster-sdk": patch
 ---
 
 Remove every non-null assertion (`!`) and explicit `any`. Biome now rejects both. No exported API or type changes, and valid input behaves as before. Changes for invalid input:

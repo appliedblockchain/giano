@@ -226,17 +226,21 @@ export async function buildApp({
 	app.decorate("drift", drift);
 
 	// The registry wires a chain's paymaster and sponsorship service together, and only with a signer.
-	const sponsoringChains = registry.all.flatMap((chain) =>
-		chain.paymaster && chain.sponsorship
-			? [
-					{
-						chainId: chain.chainId,
-						paymaster: chain.paymaster,
-						sponsorship: chain.sponsorship,
-					},
-				]
-			: [],
-	);
+	const sponsoringChains = registry.all.flatMap((chain) => {
+		if (!chain.sponsorship) return [];
+		if (!chain.paymaster) {
+			throw new Error(
+				`chain ${chain.chainId} has gas sponsorship but no paymaster`,
+			);
+		}
+		return [
+			{
+				chainId: chain.chainId,
+				paymaster: chain.paymaster,
+				sponsorship: chain.sponsorship,
+			},
+		];
+	});
 	if (sponsoringChains.length > 0) {
 		if (!signer) {
 			throw new Error(

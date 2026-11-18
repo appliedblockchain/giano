@@ -74,7 +74,7 @@ export function requireAdminTenantOf(request: FastifyRequest): Tenant {
 
 /** The id of the admin key that authorized the request, set by requireAdmin. */
 export function requireAdminKeyIdOf(request: FastifyRequest): string {
-	if (request.adminKeyId === null) {
+	if (!request.adminKeyId) {
 		throw new Error(
 			"request.adminKeyId is not set: the route is missing its requireAdmin guard",
 		);
