@@ -179,8 +179,10 @@ function PrivateTokenSection({ token }: { token: Address }) {
 	const reader = account ? readerFor(run, chainId, account) : undefined;
 	// Render again when the delegate stops being valid, so the card does not show it as approved.
 	const [, setExpired] = useState(0);
-	const validUntil = reader?.delegate
-		? reader.delegate.expiresAt - DELEGATE_RENEW_MARGIN_MS
+	// Read once: the getter checks the clock, so a second read can return undefined.
+	const approved = reader?.delegate;
+	const validUntil = approved
+		? approved.expiresAt - DELEGATE_RENEW_MARGIN_MS
 		: undefined;
 	useEffect(() => {
 		if (validUntil === undefined) return;
