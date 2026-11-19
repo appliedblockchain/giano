@@ -1,3 +1,4 @@
+import { chargesNoGas } from "@appliedblockchain/giano-contracts";
 import {
 	type Address,
 	decodeFunctionResult,
@@ -62,12 +63,14 @@ const EXECUTE_USER_OP_SELECTOR = "0x8dd7712f";
 /**
  * Limits for a chain whose RPC refuses state overrides, where nothing can be simulated. Unused
  * verification gas is not charged. When more than 40,000 call gas goes unused, 10% of it is
- * charged, so a caller that knows its call gas should send it.
+ * charged, so a caller that knows its call gas should send it. At a fee of 0 nothing is charged,
+ * so the call gets more room there.
  */
 const FIXED = {
 	verificationGasLimit: 1_000_000n,
 	paymasterVerificationGasLimit: 200_000n,
 	callGasLimit: 300_000n,
+	gaslessCallGasLimit: 1_000_000n,
 };
 
 export type Estimator = ReturnType<typeof createEstimator>;
@@ -192,12 +195,16 @@ export function createEstimator(options: {
 			input.verificationGasLimit,
 			FIXED.verificationGasLimit,
 		);
+		// A fee of 0 reaches this point only on a chain that charges nothing (see `estimate`), where
+		// unused call gas costs nothing either.
 		const callGasLimit =
 			size(input.callData) === 0
 				? 0n
 				: input.callGasLimit > 0n
-					? input.callGasLimit
-					: FIXED.callGasLimit;
+					? maxBigInt(MIN_CALL_GAS, input.callGasLimit)
+					: input.maxFeePerGas === 0n
+						? FIXED.gaslessCallGasLimit
+						: FIXED.callGasLimit;
 		const paymasterVerificationGasLimit = hasPaymaster
 			? maxBigInt(
 					input.paymasterVerificationGasLimit ?? 0n,
@@ -227,7 +234,7 @@ export function createEstimator(options: {
 			// matters at submission: refuse it unless the chain charges nothing for gas (a gasless chain).
 			if (
 				input.maxFeePerGas === 0n &&
-				((await client.getBlock()).baseFeePerGas ?? 0n) > 0n
+				!(await chargesNoGas(client, { opStack: chainType === "op-stack" }))
 			) {
 				throw new RpcError(
 					ERROR_CODES.invalidParams,

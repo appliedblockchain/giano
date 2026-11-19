@@ -1,3 +1,4 @@
+import { chargesNoGas } from "@appliedblockchain/giano-contracts";
 import type { Logger } from "pino";
 import {
 	type Address,
@@ -9,6 +10,7 @@ import {
 } from "viem";
 import { entryPoint09Abi } from "viem/account-abstraction";
 import type { PrivateKeyAccount } from "viem/accounts";
+import type { ChainType } from "./config.js";
 import {
 	decodeEntryPointRevert,
 	ERROR_CODES,
@@ -52,6 +54,8 @@ export type Tracked = {
 export type SubmitterOptions = {
 	client: PublicClient;
 	chainId: number;
+	/** Whether the chain charges an L1 data fee, which a fee of 0 would leave unpaid. */
+	chainType: ChainType;
 	entryPoint: Address;
 	executors: PrivateKeyAccount[];
 	resubmitTimeoutMs: number;
@@ -247,6 +251,20 @@ export function createSubmitter(options: SubmitterOptions) {
 			throw new RpcError(
 				ERROR_CODES.invalidParams,
 				`maxFeePerGas must be at least ${block.baseFeePerGas} (current maxFeePerGas: ${op.maxFeePerGas})`,
+			);
+		}
+		// A fee of 0 is right only where gas costs nothing. Elsewhere a legacy-priced transaction at
+		// gas price 0 is never mined, and on an OP Stack chain the executor would pay the L1 fee alone.
+		if (
+			op.maxFeePerGas === 0n &&
+			!(await chargesNoGas(client, {
+				block,
+				opStack: options.chainType === "op-stack",
+			}))
+		) {
+			throw new RpcError(
+				ERROR_CODES.invalidParams,
+				"maxFeePerGas must be larger than 0 on a chain that charges for gas",
 			);
 		}
 	};

@@ -18,7 +18,7 @@ When the selected chain's configuration names a `privateToken`, the demo SHALL s
 - **THEN** each receipt is recorded, and the signed balance read after each step changes by the amount of that step
 
 ### Requirement: Signed reads ask for one passkey approval per session
-The demo SHALL authorise signed reads with a delegate: the wallet approves one short-lived delegate key, and that key signs each read. Signed reads SHALL need at most one passkey prompt per chain and connected session until the delegate expires, and the delegate SHALL expire at most 12 hours after approval.
+The demo SHALL authorise signed reads with a delegate: the wallet approves one short-lived delegate key, and that key signs each read. Signed reads SHALL need at most one passkey prompt per chain and connected session until the delegate expires, and the delegate SHALL expire at most 1 hour after approval.
 
 #### Scenario: Repeated reads
 - **WHEN** the user reads the private balance three times in one session

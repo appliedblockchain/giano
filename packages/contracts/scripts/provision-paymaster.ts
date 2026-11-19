@@ -51,6 +51,7 @@ import {
 	provisioningIsMainnet,
 	unstakeDelaySeconds,
 } from "../deploy/provision-rules";
+import { signatureHeaders } from "../deploy/signed-rpc";
 import { gianoPaymasterAbi, iEntryPointAbi } from "../generated";
 
 /** Anvil's first account. Deterministic, funded, and never used anywhere real. */
@@ -110,9 +111,8 @@ function ether(what: string, value: string): bigint {
 }
 
 /**
- * A provider that signs every request the way a Silent Data RPC verifies it: an EIP-191 signature
- * of `chainId + body + timestamp` over the exact HTTP body (see deploy/signed-rpc.ts). One request
- * per body, so each carries its own signature.
+ * A provider that signs every request the way a Silent Data RPC verifies it, with the scheme in
+ * deploy/signed-rpc.ts. One request per body, so each carries its own signature.
  */
 function signedProvider(
 	rpcUrl: string,
@@ -122,13 +122,13 @@ function signedProvider(
 	const signer = new Wallet(key);
 	const request = new FetchRequest(rpcUrl);
 	request.preflightFunc = async (req) => {
-		const body = req.body ? toUtf8String(req.body) : "";
-		const timestamp = new Date().toISOString();
-		req.setHeader("x-timestamp", timestamp);
-		req.setHeader(
-			"x-signature",
-			await signer.signMessage(`${chainId}${body}${timestamp}`),
+		const headers = await signatureHeaders(
+			chainId,
+			req.body ? toUtf8String(req.body) : null,
+			(message) => signer.signMessage(message),
 		);
+		for (const [name, value] of Object.entries(headers))
+			req.setHeader(name, value);
 		return req;
 	};
 	return new JsonRpcProvider(request, Network.from(chainId), {
@@ -187,12 +187,6 @@ function parseTenant(spec: string): TenantSpec {
 async function main(): Promise<void> {
 	const { flags, repeated } = parseArgs(process.argv.slice(2));
 
-	// Refused before the first request, so no request leaves unsigned.
-	if (
-		flags["signed-rpc"] &&
-		!(flags["private-key"] ?? process.env.DEPLOYER_PRIVATE_KEY)
-	)
-		throw new Error("--signed-rpc needs DEPLOYER_PRIVATE_KEY to sign with");
 	const rpcUrl = flags.rpc ?? process.env.RPC_URL ?? "http://localhost:8545";
 	let provider = new JsonRpcProvider(rpcUrl);
 	const chainId = Number((await provider.getNetwork()).chainId);
@@ -214,12 +208,19 @@ async function main(): Promise<void> {
 		);
 	}
 
+	// An empty DEPLOYER_PRIVATE_KEY (an operator file with the line left blank) counts as unset.
 	const key =
-		flags["private-key"] ??
-		process.env.DEPLOYER_PRIVATE_KEY ??
+		flags["private-key"] ||
+		process.env.DEPLOYER_PRIVATE_KEY ||
 		(chainId === 31337 ? ANVIL_KEY : undefined);
+	// Checked after the chain id read, the only request sent so far. The signature covers the chain
+	// id, so that read goes unsigned in deploy:cli too. On 31337 the anvil key signs.
 	if (!key)
-		throw new Error("DEPLOYER_PRIVATE_KEY is required outside a local devnet");
+		throw new Error(
+			flags["signed-rpc"]
+				? "--signed-rpc needs DEPLOYER_PRIVATE_KEY to sign with"
+				: "DEPLOYER_PRIVATE_KEY is required outside a local devnet",
+		);
 	if (flags["signed-rpc"]) provider = signedProvider(rpcUrl, chainId, key);
 	const wallet = new Wallet(key, provider);
 

@@ -60,15 +60,23 @@ A chain's `bundler` section SHALL accept `stateOverride`, a boolean whose defaul
 - **THEN** the estimate returns verification gas 1,000,000 and call gas 300,000, and the RPC receives no `eth_call` with a third parameter
 
 ### Requirement: Call gas without state overrides
-On a chain with `stateOverride: false`, the estimated call gas SHALL be 0 when the call data is empty. Otherwise it SHALL be the call gas the caller sends, when that is above 0, and 300,000 when the caller sends none.
+On a chain with `stateOverride: false`, the estimated call gas SHALL be 0 when the call data is empty. Otherwise it SHALL be the call gas the caller sends, when that is above 0, raised to at least 9,000. When the caller sends none, it SHALL be 300,000, or 1,000,000 when `maxFeePerGas` is 0.
 
 #### Scenario: Caller sends no call gas
 - **WHEN** the caller sends call gas 0 with non-empty call data
 - **THEN** the estimate returns call gas 300,000
 
+#### Scenario: Caller sends no call gas at a fee of 0
+- **WHEN** the caller sends call gas 0 with non-empty call data and `maxFeePerGas` 0, on a chain that charges no gas
+- **THEN** the estimate returns call gas 1,000,000
+
 #### Scenario: Caller knows its call gas
 - **WHEN** the caller sends call gas 120,000 on a chain with `stateOverride: false`
 - **THEN** the estimate keeps call gas 120,000
+
+#### Scenario: Caller sends too little call gas
+- **WHEN** the caller sends call gas 1 on a chain with `stateOverride: false`
+- **THEN** the estimate returns call gas 9,000
 
 #### Scenario: Empty call data
 - **WHEN** the user operation's call data is empty
@@ -86,7 +94,7 @@ The pre-verification gas SHALL be computed the same way whether the bundler simu
 - **THEN** the estimated pre-verification gas includes the L1 data fee, as it does with simulation
 
 ### Requirement: A fee of 0 is accepted on a chain that charges no gas
-At estimation, the bundler SHALL refuse a user operation whose `maxFeePerGas` is 0 only when the latest block's base fee is above 0. On a chain whose base fee is 0 or absent, a fee of 0 SHALL be accepted. wallet-api's `pm_getPaymasterData` SHALL apply the same rule before it authorises sponsorship.
+A chain charges no gas when its gas price is 0 (the latest block's base fee, when the block has one, and `eth_gasPrice`) and, on an OP Stack chain, the GasPriceOracle's L1 fee is also 0. At estimation and at submission, the bundler SHALL refuse a user operation whose `maxFeePerGas` is 0 unless the chain charges no gas. wallet-api's `pm_getPaymasterData` SHALL apply the same rule before it authorises sponsorship.
 
 #### Scenario: Gasless chain
 - **WHEN** the latest block's base fee is 0 and a wallet asks for an estimate with `maxFeePerGas` 0
@@ -95,6 +103,18 @@ At estimation, the bundler SHALL refuse a user operation whose `maxFeePerGas` is
 #### Scenario: Chain that charges gas
 - **WHEN** the latest block's base fee is above 0 and a wallet asks for an estimate with `maxFeePerGas` 0
 - **THEN** the bundler answers with invalid-params error "user operation max fee per gas must be larger than 0 during gas estimation"
+
+#### Scenario: Legacy-priced chain that charges gas
+- **WHEN** the latest block has no base fee, `eth_gasPrice` is above 0, and a wallet asks for an estimate with `maxFeePerGas` 0
+- **THEN** the bundler refuses it with the same invalid-params error
+
+#### Scenario: Chain with base fee 0 that still asks for a tip
+- **WHEN** the latest block's base fee is 0, `eth_gasPrice` is above 0, and a wallet asks for an estimate with `maxFeePerGas` 0
+- **THEN** the bundler refuses it with the same invalid-params error
+
+#### Scenario: OP Stack chain with an L1 fee
+- **WHEN** an OP Stack chain's base fee is 0 but its L1 fee is above 0, and a wallet asks for an estimate or sponsorship with `maxFeePerGas` 0
+- **THEN** the bundler refuses the estimate, and wallet-api refuses sponsorship with "maxFeePerGas is required to authorise sponsorship"
 
 #### Scenario: Sponsorship with a fee of 0 on a gasless chain
 - **WHEN** the latest block's base fee is 0 and a wallet calls `pm_getPaymasterData` with `maxFeePerGas` 0

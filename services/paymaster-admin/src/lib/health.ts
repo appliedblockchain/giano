@@ -398,9 +398,28 @@ export function chainChecks(
 						"Requests for this chain are refused until it is reachable and passes verification again; wallet-api retries every 15 seconds.",
 				},
 	);
+	// Not failures of the chain's setup: the check did not complete, and wallet-api retries it.
+	const incomplete = new Set([
+		"unreachable",
+		"paymaster-implementation-unresolved",
+	]);
 	const failures = (chain.verification?.failures ?? []).filter(
-		(failure) => failure.kind !== "unreachable",
+		(failure) => !incomplete.has(failure.kind),
 	);
+	if (
+		chain.verification?.failures.some(
+			(failure) => failure.kind === "paymaster-implementation-unresolved",
+		)
+	)
+		checks.push({
+			id: id("paymaster-search"),
+			level: "warn",
+			label: "paymaster implementation not found yet",
+			detail:
+				"the RPC refuses eth_getStorageAt, and the search through the paymaster proxy's Upgraded logs has not reached its latest one",
+			remedy:
+				"wallet-api continues the search with each check. Record the proxy's deployment block in its deployment record to shorten it.",
+		});
 	if (failures.length > 0)
 		checks.push({
 			id: id("verification"),

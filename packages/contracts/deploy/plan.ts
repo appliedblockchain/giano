@@ -39,7 +39,7 @@ import {
 	type OverrideKey,
 } from "./config";
 import { create3Address } from "./create3";
-import type { DeploymentRecord } from "./records";
+import { type DeploymentRecord, paymasterProxyDeployBlock } from "./records";
 import { DEV_RELEASE } from "./release";
 
 export const CORE_KEYS = [
@@ -359,6 +359,7 @@ export async function planCore(
 			contracts,
 			input.acceptUnverifiedImplementation ?? false,
 			warnings,
+			input.record,
 		)),
 	);
 
@@ -404,7 +405,9 @@ async function executedUpgrades(
 	if (!proxy) return [];
 	const proxyCode = await client.getCode({ address: getAddress(proxy) });
 	if (!proxyCode || proxyCode === "0x") return [];
-	const read = await proxyImplementationWithSource(client, getAddress(proxy));
+	const read = await proxyImplementationWithSource(client, getAddress(proxy), {
+		fromBlock: paymasterProxyDeployBlock(record, getAddress(proxy)),
+	});
 	if (read.source === "logs" && !input.acceptUnverifiedImplementation)
 		return [];
 	const current = read.implementation;
@@ -460,6 +463,7 @@ async function immutableProblems(
 	contracts: PlannedContract[],
 	acceptUnverified: boolean,
 	warnings: string[],
+	record?: DeploymentRecord,
 ): Promise<string[]> {
 	const problems: string[] = [];
 	const find = (key: CoreKey) => contracts.find((c) => c.key === key);
@@ -479,7 +483,9 @@ async function immutableProblems(
 	const proxy = find("paymasterProxy");
 	const paymaster = find("paymasterImplementation");
 	if (proxy?.actual && proxy.code.state === "release") {
-		const read = await proxyImplementationWithSource(client, proxy.actual);
+		const read = await proxyImplementationWithSource(client, proxy.actual, {
+			fromBlock: paymasterProxyDeployBlock(record, proxy.actual),
+		});
 		const implementation = read.implementation;
 		if (read.source === "logs") {
 			if (!acceptUnverified) {
@@ -579,6 +585,7 @@ export async function onlyDeploymentUpgrade(
 					address: proxy,
 					topics: [UPGRADED_TOPIC],
 					fromBlock: `0x${from.toString(16)}`,
+					// biome-ignore lint/complexity/useMathMinMax: bigint operands; Math.min and Math.max throw on bigint
 					toBlock: `0x${(last < head ? last : head).toString(16)}`,
 				},
 			],

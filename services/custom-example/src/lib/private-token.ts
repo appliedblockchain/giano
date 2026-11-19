@@ -3,11 +3,15 @@
  * shows what an outsider sees"). Kept apart from the component so the rules are tested.
  */
 
-import { decodeFunctionData, erc20Abi, maxUint256, parseUnits } from "viem";
+import {
+	decodeFunctionData,
+	erc20Abi,
+	maxUint256,
+	parseUnits,
+	zeroAddress,
+} from "viem";
 import type { Hex } from "./format";
 import type { LedgerEntry } from "./ledger";
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /** The fields of `eth_getTransactionByHash` the outsider view shows. */
 export type TransactionView = {
@@ -24,19 +28,16 @@ export type Redaction = {
 	calldataHidden: boolean;
 	/** The RPC answered the zero address: no real transaction is sent from it. */
 	senderHidden: boolean;
-	/** Shown as returned. A bundle sends no value, so 0 is both the real value and the placeholder. */
-	value?: string | null;
 };
 
 /** Whether an unsigned read of a bundle transaction got the RPC's placeholders instead of the real values. */
 export function redactionOf(tx: TransactionView | null | undefined): Redaction {
 	const calldataHidden = !tx?.input || tx.input === "0x";
-	const senderHidden = !tx?.from || tx.from.toLowerCase() === ZERO_ADDRESS;
+	const senderHidden = !tx?.from || tx.from.toLowerCase() === zeroAddress;
 	return {
 		hidden: calldataHidden && senderHidden,
 		calldataHidden,
 		senderHidden,
-		value: tx?.value,
 	};
 }
 
@@ -126,7 +127,8 @@ export function parseAmount(amount: string, decimals: number): bigint {
 }
 
 /**
- * The latest confirmed private token transfer by this wallet on this chain, from the ledger. The
+ * The latest confirmed private token transfer by this wallet on this chain, from the ledger: an entry
+ * whose request decodes as an ERC-20 `transfer`. The label is display text and is not read. The
  * ledger is restored from localStorage without a check of each field, so an entry whose fields have
  * the wrong type is skipped: it must not take the Tokens tab down.
  */
@@ -134,7 +136,7 @@ export function findLatestTransfer(
 	entries: readonly LedgerEntry[],
 	chainId: number,
 	account: string | undefined,
-): { txHash: Hex; recipient?: string } | undefined {
+): { txHash: Hex; recipient: string } | undefined {
 	if (!account) return undefined;
 	for (const entry of entries) {
 		if (
@@ -143,8 +145,6 @@ export function findLatestTransfer(
 			typeof entry.account !== "string" ||
 			entry.account.toLowerCase() !== account.toLowerCase() ||
 			entry.status !== "confirmed" ||
-			typeof entry.label !== "string" ||
-			!entry.label.startsWith("Transfer") ||
 			typeof entry.txHash !== "string" ||
 			!entry.txHash ||
 			(entry.params != null && !Array.isArray(entry.params))
@@ -155,15 +155,20 @@ export function findLatestTransfer(
 			request && typeof request === "object"
 				? (request as { data?: unknown }).data
 				: undefined;
-		let recipient: string | undefined;
-		try {
-			if (typeof data === "string" && data)
-				recipient = decodeFunctionData({ abi: erc20Abi, data: data as Hex })
-					.args?.[0] as string | undefined;
-		} catch {
-			// not a transfer call: no recipient
-		}
-		return { txHash: entry.txHash as Hex, recipient };
+		const recipient = transferRecipient(data);
+		if (recipient) return { txHash: entry.txHash as Hex, recipient };
 	}
 	return undefined;
+}
+
+/** The recipient of an ERC-20 `transfer` call, or undefined for any other data. */
+function transferRecipient(data: unknown): string | undefined {
+	if (typeof data !== "string" || !data) return undefined;
+	try {
+		const call = decodeFunctionData({ abi: erc20Abi, data: data as Hex });
+		return call.functionName === "transfer" ? call.args[0] : undefined;
+	} catch {
+		// not an ERC-20 call, such as the test token's mint
+		return undefined;
+	}
 }

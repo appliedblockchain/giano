@@ -82,13 +82,7 @@ import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
-import {
-	IMPLEMENTATION_SLOT,
-	implementationFromSlot,
-	implementationFromUpgradedLogs,
-	isMethodRefusedError,
-	UPGRADED_TOPIC,
-} from "../erc1967";
+import { proxyImplementationWithSource } from "../erc1967";
 import {
 	gianoPaymasterAbi,
 	gianoSmartWalletAbi,
@@ -210,6 +204,11 @@ function resolveDeployment(
 	}
 	const pick = (flag: string, env: string, fallback?: `0x${string}`) =>
 		(flags[flag] ?? process.env[env] ?? fallback) as `0x${string}` | undefined;
+	const sponsorshipPaymaster = pick(
+		"sponsorship-paymaster",
+		"SPONSORSHIP_PAYMASTER_ADDRESS",
+		registry?.sponsorshipPaymaster,
+	);
 	return {
 		entryPoint: pick(
 			"entrypoint",
@@ -218,13 +217,17 @@ function resolveDeployment(
 		),
 		factory: pick("factory", "FACTORY_ADDRESS", registry?.factory),
 		implementation: registry?.implementation,
-		sponsorshipPaymaster: pick(
-			"sponsorship-paymaster",
-			"SPONSORSHIP_PAYMASTER_ADDRESS",
-			registry?.sponsorshipPaymaster,
-		),
+		sponsorshipPaymaster,
 		sponsorshipPaymasterImplementation:
 			registry?.sponsorshipPaymasterImplementation,
+		// The registry's deployment block belongs to the registry's proxy only.
+		sponsorshipPaymasterDeployBlock:
+			sponsorshipPaymaster &&
+			registry?.sponsorshipPaymaster &&
+			sponsorshipPaymaster.toLowerCase() ===
+				registry.sponsorshipPaymaster.toLowerCase()
+				? registry.sponsorshipPaymasterDeployBlock
+				: undefined,
 		testPaymaster: pick(
 			"test-paymaster",
 			"PAYMASTER_ADDRESS",
@@ -400,37 +403,21 @@ async function checkSponsorshipPaymaster(
 	// --- implementation matches the registry -------------------------------------------------
 	try {
 		// The proxy's code proves nothing about what it delegates to: the slot must hold paymaster
-		// release code.
-		let fromLogs = false;
-		const impl = await provider
-			.getStorage(address, IMPLEMENTATION_SLOT)
-			.then(implementationFromSlot)
-			// An RPC that refuses eth_getStorageAt (Silent Data): the latest Upgraded event instead.
-			// Any other storage-read error (a timeout, a rate limit) is reported as it is.
-			.catch(async (storageError: unknown) => {
-				if (!isMethodRefusedError(storageError)) throw storageError;
-				try {
-					const found = await implementationFromUpgradedLogs(
-						(fromBlock, toBlock) =>
-							provider.getLogs({
-								address,
-								topics: [UPGRADED_TOPIC],
-								fromBlock,
-								toBlock,
-							}),
-						BigInt(await provider.getBlockNumber()),
-					);
-					fromLogs = true;
-					return found;
-				} catch (logError) {
-					throw new Error(
-						`the RPC refused eth_getStorageAt, and reading the proxy's Upgraded logs failed: ${(logError as Error).message}`,
-						{ cause: storageError },
-					);
-				}
-			});
+		// release code. On an RPC that refuses eth_getStorageAt (Silent Data), the latest Upgraded
+		// event instead, searched from the proxy's deployment block when the registry has it. Any
+		// other storage-read error (a timeout, a rate limit) is reported as it is.
+		const fromBlock =
+			deployment.sponsorshipPaymasterDeployBlock === undefined
+				? undefined
+				: BigInt(deployment.sponsorshipPaymasterDeployBlock);
+		const { implementation: impl, source } =
+			await proxyImplementationWithSource(
+				createPublicClient({ transport: http(rpcInUse) }),
+				getAddress(address) as `0x${string}`,
+				{ fromBlock },
+			);
 		// The code the proxy delegates to can emit an Upgraded event that names another address.
-		if (fromLogs)
+		if (source === "logs")
 			report(
 				"warn",
 				"implementation source",
@@ -440,7 +427,9 @@ async function checkSponsorshipPaymaster(
 			report(
 				"fail",
 				"paymaster implementation",
-				`the implementation slot of ${address} is empty: the proxy delegates to nothing`,
+				source === "slot"
+					? `the implementation slot of ${address} is empty: the proxy delegates to nothing`
+					: `${address} emitted no Upgraded event since block ${fromBlock ?? 0n}: no implementation was ever set`,
 			);
 		else {
 			report("info", "implementation", impl);
@@ -465,7 +454,7 @@ async function checkSponsorshipPaymaster(
 			);
 		}
 	} catch (error) {
-		report("warn", "read implementation slot", (error as Error).message);
+		report("warn", "read paymaster implementation", (error as Error).message);
 	}
 
 	// --- stake and deposit (R-24) --------------------------------------------------------------

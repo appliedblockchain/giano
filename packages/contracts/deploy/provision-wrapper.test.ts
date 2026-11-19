@@ -4,6 +4,14 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import {
+	chmodSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { REPO_ROOT } from "./profiles";
@@ -202,4 +210,50 @@ test("sponsorship on a chain without the demo ERC-20 needs the tenant's contract
 	const bad = sponsorshipWrapper({ SPONSOR_ALLOWLIST: `${ADDRESS},0x1234` });
 	assert.notEqual(bad.code, 0);
 	assert.match(bad.out, /'0x1234' is not a contract address/);
+});
+
+/**
+ * The pnpm commands the wrapper runs, with GIANO_SIGNED_RPC set to `signedRpc`. A stand-in pnpm
+ * records them and runs only the key derivation (`pnpm … exec node -e`) with the real pnpm, so no
+ * chain call is made.
+ */
+function pnpmCommands(signedRpc: string): string[] {
+	const realPnpm = spawnSync("bash", ["-c", "command -v pnpm"], {
+		encoding: "utf8",
+	}).stdout.trim();
+	assert.ok(realPnpm, "pnpm must be on PATH");
+	const dir = mkdtempSync(join(tmpdir(), "giano-provision-wrapper-"));
+	try {
+		const log = join(dir, "pnpm.log");
+		writeFileSync(
+			join(dir, "pnpm"),
+			`#!/usr/bin/env bash\nif [ "\${3:-}" = "exec" ]; then exec "${realPnpm}" "$@"; fi\nprintf '%s\\n' "$*" >> "${log}"\n`,
+		);
+		chmodSync(join(dir, "pnpm"), 0o755);
+		const { code, out } = wrapper({
+			PATH: `${dir}:${process.env.PATH}`,
+			CHAIN_NAME: "Custom test chain",
+			FACTORY_ADDRESS: ADDRESS,
+			SPONSORSHIP_SIGNER_ADDRESS: ADDRESS,
+			PAYMASTER_GRANT_ALL_TO: ADDRESS,
+			GIANO_SIGNED_RPC: signedRpc,
+		});
+		assert.equal(code, 0, out);
+		return readFileSync(log, "utf8").trim().split("\n");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+test("the launcher's --signed-rpc (GIANO_SIGNED_RPC=1) reaches provision:paymaster, and only then", () => {
+	const provisions = (signedRpc: string) =>
+		pnpmCommands(signedRpc).filter((line) =>
+			line.includes("provision:paymaster"),
+		);
+	const signed = provisions("1");
+	assert.equal(signed.length, 1);
+	assert.match(signed[0], / --signed-rpc$/);
+	const unsigned = provisions("");
+	assert.equal(unsigned.length, 1);
+	assert.doesNotMatch(unsigned[0], /--signed-rpc/);
 });

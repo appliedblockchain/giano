@@ -207,6 +207,34 @@ const privateToken = (
 	deterministic: true,
 });
 
+test("the paymaster proxy's deployment block enters the registry as a number, and only when recorded", () => {
+	const withBlock = record();
+	withBlock.contracts.paymasterProxy = {
+		...(withBlock.contracts.paymasterProxy as NonNullable<
+			DeploymentRecord["contracts"]["paymasterProxy"]
+		>),
+		blockNumber: 1_234_567,
+	};
+	assert.match(
+		generate(withBlock).text,
+		/8453: \{[^}]*sponsorshipPaymasterDeployBlock: 1234567,/,
+	);
+	assert.doesNotMatch(
+		generate(record()).text,
+		/8453: \{[^}]*sponsorshipPaymasterDeployBlock/,
+	);
+	withBlock.contracts.paymasterProxy = {
+		...(withBlock.contracts.paymasterProxy as NonNullable<
+			DeploymentRecord["contracts"]["paymasterProxy"]
+		>),
+		blockNumber: -1,
+	};
+	assert.throws(
+		() => generate(withBlock),
+		/chain 8453: invalid paymasterProxy blockNumber -1/,
+	);
+});
+
 test("a testnet that carries the private test token lists it in its registry entry", () => {
 	const testnet = { ...record(), chainId: 19877, network: "testnet" as const };
 	testnet.contracts.privateTestErc20 = privateToken();
@@ -224,6 +252,13 @@ test("the private test token's code is checked against its committed artifact", 
 	assert.throws(
 		() => generate(testnet),
 		/privateTestErc20 at 0x7777777777777777777777777777777777777777 .* matches no release's GianoTestPrivateErc20 \(release-fingerprints.ts\) nor its fixture artifact/,
+	);
+	// An earlier version of the artifact: the chain keeps the code it was deployed with.
+	const [earlier] = loadFixture("GianoTestPrivateErc20").previous;
+	testnet.contracts.privateTestErc20 = privateToken(earlier.fingerprint);
+	assert.match(
+		generate(testnet).text,
+		/19877: \{[^}]*privateTestErc20: '0x7777777777777777777777777777777777777777'/,
 	);
 	// The artifact's code recorded under a release: the record must name `fixture`.
 	testnet.contracts.privateTestErc20 = { ...privateToken(), release: "v3" };

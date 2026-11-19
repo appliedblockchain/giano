@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { GAS_PRICE_ORACLE } from "@appliedblockchain/giano-contracts";
 import {
 	type Address,
 	bytesToHex,
@@ -91,8 +92,8 @@ export function staticPreVerificationGas(
 }
 
 /** The OP-stack GasPriceOracle predeploy: its presence is what makes a chain OP-stack here. */
-export const GAS_PRICE_ORACLE: Address =
-	"0x420000000000000000000000000000000000000F";
+export { GAS_PRICE_ORACLE };
+
 const gasPriceOracleAbi = parseAbi([
 	"function getL1Fee(bytes _data) view returns (uint256)",
 ]);

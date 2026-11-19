@@ -14,6 +14,7 @@ import {
 	type TimelockedFunctionName,
 	type TimelockedOperation,
 	type TimelockProposal,
+	waitForReceipt,
 } from "@appliedblockchain/giano-contracts";
 import {
 	type Address,
@@ -940,7 +941,7 @@ export class GianoTimelockClient {
 			return {
 				hash,
 				wait: (confirmations?: number) =>
-					this.publicClient.waitForTransactionReceipt({ hash, confirmations }),
+					waitForReceipt(this.publicClient, { hash, confirmations }),
 			};
 		} catch (error) {
 			throw translateContractError(error, {

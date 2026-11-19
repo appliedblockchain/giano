@@ -5,6 +5,7 @@ import {
 	gianoSmartWalletFactoryAbi,
 	isCanonicalEntryPointCode,
 	isEntryPointAddress,
+	isUpgradedLogWalkLimitError,
 	proxyImplementationWithSource,
 	type ReleaseContractName,
 	releaseOf,
@@ -29,10 +30,21 @@ import type { ResolvedChain } from "../config.js";
  *   (MC-22, {@link probeDivergence});
  * - `unreachable` is not fatal: the deployment starts, marks the chain unavailable, serves
  *   its other chains and retries in the background (MC-54).
+ * - `paymaster-implementation-unresolved` is not fatal either, and is handled like `unreachable`:
+ *   every request was answered, but the search through the paymaster proxy's `Upgraded` logs
+ *   stopped at its request limit. The background check continues the search.
  */
 
 export type ChainVerificationFailure =
 	| { kind: "unreachable"; detail: string } // NOT fatal
+	| {
+			/**
+			 * NOT fatal. The RPC refuses `eth_getStorageAt`, and the search through the paymaster
+			 * proxy's `Upgraded` logs stopped at its request limit before it found one.
+			 */
+			kind: "paymaster-implementation-unresolved";
+			paymaster: `0x${string}`;
+	  }
 	| { kind: "chain-id-mismatch"; declared: number; reported: number }
 	| { kind: "entrypoint-missing"; address: `0x${string}` }
 	| {
@@ -133,9 +145,15 @@ export const PAYMASTER_LOG_REQUESTS_PER_CHECK = 100;
  */
 export const PAYMASTER_LOG_REQUESTS_AT_BOOT = 10;
 
-/** True for a failure that must prevent the deployment from serving this chain. */
+/**
+ * True for a failure that must prevent the deployment from serving this chain. The others leave
+ * the chain unavailable until a later check completes ({@link recoveryVerified}).
+ */
 export function isFatalFailure(failure: ChainVerificationFailure): boolean {
-	return failure.kind !== "unreachable";
+	return (
+		failure.kind !== "unreachable" &&
+		failure.kind !== "paymaster-implementation-unresolved"
+	);
 }
 
 /**
@@ -322,6 +340,7 @@ export async function verifyChain(
 				// slot must hold paymaster release code.
 				// An empty slot delegates to nothing: reported as no release code at the zero address.
 				const read = await proxyImplementationWithSource(client, paymaster, {
+					fromBlock: descriptor.sponsorshipPaymasterDeployBlock,
 					maxChunks: options.logRequests ?? PAYMASTER_LOG_REQUESTS_PER_CHECK,
 				});
 				if (read.source === "logs")
@@ -357,10 +376,17 @@ export async function verifyChain(
 			}
 		}
 	} catch (error) {
-		result.failures.push({
-			kind: "unreachable",
-			detail: (error as Error).message,
-		});
+		// Only the paymaster read throws this, and only when the RPC answered every request.
+		if (isUpgradedLogWalkLimitError(error) && descriptor.sponsorshipPaymaster)
+			result.failures.push({
+				kind: "paymaster-implementation-unresolved",
+				paymaster: descriptor.sponsorshipPaymaster,
+			});
+		else
+			result.failures.push({
+				kind: "unreachable",
+				detail: (error as Error).message,
+			});
 	}
 
 	return result;
@@ -374,6 +400,8 @@ export function describeFailure(
 	switch (failure.kind) {
 		case "unreachable":
 			return `chain ${chainId}: endpoint unreachable (${failure.detail}) — will start unavailable and retry`;
+		case "paymaster-implementation-unresolved":
+			return `chain ${chainId}: the RPC refuses eth_getStorageAt, and the search for paymaster ${failure.paymaster}'s latest Upgraded event stopped at its request limit — will start unavailable and continue the search; set the proxy's deployment block in its record (blockNumber) to shorten it`;
 		case "chain-id-mismatch":
 			return `chain ${chainId}: the RPC endpoint reports chain ${failure.reported}, not ${failure.declared} — the endpoint and the declaration disagree; fix the configuration`;
 		case "entrypoint-missing":
