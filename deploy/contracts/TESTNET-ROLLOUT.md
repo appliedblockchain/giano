@@ -37,7 +37,7 @@ now states its leak impact), production role holders and production timelock del
 | 6 | **Done (2026-11-17).** **Ethereum Sepolia**: repeat step 5 with `--chain ethereum-sepolia`, the same release, deployer and bootstrap admin. | development team | doctor green |
 | 7 | Commit `packages/contracts/deployments/84532.json` and `11155111.json`, both profiles (with their timelock addresses) and the regenerated `addresses.ts` (**done: #304**). Then release `@appliedblockchain/giano-contracts`. | development team | records committed (#304); package published |
 | 8 | **Token deployed (2026-11-18)** at `0x461E0641a3615336b7D2E4C5D71fB2BB88038C93` on both chains; its records are in the registry. Deploy the test ERC-20 on each chain (D5), from the canonical deployer only and without an operator file loaded: `DEPLOYER_PRIVATE_KEY=<testnet canonical deployer> node --import tsx deploy/cli.ts test-token --rpc <url> --chain <profile> --holder <admin>` (in `packages/contracts`). It lands at the same address on both chains, with the profile's release. **Then publish it like step 7:** commit the `testErc20` entry of both records and the regenerated `addresses.ts`, with a changeset, and release `@appliedblockchain/giano-contracts` again; step 7's release went out without the token. Then install each tenant's sponsorship rules on each chain: `pnpm contracts:sponsorship` with `SPONSOR_ALLOWLIST` set to the tenant's contracts, or the console. An empty allowlist sponsors nothing, wallet management included, so each tenant needs at least one contract. **Allow-listing the test ERC-20 lets anyone spend that tenant's balance:** anyone may `mint`, so any wallet can send sponsored mints until the balance runs out. That is the point for `dev`'s demo tenants (D5, testnet funds only); never allow-list it for a tenant whose balance matters | development team | package published; rules read back |
-| 9 | Update the `chains` secret (`GIANO_CHAINS`) and the Terraform address variables (drafts below). | DevOps | `terraform plan` reviewed |
+| 9 | Update the `chains` secret (`GIANO_CHAINS`) and the Terraform address variables: see **Cut-over runbook** below, which orders steps 9 and 10 with the user-data reset (D1). | DevOps | `terraform plan` reviewed |
 | 10 | Bump `infra/versions.json` `dev` to the tested `main` SHA (a `deploy/dev-<sha>` PR) and roll. | DevOps | `GET /v1/version` lists both chains ready, and `giano_paymaster_watcher_lag_blocks` (wallet-api `/metrics`) is within a few blocks on both chains. On a fresh database the watcher replays 5,000 blocks at 200 a pass, so for a few minutes every tenant reads as unfunded and sponsorship is refused; don't start step 11 before the lag drops |
 | 11 | Smoke test on each chain: create a passkey account, sign, send a sponsored transaction. Check that the operator console shows the tenant, its balance and the timelock (the fork rehearsal does not cover the console). Record the transaction hashes, explorer links and account addresses (README "Recovery and evidence"). | development team | evidence recorded |
 | 12 | Retire the legacy deployment: withdraw the legacy paymaster's tenant balances (each tenant's withdrawal address) and its stake (stake admin, after the unstake delay). | DevOps / tenants | legacy deposit and stake at zero |
@@ -48,35 +48,15 @@ now states its leak impact), production role holders and production timelock del
 CREATE3 places the contracts by the testnet deployer's address, so their addresses are known before steps 5 and 6
 and are the same on both testnets. The records written in those steps confirm them; copy from the records.
 
-`GIANO_CHAINS` (the backend `chains` secret, one entry per chain; RPC URLs stay in the secret):
+`GIANO_CHAINS`: the final document, with the v3 addresses filled in, is in the **Cut-over runbook** below. If
+`rpcUrl` (or `bundler.rpcUrl`) were the public `https://sepolia.base.org`, the bundler would also need
+`"bundler": { "maxBlockRange": 200 }`: it looks up receipts of operations it did not submit itself with one
+`eth_getLogs` over the last `maxBlockRange` blocks, 2,000 by default, which that RPC refuses. `dev`'s keyed
+QuickNode URLs serve 10,000 blocks, so the section is left out.
 
-```json
-{
-  "chainId": 84532, "name": "Base Sepolia",
-  "rpcUrl": "<keyed Base Sepolia RPC (recommended), or https://sepolia.base.org with the bundler section below>",
-  "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
-  "sponsorshipPaymaster": "<deployments/84532.json paymasterProxy>",
-  "walletApi": {
-    "factory": "<deployments/84532.json factory>",
-    "policy": { "allowedPaymasters": ["<the same paymasterProxy>"] }
-  },
-  "bundler": { "maxBlockRange": 200 }
-}
-```
-
-The `bundler` section is needed only when `rpcUrl` (or `bundler.rpcUrl`) is the public
-`https://sepolia.base.org`. The bundler answers `eth_getUserOperationReceipt` and
-`eth_getUserOperationByHash` for operations it did not submit itself (after a restart, or sent through another
-replica) with one `eth_getLogs` over the last `maxBlockRange` blocks, 2,000 by default, which that RPC refuses.
-At 200, such a lookup covers only about the last 400 seconds of Base Sepolia. A keyed `rpcUrl` (or a keyed
-`bundler.rpcUrl`) avoids both, so prefer it and leave the `bundler` section out.
-
-Once the contracts package that carries both records is released, `factory` and `entryPoint` may be
-left out and taken from the registry.
-
-Terraform (`infra/iac/ecs_services.vars.tf`): `paymaster_address` defaults to the legacy
-`0xf98b56de…0718`, and `factory_address` to the legacy `0x26dCd293…7050`. Both must become the new
-addresses (the paymaster proxy and factory are at the same address on both testnets).
+Terraform (`infra/iac/ecs_services.vars.tf`): `paymaster_address` and `factory_address` default to the v3
+proxy and factory, and `test_erc20_address` gives the reference dApp's `defaultToken` on both chains (they were
+the legacy `0xf98b56de…0718` and `0x26dCd293…7050` before the cut-over PR).
 
 The real addresses, from the testnet deployer `0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5` (read-only plan
 against both public RPCs, 2026-11-17; deploy/contracts/README.md, "Read-only public-network evidence"). A
@@ -89,8 +69,130 @@ rehearsal uses a stand-in deployer and lands elsewhere: never copy a rehearsal a
 | paymaster implementation | `0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540` |
 | paymaster proxy | `0xb2C7081be89D88f1da020530Ebd5c14b8871615a` |
 
+## Cut-over runbook (steps 9 and 10)
+
+Moves `dev` from the legacy v0.7 contracts to release v3 on both chains. Everything the switch needs is
+ready: the contracts are live and handed to the timelock (steps 5–6), `@appliedblockchain/giano-contracts`
+7.1.0 carries both chains in its registry (step 7), and the test ERC-20 is deployed (step 8). DevOps runs
+the infrastructure parts; the development team runs the checks and step 8's sponsorship rules afterwards.
+
+Why this order:
+- ECS tasks read the `chains` secret when they start, and wallet-api refuses a chain whose configured factory
+  does not run release code. A new image with the legacy secret, or the legacy image with the new secret,
+  does not serve. So the secret changes in Secrets Manager first, without a restart.
+- The user data is reset with wallet-api stopped, before the new release starts. A running v3 watcher would
+  otherwise reconcile against the legacy paymaster's stored slack and raise the drawdown-divergence alert, the
+  signal for a leaked signing key; a running legacy watcher would rewrite its cache straight after the reset.
+  Every table the reset touches already exists in the release `dev` runs (`5ba71241`).
+- wallet-api's image has no shell and no `psql` (a DHI runtime image), and only the tasks security group
+  reaches the database. [`dev-db-run.sh`](dev-db-run.sh) runs a SQL file in a one-off task of the wallet-api
+  task definition, through node and the `pg` driver, on the `RUN_TASK_NETWORK` subnets. It works with the
+  wallet-api service at 0 and needs no hand-made connection string.
+
+**Before the switch** (nothing changes for users yet):
+
+1. **Pick the window**: a weekday between 07:00 and 19:00 UTC. `dev`'s scheduler scales every service to 0 at
+   19:00 and back at 07:00 (`infra/iac/scheduler.tf`).
+2. **Rollback inputs**: note the `infra/versions.json` `dev` SHA (`5ba71241`) and take a manual RDS snapshot
+   of `dev`'s database (a last resort only: the reset keeps its own backup, see "If it fails"). 1Password
+   keeps the previous `secrets-dev` note in the item's history.
+3. **Merge the infrastructure PR**: `paymaster_address` and `factory_address` default to the v3 proxy and
+   factory, and `test_erc20_address` gives `dev`'s reference dApps their `defaultToken` (blank in stg and
+   prd). Merging applies nothing.
+4. **Open the deploy PR** `deploy/dev-<sha>`: `infra/versions.json` `dev` set to the tested `main` SHA
+   (7.1.0 or later). Do not merge it yet.
+
+**The switch** (a short window; `dev`'s users re-register anyway):
+
+5. **Point the `chains` secret at v3.** Its source of truth is the `notesPlain` of the 1Password item
+   `secrets-dev` (vault "Giano dev/stg"): a JSON bundle `{ "<name>": { "value": "<string>", "version": n } }`,
+   from which Terraform reads each secret's value and version (`infra/iac/asm.tf`). Never edit a separate
+   field, and never paste the raw chain array: [`dev-v3-chains.mts`](dev-v3-chains.mts) rewrites the
+   bundle for you. It sets both testnet entries to the v3 EntryPoint, paymaster, factory and allowed
+   paymaster, adds the console's `paymasterAdmin.timelockAddress` and `timelockDelays`, keeps every other
+   field (RPC URLs, policy limits, bundler and console settings), checks the result against the services'
+   chain schemas, and bumps `chains.version`. Every value comes from the committed records and profiles.
+
+   ```sh
+   op item get secrets-dev --vault "Giano dev/stg" --format json \
+     | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
+     | (cd packages/contracts && node --import tsx ../../deploy/contracts/dev-v3-chains.mts) | pbcopy
+   ```
+
+   It lists what changed on stderr (without RPC URLs). Paste the clipboard back into the note as-is, then
+   mirror only that secret to Secrets Manager:
+   `terraform apply -target='module.asm-app.aws_secretsmanager_secret_version.secret["chains"]'`. Running tasks
+   keep the old value until they restart.
+6. **Stop wallet-api**:
+   `aws ecs update-service --cluster giano-dev-ecs --service giano-dev-wallet-api --desired-count 0`, then
+   `aws ecs wait services-stable --cluster giano-dev-ecs --services giano-dev-wallet-api`.
+7. **Reset the user data** (D1, F8), once:
+   `deploy/contracts/dev-db-run.sh deploy/contracts/dev-v3-reset.sql` (infra/iac's `dev` workspace selected;
+   it needs `aws`, `jq` and `terraform`). One transaction: it copies every row it clears into the schema
+   `cutover_v3_backup`, then clears users, passkeys, challenges, sessions and their logs, the legacy
+   paymaster's ledger and the watcher's cache. Tenants, their configuration and the platform admins stay. It
+   prints the counts before and after; a second run fails and changes nothing.
+8. **Roll**: merge the deploy PR. `deploy.yml` rolls every service to the new image; wallet-api stays at 0.
+   Then start it: `aws ecs update-service --cluster giano-dev-ecs --service giano-dev-wallet-api
+   --desired-count 1`. Its `init` container applies the migrations, and the API starts with an empty watcher
+   cache: the watcher cold-starts and its first reconcile reads every balance from the v3 paymaster. Finally
+   run the full `terraform apply` for the new variables (the reference dApps' `defaultToken`, wallet-byo's
+   `FACTORY_ADDRESS`, the provisioning task's paymaster). It ignores `desired_count`, so it does not fight the
+   scaling.
+
+**Readiness** (step 10's "done when"):
+
+9. `GET /v1/version` lists both chains ready; wallet-api's log shows both chains admitted with the v3 factory.
+10. `giano_paymaster_watcher_lag_blocks` on wallet-api's `/metrics` is within a few blocks on both chains.
+11. The operator console shows both tenants with 0.02 ETH on both chains, and the timelock
+    `0x7Da25D415f9b68422F905C015137Af8D915F8A78` in its Timelock and Roles tabs.
+
+Then step 8's sponsorship rules (each tenant on each chain, the test ERC-20 allow-listed) and step 11's smoke
+test. When the cut-over is final, drop the backup: `DROP SCHEMA cutover_v3_backup CASCADE`.
+
+**If it fails:**
+- **Before step 7:** do not merge the deploy PR. Restore the previous `chains` value from the 1Password
+  item's history with a higher `version` than the current one, apply it with the same `-target`, and scale
+  wallet-api back to 1.
+- **After step 7:** scale wallet-api to 0, run `deploy/contracts/dev-db-run.sh
+  deploy/contracts/dev-v3-restore.sql`, put back the previous `versions.json` SHA and `chains` value, then
+  scale wallet-api to 1. The restore clears what v3 wrote in the same tables (new users, and the v3
+  watcher's cache, which would make the legacy watcher skip events and report a false drawdown), then
+  re-inserts the backed-up rows; columns are matched by name, so it works after the v3 migrations too. The
+  RDS snapshot is the last resort: restoring it creates a new instance and loses everything written since.
+
+For reference, a testnet entry as the script leaves it (`rpcUrl` and any other existing fields kept as they
+are). The registry would supply `entryPoint`, `sponsorshipPaymaster` and the factory, but stating them lets
+wallet-api check them against the chain at boot. With `dev`'s keyed QuickNode URLs no `bundler` section is
+needed (measured: `eth_getLogs` served up to 10,000 blocks on both chains; the bundler's default is 2,000):
+
+```json
+{
+  "chainId": 84532,
+  "name": "Base Sepolia",
+  "rpcUrl": "<dev's QuickNode Base Sepolia URL>",
+  "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
+  "sponsorshipPaymaster": "0xb2C7081be89D88f1da020530Ebd5c14b8871615a",
+  "walletApi": {
+    "factory": "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635",
+    "policy": { "allowedPaymasters": ["0xb2C7081be89D88f1da020530Ebd5c14b8871615a"] }
+  },
+  "paymasterAdmin": {
+    "timelockAddress": "0x7Da25D415f9b68422F905C015137Af8D915F8A78",
+    "timelockDelays": {
+      "minDelay": 300, "upgradeToAndCall": 3600, "grantRole": 3600, "revokeRole": 3600,
+      "renounceRole": 3600, "setTenantWithdrawAddress": 1800, "setDefaultFee": 1200, "setTenantFee": 600
+    }
+  }
+}
+```
+
+The Ethereum Sepolia entry is the same with `"chainId": 11155111`, `"name": "Ethereum Sepolia"` and its own
+`rpcUrl`.
+
 ## Rollback
 
 CREATE3 contracts cannot be removed. Until step 12, the legacy contracts stay funded, so rolling
-back means restoring the previous `infra/versions.json` SHA and chains secret. Do step 12 only after
+back means restoring the previous `infra/versions.json` SHA and chains secret, and, once the user data
+has been reset, `dev-v3-restore.sql` ("If it fails" in the Cut-over runbook). Do step 12 only after
 step 11 has passed on both chains.
