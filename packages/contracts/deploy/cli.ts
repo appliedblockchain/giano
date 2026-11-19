@@ -10,12 +10,16 @@
  *   pnpm deploy:cli test-token --rpc <url> [--holder <0x…>]      (--holder required to deploy)
  *       The test ERC-20 alone, for the reference dApp: allowed on the served testnets, never on a
  *       mainnet, and only from the class's canonical deployer (R-29 keeps `testing` off both).
+ *   pnpm deploy:cli private-test-token --rpc <url> --chain <profile> [--signed-rpc]
+ *       The private test token alone (GianoTestPrivateErc20), for the demo on a Silent Data chain:
+ *       only where the profile sets `privateTestErc20: true`, never on a production chain, and only
+ *       from the class's canonical deployer. Unlike `testing`, no permissive paymaster.
  *   pnpm deploy:cli upgrade  --rpc <url> --contract paymaster|wallet [--release vN] [--execute]
  *                            [--timelock <0x…> [--salt <0x…>] [--safe-json <file>]]
  *   pnpm deploy:cli timelock --rpc <url> --proposer <safe> [--proposer …] [--executor <0x…> …]
  *                            --min-delay <dur> --delay <function>=<dur> … [--release vN]
  *   pnpm deploy:cli handoff  --rpc <url> --timelock <0x…> [--execute] [--safe-json <file>]
- *   --signed-rpc (core, testing, upgrade, p256, timelock, handoff) signs every request after the
+ *   --signed-rpc (core, testing, private-test-token, upgrade, p256, timelock, handoff) signs every request after the
  *       chain id read with the key the command sends from: DEPLOYER_PRIVATE_KEY, and for
  *       `upgrade --execute` also UPGRADER_PRIVATE_KEY for the upgrader's own requests;
  *       ROLE_ADMIN_PRIVATE_KEY for `timelock` and `handoff --execute`. A `handoff` plan only reads,
@@ -71,7 +75,8 @@
  * (R-29). It also deploys the private test token GianoTestPrivateErc20 (`giano.test.private-erc20`)
  * where the chain's profile sets `privateTestErc20: true`, which only a chain whose RPC enforces
  * private reads should do, and on every local chain. The token comes from its committed artifact
- * (fixtures/, deploy/fixtures.ts), not from the release.
+ * (fixtures/, deploy/fixtures.ts), not from the release. On a remote chain that the platform serves,
+ * use `private-test-token` instead: it deploys that token alone.
  *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
  * Commit that file for any chain other than 31337/31338.
@@ -126,6 +131,7 @@ import { create3Address } from "./create3";
 import {
 	type DeployContext,
 	deployCore,
+	deployPrivateTestToken,
 	deployTesting,
 	deployTestToken,
 	deployTimelock,
@@ -156,6 +162,7 @@ import {
 	handOffProblems,
 	handOffScanStart,
 	isContractAccount,
+	privateTestTokenProblem,
 	scanStartProblem,
 	testingProblem,
 	testTokenProblem,
@@ -808,6 +815,21 @@ async function main(): Promise<void> {
 			save(ctx);
 			return;
 		}
+		case "private-test-token": {
+			const ctx = await deployerContext({ verifyOnly: true });
+			const problem = privateTestTokenProblem({
+				chainId: ctx.chainId,
+				network: ctx.network,
+				local: ctx.local,
+				optIn: ctx.target.profile?.privateTestErc20,
+				signer: ctx.walletClient?.account.address,
+				canonical: classDeployer(ctx.network),
+			});
+			if (problem) throw new Error(problem);
+			await deployPrivateTestToken(ctx);
+			save(ctx);
+			return;
+		}
 		case "upgrade": {
 			const which = required("contract");
 			if (which !== "paymaster" && which !== "wallet")
@@ -1107,7 +1129,7 @@ async function main(): Promise<void> {
 		}
 		default:
 			console.error(
-				"usage: giano-deploy addresses | core | testing | test-token | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
+				"usage: giano-deploy addresses | core | testing | test-token | private-test-token | upgrade | timelock | handoff | p256 | install-createx | install-entrypoint  (see deploy/cli.ts)",
 			);
 			process.exit(2);
 	}

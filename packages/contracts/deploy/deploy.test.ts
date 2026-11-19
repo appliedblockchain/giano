@@ -23,6 +23,7 @@ import {
 import {
 	type DeployContext,
 	deployCore,
+	deployPrivateTestToken,
 	deployTesting,
 	privateTestErc20Wanted,
 } from "./deploy";
@@ -377,6 +378,51 @@ describe("deployTesting and the private test token (silent-data-network D7)", ()
 			/giano.test.private-erc20 at 0x[0-9a-fA-F]{40} holds code 0x[0-9a-f]{64}, which is not GianoTestPrivateErc20's committed artifact/,
 		);
 		assert.deepEqual(sent, []);
+	});
+
+	it("private-test-token deploys the token alone: no test ERC-20, no permissive paymaster", async () => {
+		const { publicClient, walletClient, sent, initCodes } = testingChain();
+		const ctx = context(publicClient, walletClient);
+		await deployPrivateTestToken(ctx);
+		assert.deepEqual(sent, ["giano.test.private-erc20"]);
+		assert.equal(
+			initCodes.get("giano.test.private-erc20"),
+			artifact.creationCode,
+		);
+		const recorded = ctx.record.contracts.privateTestErc20;
+		assert.equal(recorded?.address, PRIVATE_TOKEN);
+		assert.equal(recorded?.release, "fixture");
+		assert.equal(recorded?.fingerprint, artifact.fingerprint);
+		assert.equal(ctx.record.contracts.testErc20, undefined);
+		assert.equal(ctx.record.contracts.testPaymaster, undefined);
+	});
+
+	it("private-test-token: a re-run finds the token in place and sends nothing", async () => {
+		const { publicClient, walletClient, sent } = testingChain();
+		const ctx = context(publicClient, walletClient);
+		await deployPrivateTestToken(ctx);
+		sent.length = 0;
+		await deployPrivateTestToken(ctx);
+		assert.deepEqual(sent, []);
+		assert.equal(ctx.record.contracts.privateTestErc20?.release, "fixture");
+	});
+
+	it("private-test-token refuses other code at the token's address and sends nothing", async () => {
+		const { publicClient, walletClient, sent, code } = testingChain();
+		code.set(PRIVATE_TOKEN, "0x6001");
+		await assert.rejects(
+			deployPrivateTestToken(context(publicClient, walletClient)),
+			/giano.test.private-erc20 at 0x[0-9a-fA-F]{40} holds code 0x[0-9a-f]{64}, which is not GianoTestPrivateErc20's committed artifact/,
+		);
+		assert.deepEqual(sent, []);
+	});
+
+	it("private-test-token without a key only verifies: a missing token fails", async () => {
+		const { publicClient } = testingChain();
+		await assert.rejects(
+			deployPrivateTestToken(context(publicClient, undefined)),
+			/giano.test.private-erc20 is not deployed at 0x[0-9a-fA-F]{40} on this chain, and this run has no deployer key, so it only verifies/,
+		);
 	});
 
 	it("a remote chain gets it only when its profile opts in; a local chain always does", () => {

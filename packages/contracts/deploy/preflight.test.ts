@@ -22,6 +22,7 @@ import {
 	GateError,
 	handOffScanStart,
 	inspectDeployment,
+	privateTestTokenProblem,
 	profileCoreConfig,
 	roleAdmin,
 	scanStartProblem,
@@ -643,6 +644,64 @@ test("test-token: never on a mainnet, and only from the canonical deployer on a 
 	// Local chains: any signer (the devnet's deployer is anvil's).
 	assert.equal(
 		testTokenProblem({
+			chainId: 31337,
+			network: "local",
+			local: true,
+			canonical: null,
+			signer: admin,
+		}),
+		undefined,
+	);
+});
+
+test("private-test-token: only where the profile opts in, never on a production chain, and only from the canonical deployer (silent-data-network D7)", () => {
+	const canonical = getAddress("0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5");
+	const admin = getAddress("0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030");
+	// iron-kestrel, a Silent Data testnet whose profile opts in.
+	const silentData = {
+		chainId: 19874,
+		network: "testnet" as const,
+		local: false,
+		optIn: true,
+		canonical,
+	};
+	assert.equal(
+		privateTestTokenProblem({ ...silentData, signer: canonical }),
+		undefined,
+	);
+	// Without a key the run only verifies.
+	assert.equal(privateTestTokenProblem(silentData), undefined);
+	assert.match(
+		privateTestTokenProblem({ ...silentData, signer: admin }) ?? "",
+		/signer 0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030 is not the testnet canonical deployer/,
+	);
+	// A remote chain whose profile does not opt in, or has no profile.
+	for (const optIn of [false, undefined])
+		assert.match(
+			privateTestTokenProblem({ ...silentData, optIn, signer: canonical }) ??
+				"",
+			/chain 19874's profile does not set "privateTestErc20": true/,
+		);
+	// The served testnets and the mainnets, even with an opt-in.
+	for (const chainId of [84532, 11155111, 8453, 1])
+		assert.match(
+			privateTestTokenProblem({ ...silentData, chainId, signer: canonical }) ??
+				"",
+			new RegExp(`chain ${chainId} is a production chain`),
+		);
+	// A chain declared mainnet, off the fixed list.
+	assert.match(
+		privateTestTokenProblem({
+			...silentData,
+			chainId: 4242,
+			network: "mainnet",
+			canonical: null,
+		}) ?? "",
+		/chain 4242 is a production chain/,
+	);
+	// Local chains: always wanted, any signer.
+	assert.equal(
+		privateTestTokenProblem({
 			chainId: 31337,
 			network: "local",
 			local: true,

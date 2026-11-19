@@ -74,7 +74,7 @@ Decided:
   - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), a git submodule pinned to a commit.
   - The demo signs Silent Data reads for a smart wallet (`x-signer-swc`) itself, in a small viem module (design D6). It adds no Silent Data package.
 - **Configuration:** a `GIANO_CHAINS` entry for 19877 and one for 19874. Each sets `bundler.rpcUrl` to that chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds them.
-- **Blocked:** contract deployment on both chains waits for the testnet canonical deployer key (`DEPLOYERS.testnet` is `null`). Copper-heron also needs funds for the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX.
+- **Blocked:** copper-heron needs funds for the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX. The testnet canonical deployer key, which both chains waited for, exists since #296 (`DEPLOYERS.testnet`).
 - **Funding:** both chains need funds.
   - iron-kestrel: the key that deploys EntryPoint v0.9 (task 8.2), the paymaster deposit and the dev tenant's balance, sized for the fixed limits at the chain's gas price (task 8.4), and the bundler executor (task 8.4).
   - copper-heron: 0.01 ETH for the Arachnid presigned sender and 0.3 ETH for the CreateX presigned sender (task 7.1), and the bundler executor (task 7.6).
