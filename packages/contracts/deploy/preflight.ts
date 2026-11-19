@@ -428,8 +428,8 @@ export async function inspectDeployment(
 	);
 	if (!missing || !payer) return { checks, plan };
 	const who = `${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer}`;
-	// A chain that charges nothing for gas (H6, Silent Data copper-heron) can hold no ETH at all, so
-	// the deployer needs none. A failed read counts as "charges gas": the reserve is then required.
+	// On a chain that charges nothing for gas (H6), the deployer pays nothing, so it needs no ETH.
+	// A failed read counts as "charges gas": the reserve is then required.
 	if (await chargesNoGas(client).catch(() => false))
 		checks.push({
 			ok: true,

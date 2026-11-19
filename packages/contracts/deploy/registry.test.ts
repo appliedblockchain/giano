@@ -246,21 +246,17 @@ test("a testnet that carries the private test token lists it in its registry ent
 });
 
 test("a served Silent Data testnet may carry the private test token but never the permissive paymaster (R-29)", () => {
-	for (const chainId of [19874, 19877]) {
-		const testnet = { ...record(), chainId, network: "testnet" as const };
-		testnet.contracts.privateTestErc20 = privateToken();
-		assert.doesNotThrow(() => generate(testnet));
-		testnet.contracts.testPaymaster = contract(
-			"0x6666666666666666666666666666666666666666",
-			"PermissivePaymaster",
-		);
-		assert.throws(
-			() => generate(testnet),
-			new RegExp(
-				`chain ${chainId} is a production chain but carries testPaymaster`,
-			),
-		);
-	}
+	const testnet = { ...record(), chainId: 19874, network: "testnet" as const };
+	testnet.contracts.privateTestErc20 = privateToken();
+	assert.doesNotThrow(() => generate(testnet));
+	testnet.contracts.testPaymaster = contract(
+		"0x6666666666666666666666666666666666666666",
+		"PermissivePaymaster",
+	);
+	assert.throws(
+		() => generate(testnet),
+		/chain 19874 is a production chain but carries testPaymaster/,
+	);
 });
 
 test("the private test token's code is checked against its committed artifact", () => {

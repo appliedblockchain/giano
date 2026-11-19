@@ -12,7 +12,7 @@ Silent Data puts a gateway (the custom-rpc service) in front of its node, and th
 
 Silent Data chains come in two kinds, and Giano must work on both with the same build and the same settings:
 
-- **Gasless chains**, such as copper-heron (chain 19877), with a base fee of 0 and a gas price of 0. Copper-heron is not OP Stack. The bundler refused a user operation with a fee of 0, although nothing on that chain charges for gas.
+- **Gasless chains**, such as copper-heron (chain 19877), with a base fee of 0 and a gas price of 0. Copper-heron is not OP Stack. The bundler refused a user operation with a fee of 0, although nothing on that chain charges for gas. Giano is not adopted on copper-heron, because it has no native currency (design D8). The support for gasless chains stays.
 - **Gas-charging chains**, such as iron-kestrel (chain 19874), with a base fee of 251 wei and a gas price of about 0.001 gwei. Iron-kestrel is OP Stack, so it also charges an L1 data fee. The gateway restrictions are the same as on copper-heron (checked read-only on 2026-11-16). Gas is real, so the paymaster deposit, the tenant balances and the sponsorship caps must cover the gas limits the bundler returns.
 
 ## What Changes
@@ -23,23 +23,21 @@ Silent Data chains come in two kinds, and Giano must work on both with the same 
 - `deploy:cli` and `provision:paymaster` gain `--signed-rpc`. Each request after the chain id read is signed with the deploying key, so the gateway keeps `from`.
 - A changeset: `giano-contracts` minor, `giano-paymaster-sdk` patch. It is split into one changeset per PR before the PRs open.
 
-The work ships as one stack of PRs, merged bottom-up: the plan, three fix PRs, the private token, the demo, and one adoption PR per chain. `tasks.md` lists them.
+The work ships as one stack of PRs, merged bottom-up: the plan, three fix PRs, the private token, the demo, and the iron-kestrel adoption PR. `tasks.md` lists them.
 
 Still to do:
 
 - Make the bundler's `eth_getUserOperationByHash` answer `null` when the bundle transaction's calldata is redacted. Today it fails to decode `0x` and returns an error.
-- Adopt both Silent Data testnets per `specs/CHAIN-ADOPTION.md`, at the same testnet-class addresses. The goal is Giano deployed on both chains:
-  - copper-heron (19877): CreateX and the Arachnid factory, which Silent Data installs (no native ETH exists on 19877), then EntryPoint v0.9;
-  - iron-kestrel (19874): CreateX and the Arachnid factory are already there, so only EntryPoint v0.9 is needed;
-  - on each chain: `core`, `testing`, `provision:paymaster`, `giano-doctor`, a `GIANO_CHAINS` entry in the dev environment, and one sponsored transaction.
+- Adopt iron-kestrel (19874) per `specs/CHAIN-ADOPTION.md`, at the testnet-class addresses. The goal is Giano deployed on iron-kestrel. CreateX and the Arachnid factory are already there, so only EntryPoint v0.9 is needed. Then `core`, the private test token, `provision:paymaster`, `giano-doctor`, a `GIANO_CHAINS` entry in the dev environment, and one sponsored transaction.
 - Add the Silent Data section to the demo app (R3). For a chain that names a private token, it shows the token balance the wallet can read with a signed request, and shows that an unsigned read is refused.
 - Add a private test ERC-20 (UCEF, `UCEFOwned` model) as a test fixture, deployed on Silent Data chains (R4).
-- Document the restrictions in `specs/CHAIN-ADOPTION.md`: RPCs without state overrides or `eth_getStorageAt`, and when to set `stateOverride: false` and `--signed-rpc`.
+- Document the restrictions in `specs/CHAIN-ADOPTION.md`: RPCs without state overrides or `eth_getStorageAt`, and when to set `stateOverride: false` and `--signed-rpc`. Add the prerequisite that a chain has a native currency, even when it charges nothing for gas (design D8).
 
 Decided:
 
 - Giano uses its own bundler (`services/bundler`) on Silent Data. It does not use the Skandha bundler in `private-rollup`. That bundler runs EntryPoint v0.6, and Giano's wallet implementation hardcodes EntryPoint v0.9.
 - Silent Data is configured like any other chain, through `GIANO_CHAINS`. No component checks for "Silent Data" by name. Each restriction is a per-chain setting or a fallback that any chain can use.
+- Giano is adopted on iron-kestrel only. Copper-heron has no native currency, which Silent Data confirmed. A chain may charge nothing for gas, but it must have a native currency (design D8).
 
 **Non-goals:**
 
@@ -47,6 +45,7 @@ Decided:
 - Changes to the Skandha bundler or the paymaster in `private-rollup`. Giano does not use them.
 - Simulated gas estimation on Silent Data. The gateway refuses state overrides, and Giano expects no change to the gateway, so fixed gas limits are the permanent approach on Silent Data.
 - Creating the testnet canonical deployer key. That is a team action, shared with the Base Sepolia and Ethereum Sepolia adoption, and this change only depends on it.
+- Chains without a native currency, such as copper-heron. Supporting them is possible, but it is a separate change (design D8).
 
 ## Capabilities
 
@@ -73,10 +72,8 @@ Decided:
 - **Dependencies:**
   - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), a git submodule pinned to a commit.
   - The demo signs Silent Data reads for a smart wallet (`x-signer-swc`) itself, in a small viem module (design D6). It adds no Silent Data package.
-- **Configuration:** a `GIANO_CHAINS` entry for 19877 and one for 19874. Each sets `bundler.rpcUrl` to that chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds them.
-- **Blocked:** copper-heron has no native ETH, so nobody can fund the two presigned senders (0.01 ETH for Arachnid, 0.3 ETH for CreateX). Silent Data must install both contracts (task 7.1). The testnet canonical deployer key, which both chains waited for, exists since #296 (`DEPLOYERS.testnet`).
-- **Funding:** both chains need funds.
-  - iron-kestrel: the key that deploys EntryPoint v0.9 (task 8.2), the paymaster deposit and the dev tenant's balance, sized for the fixed limits at the chain's gas price (task 8.4), and the bundler executor (task 8.4).
-  - copper-heron: gas is free, so only the paymaster's stake, its deposit and the dev tenants' balances need ETH (task 7.2). They wait for native ETH on 19877.
+- **Configuration:** a `GIANO_CHAINS` entry for 19874. It sets `bundler.rpcUrl` to the chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds it.
+- **Prerequisite:** the testnet canonical deployer key, which the adoption waited for, exists since #296 (`DEPLOYERS.testnet`).
+- **Funding:** on iron-kestrel, the key that deploys EntryPoint v0.9 (task 8.2), the paymaster deposit and the dev tenant's balance, sized for the fixed limits at the chain's gas price (task 8.4), and the bundler executor (task 8.4).
 - **Docs:** `specs/CHAIN-ADOPTION.md`, `packages/contracts/README.md`, `services/bundler` README.
 - **Integrators:** no breaking change. `stateOverride` defaults to `true`, and `--signed-rpc` is opt-in.

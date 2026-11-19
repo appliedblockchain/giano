@@ -241,10 +241,10 @@ export function isProductionChain(
 }
 
 /**
- * The Silent Data testnets (iron-kestrel, copper-heron). The platform serves them, but they are not on
+ * The Silent Data testnets Giano adopts (iron-kestrel). The platform serves them, but they are not on
  * PRODUCTION_CHAIN_IDS because they carry the private test token (openspec silent-data-network, D7).
  */
-export const SILENT_DATA_TESTNET_CHAIN_IDS = [19874, 19877] as const;
+export const SILENT_DATA_TESTNET_CHAIN_IDS = [19874] as const;
 
 /**
  * R-29 for the permissive paymaster: every production chain, plus the served Silent Data testnets,
