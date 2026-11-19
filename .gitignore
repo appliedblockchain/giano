@@ -14,9 +14,9 @@ latest.sql
 test-results/
 playwright-report/
 
-# terraform — .terraform.lock.hcl is deliberately NOT ignored: it is committed so every
-# operator and CI resolve the same provider builds.
+# terraform (runs in infra/iac)
 **/.terraform/
+**/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan
