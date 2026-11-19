@@ -43,6 +43,15 @@ export type GianoDeployment = {
 };
 
 export const gianoAddresses: Record<number, GianoDeployment> = {
+  19874: {
+    entryPoint: '0x433709009B8330FDa32311DF1C2AFA402eD8D009',
+    factory: '0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635',
+    implementation: '0x265dA930A9253fCC09E120B6f89EE8a91BcA9406',
+    sponsorshipPaymaster: '0xb2C7081be89D88f1da020530Ebd5c14b8871615a',
+    sponsorshipPaymasterImplementation: '0x3C99Acb0e2AE5C446E5eeab23D6cd7F40e9C5540',
+    sponsorshipPaymasterDeployBlock: 557335,
+    privateTestErc20: '0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b',
+  },
   84532: {
     entryPoint: '0x433709009B8330FDa32311DF1C2AFA402eD8D009',
     factory: '0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635',
