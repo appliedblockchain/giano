@@ -220,19 +220,20 @@ test("shipped profiles pin the newest release until deployed, then the release t
 	}
 });
 
-test("a testnet profile may opt in to the private test token; a mainnet profile may not (R-29)", () => {
+test("a testnet profile may opt in to the private test token; a production chain's profile may not (R-29)", () => {
 	assert.equal(base.profile.privateTestErc20, undefined);
+	// A testnet that is not a production chain, as a Silent Data testnet.
+	const testnet = { ...base.profile, chainId: 19877 };
 	for (const privateTestErc20 of [true, false])
 		assert.equal(
-			profileSchema.safeParse({ ...base.profile, privateTestErc20 }).success,
+			profileSchema.safeParse({ ...testnet, privateTestErc20 }).success,
 			true,
 		);
 	assert.equal(
-		profileSchema.safeParse({ ...base.profile, privateTestErc20: "yes" })
-			.success,
+		profileSchema.safeParse({ ...testnet, privateTestErc20: "yes" }).success,
 		false,
 	);
-	const mainnet = { ...base.profile, network: "mainnet" };
+	const mainnet = { ...testnet, network: "mainnet" };
 	assert.equal(
 		profileSchema.safeParse({ ...mainnet, privateTestErc20: false }).success,
 		true,
@@ -241,4 +242,14 @@ test("a testnet profile may opt in to the private test token; a mainnet profile 
 		profileSchema.safeParse({ ...mainnet, privateTestErc20: true }).success,
 		false,
 	);
+	// Base Sepolia and Sepolia are production chains although their class is testnet.
+	for (const chainId of [84532, 11155111]) {
+		const production = { ...base.profile, chainId, privateTestErc20: true };
+		const result = profileSchema.safeParse(production);
+		assert.equal(result.success, false, String(chainId));
+		assert.match(
+			String(result.error),
+			/cannot enable privateTestErc20 \(R-29\)/,
+		);
+	}
 });

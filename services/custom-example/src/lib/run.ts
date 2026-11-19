@@ -180,11 +180,16 @@ export async function runAction<T>(
 					after.native,
 				)
 			: undefined;
+		// Added to a note the action wrote, not in its place.
 		patch({
 			balances,
 			attribution,
 			...(attribution?.matchesDeclared === false
-				? { note: "payer differs from declaration" }
+				? {
+						note: [current.note, "payer differs from declaration"]
+							.filter(Boolean)
+							.join("; "),
+					}
 				: {}),
 		});
 	}

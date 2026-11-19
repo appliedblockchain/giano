@@ -800,9 +800,13 @@ describe("verifyChain", () => {
 
 		const first = await verifyChain(sponsored, refusing, fakeRelease);
 		expect(ranges).toHaveLength(PAYMASTER_LOG_REQUESTS_PER_CHECK);
-		// Not found within the limit: the chain starts unavailable, which is not fatal.
-		expect(first.failures.map((failure) => failure.kind)).toEqual([
-			"unreachable",
+		// Not found within the limit: the chain starts unavailable, which is not fatal. Every request
+		// was answered, so the failure says the search is incomplete, not that the RPC is unreachable.
+		expect(first.failures).toEqual([
+			{
+				kind: "paymaster-implementation-unresolved",
+				paymaster: sponsored.sponsorshipPaymaster,
+			},
 		]);
 		expect(first.failures.every((failure) => !isFatalFailure(failure))).toBe(
 			true,
@@ -828,7 +832,7 @@ describe("verifyChain", () => {
 		});
 		expect(ranges).toHaveLength(PAYMASTER_LOG_REQUESTS_AT_BOOT);
 		expect(boot.failures.map((failure) => failure.kind)).toEqual([
-			"unreachable",
+			"paymaster-implementation-unresolved",
 		]);
 
 		// The background probe's check uses the default limit and finds the event.
@@ -836,6 +840,33 @@ describe("verifyChain", () => {
 		const probe = await verifyChain(sponsored, refusing, fakeRelease);
 		expect(probe.failures).toEqual([]);
 		expect(ranges.length).toBeLessThanOrEqual(PAYMASTER_LOG_REQUESTS_PER_CHECK);
+	});
+
+	it("the log search starts at the paymaster's deployment block when the chain has it", async () => {
+		const ranges: [bigint, bigint][] = [];
+		// The deployment is 1,000 blocks back from a head of 1,500,000: one request reaches it.
+		const refusing = refusingStorage(1_500_000n, 1_499_000n, ranges);
+		const result = await verifyChain(
+			{ ...sponsored, sponsorshipPaymasterDeployBlock: 1_499_000n },
+			refusing,
+			fakeRelease,
+			{ logRequests: PAYMASTER_LOG_REQUESTS_AT_BOOT },
+		);
+		expect(result.failures).toEqual([]);
+		expect(ranges).toEqual([[1_499_000n, 1_500_000n]]);
+	});
+
+	it("a failed log request is reported as unreachable, not as an incomplete search", async () => {
+		const failing = {
+			...refusingStorage(1_500_000n, 1_000n, []),
+			async request() {
+				throw new Error("HTTP request failed. Status: 503");
+			},
+		} as unknown as PublicClient;
+		const result = await verifyChain(sponsored, failing, fakeRelease);
+		expect(result.failures.map((failure) => failure.kind)).toEqual([
+			"unreachable",
+		]);
 	});
 
 	it("a paymaster initialised with another EntryPoint is FATAL", async () => {

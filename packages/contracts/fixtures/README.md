@@ -17,7 +17,14 @@ commit the result. CI (`pnpm gen:fixtures --check`) fails when the artifact does
 
 `deploy:cli testing` and `local:deploy` deploy the token from here, so the deployer image ships this
 directory (`Dockerfile.deployer`). A deployment record names its release as `fixture` and carries the
-artifact's fingerprint, which `gen:addresses` checks. A chain keeps the code it was deployed with, and
-its address depends only on the label: once a testnet holds the token, a new artifact no longer
-matches its record, so `gen:addresses` fails for that chain until the token is deployed again under a
-new label.
+artifact's fingerprint, which `gen:addresses` checks.
+
+A chain keeps the code it was deployed with, and the token's address depends only on its label. So
+when the code changes, `pnpm gen:fixtures` moves the committed artifact's fingerprint to `previous`
+(newest first). A chain that holds an earlier version still passes `gen:addresses` and a re-run of
+`testing`; a new chain gets the current code. The artifact it replaces is the one at git HEAD, so
+running the generator again before a commit adds no version that was never committed.
+
+The token's `totalSupply()` is public (UCEF). Every mint changes it, so comparing it before
+and after a block shows the amounts minted, and while one account holds the whole supply, it is that
+account's balance. Only `balanceOf`, `allowance` and the transfer and approval events are private.

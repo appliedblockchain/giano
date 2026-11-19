@@ -18,9 +18,11 @@
  *   --signed-rpc (core, testing, upgrade, p256, timelock, handoff) signs every request after the
  *       chain id read with the key the command sends from: DEPLOYER_PRIVATE_KEY, and for
  *       `upgrade --execute` also UPGRADER_PRIVATE_KEY for the upgrader's own requests;
- *       ROLE_ADMIN_PRIVATE_KEY for `timelock` and `handoff`. It is for an RPC that replaces `from` on
- *       an unsigned eth_call or eth_estimateGas (Silent Data). A missing key is refused before any
- *       request is sent.
+ *       ROLE_ADMIN_PRIVATE_KEY for `timelock` and `handoff --execute`. A `handoff` plan only reads,
+ *       so it goes unsigned and needs no key. It is for an RPC that replaces `from` on an unsigned
+ *       eth_call or eth_estimateGas (Silent Data). A missing key is refused before any request is
+ *       sent. `upgrade --execute` checks UPGRADER_PRIVATE_KEY before any request, with or without
+ *       the flag.
  *   pnpm deploy:cli p256     --rpc <url>     (optional: a gas optimisation, never a requirement)
  *       The wallet verifies passkeys with FreshCryptoLib built into its own code, so a chain without
  *       the RIP-7212 precompile works without this verifier. It funds the Arachnid signer with 0.1 ETH
@@ -96,6 +98,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { waitForReceipt } from "../receipt";
 import {
 	formatDuration,
 	parseDuration,
@@ -453,6 +456,24 @@ function rpcSigner(keyEnv: string): LocalAccount | undefined {
 }
 
 /**
+ * UPGRADER_PRIVATE_KEY, for `upgrade --execute`: an account holding UPGRADER_ROLE. Parsed here, so a
+ * malformed key stops the run before the upgrade target is deployed.
+ */
+function upgraderPrivateKey(): `0x${string}` {
+	const key = process.env.UPGRADER_PRIVATE_KEY;
+	if (!key)
+		throw new Error(
+			"--execute needs UPGRADER_PRIVATE_KEY (an account holding UPGRADER_ROLE)",
+		);
+	try {
+		privateKeyToAccount(key as `0x${string}`);
+	} catch {
+		throw new Error("UPGRADER_PRIVATE_KEY is not a valid private key");
+	}
+	return key as `0x${string}`;
+}
+
+/**
  * `signer` (from rpcSigner) signs every request after the chain id read: the signature covers the
  * chain id, so the first eth_chainId goes unsigned.
  */
@@ -728,6 +749,7 @@ async function main(): Promise<void> {
 						: ctx.target.profile?.timelock?.address,
 					acceptUnverifiedImplementation:
 						values["accept-unverified-implementation"],
+					record: ctx.record,
 				},
 			))
 				log(`  ⚠ ${warning}`);
@@ -791,11 +813,15 @@ async function main(): Promise<void> {
 			if (which !== "paymaster" && which !== "wallet")
 				throw new Error("--contract is paymaster or wallet");
 			// The upgrader sends upgradeToAndCall itself, and the RPC keeps `from` only for the key
-			// that signed the request. Checked before deployerContext() connects.
-			const upgraderSigner =
-				which === "paymaster" && values.execute && !values.timelock
-					? rpcSigner("UPGRADER_PRIVATE_KEY")
-					: undefined;
+			// that signed the request. Its key is checked before deployerContext() connects, so a
+			// missing key stops the run before the upgrade target is deployed.
+			const executes =
+				which === "paymaster" && values.execute && !values.timelock;
+			// The key is parsed first, so a malformed key gets this command's message, not viem's.
+			const upgraderKey = executes ? upgraderPrivateKey() : undefined;
+			const upgraderSigner = executes
+				? rpcSigner("UPGRADER_PRIVATE_KEY")
+				: undefined;
 			const ctx = await deployerContext();
 			const of =
 				which === "paymaster"
@@ -838,17 +864,12 @@ async function main(): Promise<void> {
 				);
 				return;
 			}
-			if (!values.execute) {
+			if (!upgraderKey) {
 				log(
 					`To upgrade, the UPGRADER_ROLE holder sends to ${proxy}:\n  ${calldata}`,
 				);
 				return;
 			}
-			const key = process.env.UPGRADER_PRIVATE_KEY;
-			if (!key)
-				throw new Error(
-					"--execute needs UPGRADER_PRIVATE_KEY (an account holding UPGRADER_ROLE)",
-				);
 			const upgrader = createWalletClient({
 				chain: ctx.chain,
 				transport: upgraderSigner
@@ -857,7 +878,7 @@ async function main(): Promise<void> {
 							signer: upgraderSigner,
 						})
 					: http(required("rpc")),
-				account: privateKeyToAccount(key as `0x${string}`),
+				account: privateKeyToAccount(upgraderKey),
 			});
 			const role = await ctx.publicClient.readContract({
 				address: proxy,
@@ -878,7 +899,7 @@ async function main(): Promise<void> {
 				to: proxy,
 				data: calldata,
 			});
-			const receipt = await ctx.publicClient.waitForTransactionReceipt({
+			const receipt = await waitForReceipt(ctx.publicClient, {
 				hash,
 			});
 			if (receipt.status !== "success")
@@ -939,8 +960,14 @@ async function main(): Promise<void> {
 			return;
 		}
 		case "handoff": {
+			// Only --execute sends from ROLE_ADMIN. The plan only reads, so it needs no key and goes
+			// unsigned: ROLE_ADMIN may be a Safe, which has none.
+			if (values["signed-rpc"] && !values.execute)
+				log(
+					"--signed-rpc: the plan only reads, so its requests go unsigned; --execute signs with ROLE_ADMIN_PRIVATE_KEY",
+				);
 			const { chainId, chain, transport, publicClient, local } = await connect(
-				rpcSigner("ROLE_ADMIN_PRIVATE_KEY"),
+				values.execute ? rpcSigner("ROLE_ADMIN_PRIVATE_KEY") : undefined,
 			);
 			const target = resolveNetwork(chainId, local);
 			const record = chainRecord(chainId, target);
@@ -1063,7 +1090,7 @@ async function main(): Promise<void> {
 					to: proxy,
 					data: call.data,
 				});
-				const receipt = await publicClient.waitForTransactionReceipt({ hash });
+				const receipt = await waitForReceipt(publicClient, { hash });
 				if (receipt.status !== "success")
 					throw new Error(`${call.description} reverted (${hash})`);
 				log(`  + ${call.description}  ${hash}`);

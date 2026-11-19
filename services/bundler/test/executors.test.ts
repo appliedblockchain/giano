@@ -21,6 +21,7 @@ function submitter(client: Partial<PublicClient>) {
 	return createSubmitter({
 		client: client as PublicClient,
 		chainId: 84532,
+		chainType: "default",
 		entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
 		executors,
 		resubmitTimeoutMs: 30_000,

@@ -1,70 +1,62 @@
 /**
- * A viem HTTP transport that signs every request for a Silent Data RPC (the custom-rpc gateway).
+ * Signs RPC requests for a Silent Data RPC (the custom-rpc gateway).
  *
  * The gateway replaces `from` with a random address on an unsigned `eth_call` or `eth_estimateGas`,
  * and keeps it only when the request is signed by `from`. It verifies an EIP-191 signature over
- * `chainId + body + timestamp`, where `body` is the exact HTTP body. So this transport signs the body
- * viem is about to send, and adds:
+ * `chainId + body + timestamp`, where `body` is the exact HTTP body. Each signed request carries:
  * - `x-timestamp`: RFC 3339, within the gateway's window;
- * - `x-signature`: EIP-191 signature of `chainId + body + timestamp`;
- * - with a delegate, `x-delegate` (the ticket as JSON) and `x-delegate-signature` (the root key's
- *   EIP-191 signature of `chainId + ticket JSON`). The caller obtains that signature and passes it in;
- *   the payload is then signed by the delegate (ephemeral) key.
+ * - `x-signature`: EIP-191 signature of `chainId + body + timestamp`.
  *
- * Matches silent-data-rollup-providers core `Base.ts` (`prepareMessage`, `signAuthHeader`,
- * `generateDelegateHeaders`) and the custom-rpc's `signatures.go` for an EOA signer. Smart-wallet
- * signers (`x-signer-swc`) are not covered.
+ * Matches silent-data-rollup-providers core `Base.ts` (`prepareMessage`, `signAuthHeader`) and the
+ * custom-rpc's `signatures.ts` for an EOA signer. Delegates (`x-delegate`) and smart-wallet signers
+ * (`x-signer-swc`) are not covered.
+ *
+ * `signatureHeaders` is the one implementation of the scheme: `signedHttp` (viem) and
+ * provision-paymaster.ts (ethers) both use it.
  */
-import { type Hex, type HttpTransport, http, type LocalAccount } from "viem";
+import { type HttpTransport, type HttpTransportConfig, http } from "viem";
 
-/** A delegate ticket, exactly as the gateway reads it from `x-delegate`. */
-export type DelegateTicket = {
-	/** RFC 3339; the gateway refuses a ticket that expires more than 12 hours ahead. */
-	expires: string;
-	ephemeralAddress: `0x${string}`;
-};
+/** Signs an EIP-191 message: a viem account's or an ethers wallet's `signMessage`. */
+export type SignMessage = (message: string) => Promise<string>;
 
-export type SignedRpcOptions = {
-	chainId: number;
-	/** Signs each request: the root key, or the delegate's ephemeral key when `delegate` is set. */
-	signer: Pick<LocalAccount, "signMessage">;
-	delegate?: {
-		ticket: DelegateTicket;
-		/** The root key's EIP-191 signature of `${chainId}${JSON.stringify(ticket)}`. */
-		signature: Hex;
-	};
-};
-
-/** The message the root key signs to authorise a delegate ticket. */
-export function delegateTicketMessage(
+/**
+ * The headers that sign one request. `body` must be the exact HTTP body as a string: anything else
+ * is refused, because a request signed over other bytes would reach the RPC unsigned in effect.
+ */
+export async function signatureHeaders(
 	chainId: number,
-	ticket: DelegateTicket,
-): string {
-	return `${chainId}${JSON.stringify(ticket)}`;
+	body: unknown,
+	signMessage: SignMessage,
+): Promise<{ "x-timestamp": string; "x-signature": string }> {
+	if (typeof body !== "string")
+		throw new Error(
+			`cannot sign an RPC request whose body is not a string (${body === null ? "null" : typeof body})`,
+		);
+	const timestamp = new Date().toISOString();
+	return {
+		"x-timestamp": timestamp,
+		"x-signature": await signMessage(`${chainId}${body}${timestamp}`),
+	};
 }
 
+/** A viem HTTP transport that signs every request with `signer` (see the module comment). */
 export function signedHttp(
 	url: string,
-	options: SignedRpcOptions,
+	options: {
+		chainId: number;
+		signer: { signMessage(args: { message: string }): Promise<string> };
+	},
+	config: Omit<HttpTransportConfig, "fetchFn"> = {},
 ): HttpTransport {
-	const { chainId, signer, delegate } = options;
-	const delegateHeaders: Record<string, string> = delegate
-		? {
-				"x-delegate": JSON.stringify(delegate.ticket),
-				"x-delegate-signature": delegate.signature,
-			}
-		: {};
+	const { chainId, signer } = options;
 	return http(url, {
+		...config,
 		async fetchFn(input, init) {
-			const body = typeof init?.body === "string" ? init.body : "";
-			const timestamp = new Date().toISOString();
-			const signature = await signer.signMessage({
-				message: `${chainId}${body}${timestamp}`,
-			});
 			const headers = new Headers(init?.headers);
-			headers.set("x-timestamp", timestamp);
-			headers.set("x-signature", signature);
-			for (const [name, value] of Object.entries(delegateHeaders))
+			const signature = await signatureHeaders(chainId, init?.body, (message) =>
+				signer.signMessage({ message }),
+			);
+			for (const [name, value] of Object.entries(signature))
 				headers.set(name, value);
 			return fetch(input, { ...init, headers });
 		},

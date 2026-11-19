@@ -35,7 +35,11 @@ type Behaviour =
 	| "stalled-body"
 	| "declared-large"
 	| "streamed-large"
-	| "rpc-error";
+	| "rpc-error"
+	| "refused-403"
+	| "refused-403-large"
+	| "rate-limited-429"
+	| "unavailable-503";
 
 /** One upstream exchange, as the server saw it. */
 type Exchange = { closed: Promise<void>; written: () => number };
@@ -86,6 +90,38 @@ function startUpstream() {
 					}
 					return res.end();
 				}
+				case "refused-403":
+					// The Silent Data gateway's refusal of a parameter value.
+					res.writeHead(403);
+					return res.end(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: {
+								code: -107486,
+								message: "param values not whitelisted for JSON RPC method",
+								data: "Custom RPC: eth_getBlockByNumber",
+							},
+						}),
+					);
+				case "refused-403-large":
+					// A refusal whose body is past the size limit.
+					res.writeHead(403, { "content-length": String(FLOOD_BYTES) });
+					return res.write(CHUNK);
+				case "rate-limited-429":
+					// A provider's rate limit, with a JSON-RPC error body.
+					res.writeHead(429);
+					return res.end(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: { code: -32005, message: "rate limit exceeded" },
+						}),
+					);
+				case "unavailable-503":
+					res.setHeader("content-type", "text/plain");
+					res.writeHead(503);
+					return res.end("Service Unavailable");
 				case "rpc-error":
 					return res.end(
 						JSON.stringify({
@@ -249,6 +285,52 @@ describe.each(Object.entries(clients))("%s client", (upstreamName, client) => {
 			// The connection was dropped long before the upstream finished sending.
 			expect(exchange.written()).toBeLessThan(FLOOD_BYTES / 4);
 		});
+	});
+});
+
+describe("a non-2xx answer", () => {
+	it("node client: passes the JSON-RPC error of a refusal through, code and all", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("refused-403")),
+		);
+		expect(error).toBeInstanceOf(NodeRpcError);
+		expect(error).toMatchObject({
+			code: -107486,
+			message: "param values not whitelisted for JSON RPC method",
+			data: "Custom RPC: eth_getBlockByNumber",
+		});
+	});
+
+	it("node client: a body that is not a JSON-RPC error throws the status", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("unavailable-503")),
+		);
+		expect(error).not.toBeInstanceOf(NodeRpcError);
+		expect((error as Error).message).toBe("Node HTTP 503");
+	});
+
+	it("node client: any other JSON-RPC error throws the status, so the relay logs it as unreachable", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("rate-limited-429")),
+		);
+		expect(error).not.toBeInstanceOf(NodeRpcError);
+		expect((error as Error).message).toBe("Node HTTP 429");
+	});
+
+	it("node client: an error body past the size limit throws UpstreamLimitError, not the status", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("refused-403-large")),
+		);
+		expect(error).toBeInstanceOf(UpstreamLimitError);
+		expect(error).toMatchObject({ reason: "too-large", upstream: "node" });
+	});
+
+	it("bundler client: throws the status, as before", async () => {
+		const { error } = await failure(() =>
+			clients.bundler.call(upstream.url("refused-403")),
+		);
+		expect(error).not.toBeInstanceOf(BundlerRpcError);
+		expect((error as Error).message).toBe("Bundler HTTP 403");
 	});
 });
 

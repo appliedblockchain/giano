@@ -72,6 +72,9 @@ type Overrides = Record<string, Record<string, string>>;
  */
 const OVERRIDABLE_FIELDS = ["entryPoint"];
 
+/** Registry fields written as numbers, not quoted strings. */
+const NUMERIC_FIELDS = ["sponsorshipPaymasterDeployBlock"];
+
 function isAddress(value: unknown): value is string {
 	return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
 }
@@ -137,6 +140,18 @@ export function generateRegistry(
 					`chain ${chainId}: ${key} at ${deployed.address} is recorded as ${deployed.release} but its fingerprint is ${releases.join(", ")}'s`,
 				);
 			out[field] = deployed.address;
+			// Where a walk through the proxy's Upgraded logs starts, on an RPC that refuses
+			// eth_getStorageAt (erc1967.ts). Absent from a record written before it was added.
+			if (key === "paymasterProxy" && deployed.blockNumber !== undefined) {
+				if (
+					!Number.isSafeInteger(deployed.blockNumber) ||
+					deployed.blockNumber < 0
+				)
+					throw new Error(
+						`chain ${chainId}: invalid paymasterProxy blockNumber ${deployed.blockNumber}`,
+					);
+				out.sponsorshipPaymasterDeployBlock = String(deployed.blockNumber);
+			}
 		}
 		chains[chainId] = out;
 		networks[chainId] = record.network;
@@ -164,6 +179,7 @@ export function generateRegistry(
 		"implementation",
 		"sponsorshipPaymaster",
 		"sponsorshipPaymasterImplementation",
+		"sponsorshipPaymasterDeployBlock",
 		"testPaymaster",
 		"testErc20",
 		"privateTestErc20",
@@ -173,7 +189,11 @@ export function generateRegistry(
 		.map(([chainId, record]) => {
 			const lines = fieldOrder
 				.filter((field) => record[field])
-				.map((field) => `    ${field}: '${record[field]}',`)
+				.map((field) =>
+					NUMERIC_FIELDS.includes(field)
+						? `    ${field}: ${record[field]},`
+						: `    ${field}: '${record[field]}',`,
+				)
 				.join("\n");
 			return `  ${chainId}: {\n${lines}\n  },`;
 		})
@@ -244,6 +264,11 @@ export type GianoDeployment = {
   sponsorshipPaymaster?: \`0x\${string}\`;
   /** Implementation behind {@link sponsorshipPaymaster}. Changes on every upgrade. */
   sponsorshipPaymasterImplementation?: \`0x\${string}\`;
+  /**
+   * The block that deployed {@link sponsorshipPaymaster}, from its deployment record. On an RPC that
+   * refuses \`eth_getStorageAt\`, the walk through the proxy's \`Upgraded\` logs starts here.
+   */
+  sponsorshipPaymasterDeployBlock?: number;
   /**
    * Testing-only permissive paymaster. Deliberately a different field from
    * {@link sponsorshipPaymaster} so that no consumer can pass one where the other is meant —

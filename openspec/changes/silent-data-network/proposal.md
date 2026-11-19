@@ -17,8 +17,6 @@ Silent Data chains come in two kinds, and Giano must work on both with the same 
 
 ## What Changes
 
-Already implemented on branch `feat/silent-data-network` (uncommitted):
-
 - The paymaster proxy's implementation is read from its latest ERC-1967 `Upgraded` event when `eth_getStorageAt` fails. This is used in `erc1967.ts` (new exports `implementationFromUpgradedLogs`, `proxyImplementation`, `UPGRADED_TOPIC`), in `giano-doctor` and in the paymaster SDK. The log walk uses spans of 9,000 blocks, is bounded, and is not repeated on a later read through the same client.
 - A chain's `bundler` section gains `stateOverride` (default `true`). With `false`, the bundler does not simulate. It returns fixed gas limits. It keeps the call gas a caller sends, and a higher verification gas.
 - The bundler accepts a fee of 0 at estimation when the chain's base fee is 0.
@@ -74,7 +72,7 @@ Decided:
   - the `testing` deployment.
 - **Dependencies:**
   - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), a git submodule pinned to a commit.
-  - The demo needs a client that signs Silent Data requests for a smart wallet (`x-signer-swc`). `@appliedblockchain/silentdatarollup-core` has one. The GitHub Packages scope caveat in `packages/connector/README.md` applies.
+  - The demo signs Silent Data reads for a smart wallet (`x-signer-swc`) itself, in a small viem module (design D6). It adds no Silent Data package.
 - **Configuration:** a `GIANO_CHAINS` entry for 19877 and one for 19874. Each sets `bundler.rpcUrl` to that chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds them.
 - **Blocked:** contract deployment on both chains waits for the testnet canonical deployer key (`DEPLOYERS.testnet` is `null`). Copper-heron also needs funds for the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX.
 - **Funding:** both chains need funds.

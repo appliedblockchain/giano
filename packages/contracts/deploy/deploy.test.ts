@@ -366,6 +366,19 @@ describe("deployTesting and the private test token (silent-data-network D7)", ()
 		);
 	});
 
+	it("refuses other code already at its address before it sends anything", async () => {
+		const { publicClient, walletClient, sent, code } = testingChain();
+		code.set(PRIVATE_TOKEN, "0x6001");
+		await assert.rejects(
+			deployTesting(context(publicClient, walletClient), devRelease(), {
+				...PARAMS,
+				privateTestErc20: true,
+			}),
+			/giano.test.private-erc20 at 0x[0-9a-fA-F]{40} holds code 0x[0-9a-f]{64}, which is not GianoTestPrivateErc20's committed artifact/,
+		);
+		assert.deepEqual(sent, []);
+	});
+
 	it("a remote chain gets it only when its profile opts in; a local chain always does", () => {
 		assert.equal(privateTestErc20Wanted({ local: false }), false);
 		assert.equal(privateTestErc20Wanted({ local: false, optIn: false }), false);

@@ -12,6 +12,7 @@ import {
 	type TimelockDelays,
 } from "../timelock";
 import { activateRehearsal, classDeployer, ENTRY_POINT_V09 } from "./config";
+import { SIGNED_RPC_COMMANDS, timelockCommand } from "./operator-commands";
 import { type Plan, planCore } from "./plan";
 import { inspectDeployment } from "./preflight";
 import {
@@ -35,13 +36,19 @@ async function main() {
 			plan: { type: "boolean" },
 			/** Accept a paymaster implementation read from Upgraded logs (deploy/plan.ts). */
 			"accept-unverified-implementation": { type: "boolean" },
+			/**
+			 * Pass --signed-rpc to the write (provision, timelock, handoff): each request it sends is
+			 * signed with the key it sends from (deploy/signed-rpc.ts). This launcher's own checks only
+			 * read, so they go unsigned.
+			 */
+			"signed-rpc": { type: "boolean" },
 			help: { type: "boolean" },
 		},
 	});
 	const [command] = positionals;
 	if (values.help) {
 		console.log(
-			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.",
+			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation] [--signed-rpc]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc makes provision, timelock and handoff sign every request with the key they send from.",
 		);
 		return;
 	}
@@ -57,6 +64,10 @@ async function main() {
 	)
 		throw new OperatorError(
 			"Choose funding, provision, sponsorship, doctor, timelock or handoff.",
+		);
+	if (values["signed-rpc"] && !SIGNED_RPC_COMMANDS.includes(command))
+		throw new OperatorError(
+			`--signed-rpc applies to ${SIGNED_RPC_COMMANDS.join(", ")}: the commands that send transactions. ${command} sends none.`,
 		);
 	const rl =
 		process.stdin.isTTY && process.stdout.isTTY
@@ -140,7 +151,13 @@ async function main() {
 			return;
 		}
 		if (command === "timelock" || command === "handoff") {
-			await timelockWorkflow(command, selected, rpc, confirm);
+			await timelockWorkflow(
+				command,
+				selected,
+				rpc,
+				confirm,
+				Boolean(values["signed-rpc"]),
+			);
 			return;
 		}
 		// Where this chain's contracts are: the record, the profile's overrides, else the class's
@@ -284,6 +301,9 @@ async function main() {
 			SPONSORSHIP_PAYMASTER_ADDRESS: at("paymasterProxy"),
 			TEST_PAYMASTER_ADDRESS: "",
 			TEST_ERC20_ADDRESS: "",
+			// provision-paymaster.sh passes --signed-rpc on when this is "1"; never taken from the
+			// operator environment.
+			GIANO_SIGNED_RPC: values["signed-rpc"] ? "1" : "",
 		};
 		const scripts: Record<string, string> = {
 			funding: "print-funding.sh",
@@ -321,12 +341,14 @@ async function main() {
  * `timelock` deploys the profile's GianoTimelock (G9) and records its address in the profile;
  * `handoff` gives it every timelocked role and renounces the operator's ROLE_ADMIN. Both sign with
  * the current ROLE_ADMIN key: ROLE_ADMIN_PRIVATE_KEY, or DEPLOYER_PRIVATE_KEY as provisioning uses.
+ * With `signedRpc`, deploy:cli signs every request with that key.
  */
 async function timelockWorkflow(
 	command: "timelock" | "handoff",
 	selected: ProfileFile,
 	rpc: string,
 	confirm: (phrase: string) => Promise<boolean>,
+	signedRpc: boolean,
 ): Promise<void> {
 	const { profile } = selected;
 	const timelock = profile.timelock;
@@ -366,36 +388,7 @@ async function timelockWorkflow(
 		console.log("Cancelled. No operation invoked.");
 		return;
 	}
-	const args =
-		command === "timelock"
-			? [
-					"timelock",
-					"--rpc",
-					rpc,
-					// The selected profile, so the child resolves the same class, overrides and proxy.
-					"--chain-config",
-					selected.file,
-					"--release",
-					profile.release,
-					...timelock.proposers.flatMap((p) => ["--proposer", p]),
-					...timelock.executors.flatMap((e) => ["--executor", e]),
-					"--min-delay",
-					String(delays.minDelay),
-					...TIMELOCKED_FUNCTION_NAMES.flatMap((name) => [
-						"--delay",
-						`${name}=${delays[name]}`,
-					]),
-				]
-			: [
-					"handoff",
-					"--rpc",
-					rpc,
-					"--chain-config",
-					selected.file,
-					"--timelock",
-					timelock.address as string,
-					"--execute",
-				];
+	const args = timelockCommand(command, selected, rpc, signedRpc);
 	const result = spawnSync(
 		process.execPath,
 		["--import", "tsx", "deploy/cli.ts", ...args],

@@ -4,7 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { readRecord, recordPath, writeRecord } from "./records";
+import {
+	type DeploymentRecord,
+	paymasterProxyDeployBlock,
+	readRecord,
+	recordPath,
+	writeRecord,
+} from "./records";
 
 const LOCAL = "0x000000000000000000000000000000000000dEaD";
 const OTHER = "0x1000000000000000000000000000000000000001";
@@ -42,4 +48,48 @@ test("a record written with the zero address as deployer reads as no deployer", 
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("the paymaster proxy's deployment block applies to that proxy only", () => {
+	const proxy = "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96";
+	const record: DeploymentRecord = {
+		chainId: 19877,
+		deployer: null,
+		contracts: {
+			paymasterProxy: {
+				address: proxy,
+				label: "giano.paymaster",
+				release: "v3",
+				codehash: "0x00",
+				blockNumber: 42,
+			},
+		},
+		upgrades: [],
+	};
+	assert.equal(paymasterProxyDeployBlock(record, proxy), 42n);
+	// Case does not matter.
+	assert.equal(
+		paymasterProxyDeployBlock(record, proxy.toLowerCase() as `0x${string}`),
+		42n,
+	);
+	// Another proxy, no record, or a record without the block: the walk starts at block 0.
+	assert.equal(
+		paymasterProxyDeployBlock(
+			record,
+			"0x0000000000000000000000000000000000000001",
+		),
+		undefined,
+	);
+	assert.equal(paymasterProxyDeployBlock(undefined, proxy), undefined);
+	const { blockNumber: _, ...withoutBlock } = record.contracts
+		.paymasterProxy as NonNullable<
+		DeploymentRecord["contracts"]["paymasterProxy"]
+	>;
+	assert.equal(
+		paymasterProxyDeployBlock(
+			{ ...record, contracts: { paymasterProxy: withoutBlock } },
+			proxy,
+		),
+		undefined,
+	);
 });

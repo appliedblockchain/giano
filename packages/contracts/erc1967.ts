@@ -44,19 +44,40 @@ export type UpgradedLogWalkOptions = {
  */
 const UPGRADED_LOG_CONFIRMATIONS = 64n;
 
-/** The walk sent `maxChunks` requests, did not reach `fromBlock`, and found no `Upgraded` event. */
-class UpgradedLogWalkLimitError extends Error {
-	constructor(
-		fromBlock: bigint,
-		toBlock: bigint,
-		maxChunks: number,
-		recovery: string,
-	) {
-		super(
-			`no Upgraded event in blocks ${fromBlock}-${toBlock}, and the walk stops after ${maxChunks} eth_getLogs requests. ${recovery}`,
-		);
+/**
+ * The walk sent `maxChunks` requests, did not reach `fromBlock`, and found no `Upgraded` event.
+ * Every request was answered: the search is incomplete, the RPC is not unreachable.
+ * {@link proxyImplementationWithSource} throws this type too, with the proxy in the message.
+ */
+export class UpgradedLogWalkLimitError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
 		this.name = "UpgradedLogWalkLimitError";
 	}
+}
+
+/** The message of an {@link UpgradedLogWalkLimitError}. */
+function walkLimitMessage(
+	fromBlock: bigint,
+	toBlock: bigint,
+	maxChunks: number,
+	recovery: string,
+): string {
+	return `no Upgraded event in blocks ${fromBlock}-${toBlock}, and the walk stops after ${maxChunks} eth_getLogs requests. ${recovery}`;
+}
+
+/**
+ * True when `error`, or an error in its `cause` chain, is an {@link UpgradedLogWalkLimitError}.
+ * Compares the name, so it also holds across two copies of this package.
+ */
+export function isUpgradedLogWalkLimitError(error: unknown): boolean {
+	for (
+		let current: unknown = error, depth = 0;
+		current instanceof Error && depth < 5;
+		current = current.cause, depth++
+	)
+		if (current.name === "UpgradedLogWalkLimitError") return true;
+	return false;
 }
 
 /** Refuses a `maxChunks` that would not bound the walk: only a non-negative safe integer does. */
@@ -71,24 +92,37 @@ function checkMaxChunks(maxChunks: number): void {
  * Walks back from `to` to `floor` in chunks of {@link UPGRADED_LOG_CHUNK} blocks, newest first, and
  * stops at the first chunk that holds a log, or after `maxChunks` requests. Returns that chunk's
  * logs (none when it found none), the lowest block searched, and the number of requests sent. A
- * `low` above `floor` with no logs means the walk stopped at the limit.
+ * `low` above `floor` with no logs means the walk stopped at the limit. When a request fails, it
+ * stops there and returns the error as `failure`, with `low` the lowest block of the chunks that
+ * were answered, so the caller can keep that progress.
  */
 async function walkBack<Log>(
 	getLogs: (fromBlock: bigint, toBlock: bigint) => Promise<readonly Log[]>,
 	to: bigint,
 	floor: bigint,
 	maxChunks: number,
-): Promise<{ logs: readonly Log[]; low: bigint; requests: number }> {
+): Promise<{
+	logs: readonly Log[];
+	low: bigint;
+	requests: number;
+	failure?: { error: unknown };
+}> {
 	let low = to + 1n;
 	let requests = 0;
 	while (low > floor && requests < maxChunks) {
 		const high = low - 1n;
-		low =
+		const next =
 			high - floor >= UPGRADED_LOG_CHUNK - 1n
 				? high - UPGRADED_LOG_CHUNK + 1n
 				: floor;
 		requests++;
-		const logs = await getLogs(low, high);
+		let logs: readonly Log[];
+		try {
+			logs = await getLogs(next, high);
+		} catch (error) {
+			return { logs: [], low, requests, failure: { error } };
+		}
+		low = next;
 		if (logs.length > 0) return { logs, low, requests };
 	}
 	return { logs: [], low, requests };
@@ -125,15 +159,23 @@ export async function implementationFromUpgradedLogs(
 	}: UpgradedLogWalkOptions = {},
 ): Promise<Address | null> {
 	checkMaxChunks(maxChunks);
-	const { logs, low } = await walkBack(getLogs, latest, fromBlock, maxChunks);
+	const { logs, low, failure } = await walkBack(
+		getLogs,
+		latest,
+		fromBlock,
+		maxChunks,
+	);
+	if (failure) throw failure.error;
 	const last = logs.at(-1);
 	if (last) return implementationFromSlot(last.topics[1]);
 	if (low > fromBlock)
 		throw new UpgradedLogWalkLimitError(
-			low,
-			latest,
-			maxChunks,
-			"Pass a larger maxChunks to search further back",
+			walkLimitMessage(
+				low,
+				latest,
+				maxChunks,
+				"Pass a larger maxChunks to search further back",
+			),
 		);
 	return null;
 }
@@ -264,8 +306,10 @@ function sharedRead(
  *
  * A `"logs"` answer is not verified against the slot: code the proxy delegates to, such as an
  * implementation an upgrade installs, can emit an `Upgraded` event that names another address.
- * When the walk hits `maxChunks`, it throws, and the next read through the same client continues
- * the search further back.
+ * When the walk hits `maxChunks`, it throws an {@link UpgradedLogWalkLimitError}, and the next read
+ * through the same client continues the search further back. When an `eth_getLogs` request fails,
+ * the read throws, and the next read through the same client continues from the blocks that were
+ * answered. Pass the proxy's deployment block as `fromBlock` to keep the walk short.
  */
 export async function proxyImplementationWithSource(
 	client: Pick<PublicClient, "getStorageAt"> &
@@ -314,10 +358,12 @@ export async function proxyImplementationWithSource(
 			);
 			return { implementation, source: "logs" };
 		} catch (logError) {
-			throw new Error(
-				`could not read the implementation of ${proxy}: the RPC refused eth_getStorageAt, and reading its Upgraded logs failed: ${logError instanceof Error ? logError.message : String(logError)}`,
-				{ cause: storageError },
-			);
+			const message = `could not read the implementation of ${proxy}: the RPC refused eth_getStorageAt, and reading its Upgraded logs failed: ${logError instanceof Error ? logError.message : String(logError)}`;
+			// A walk that stopped at its limit keeps its type, so a caller can tell an incomplete
+			// search from a failed request (isUpgradedLogWalkLimitError).
+			throw isUpgradedLogWalkLimitError(logError)
+				? new UpgradedLogWalkLimitError(message, { cause: storageError })
+				: new Error(message, { cause: storageError });
 		}
 	}
 }
@@ -364,6 +410,17 @@ async function implementationSinceCheckpoint(
 	const floor = previous + 1n;
 
 	const recent = await walkBack(getLogs, latest, floor, maxChunks);
+	if (recent.failure) {
+		// A request failed. A kept answer still holds: nothing below its checkpoint changed. Without
+		// one, keep the blocks that were answered, so the next read continues below them.
+		if (!walk)
+			entry.walk = {
+				checkpoint,
+				implementation: null,
+				low: recent.low > checkpoint ? checkpoint + 1n : recent.low,
+			};
+		throw recent.failure.error;
+	}
 	let kept: UpgradedLog | undefined;
 	for (const log of recent.logs)
 		if (log.blockNumber != null && BigInt(log.blockNumber) <= checkpoint)
@@ -407,12 +464,16 @@ async function implementationSinceCheckpoint(
 					low: fromBlock,
 				}
 			: { checkpoint, implementation: null, low: older.low };
+		// The blocks answered before a failed request are kept above: the next read continues below.
+		if (older.failure) throw older.failure.error;
 		if (!found && older.low > fromBlock)
 			throw new UpgradedLogWalkLimitError(
-				older.low,
-				latest,
-				maxChunks,
-				"Read again through the same client to continue the search further back",
+				walkLimitMessage(
+					older.low,
+					latest,
+					maxChunks,
+					"Read again through the same client to continue the search further back",
+				),
 			);
 	}
 	return entry.walk.implementation;

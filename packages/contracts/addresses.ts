@@ -23,6 +23,11 @@ export type GianoDeployment = {
   /** Implementation behind {@link sponsorshipPaymaster}. Changes on every upgrade. */
   sponsorshipPaymasterImplementation?: `0x${string}`;
   /**
+   * The block that deployed {@link sponsorshipPaymaster}, from its deployment record. On an RPC that
+   * refuses `eth_getStorageAt`, the walk through the proxy's `Upgraded` logs starts here.
+   */
+  sponsorshipPaymasterDeployBlock?: number;
+  /**
    * Testing-only permissive paymaster. Deliberately a different field from
    * {@link sponsorshipPaymaster} so that no consumer can pass one where the other is meant —
    * the separation is structural rather than a matter of operator discipline.

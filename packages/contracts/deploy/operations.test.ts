@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
+import { TIMELOCKED_FUNCTION_NAMES } from "../timelock";
+import { SIGNED_RPC_COMMANDS, timelockCommand } from "./operator-commands";
+import type { ProfileFile } from "./profiles";
 
 const exec = promisify(execFile);
 
@@ -113,5 +116,70 @@ test("all operator plans use the selected persisted profile, load dotenv without
 	} finally {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("contracts:timelock and contracts:handoff pass --signed-rpc to deploy:cli only when asked", () => {
+	const selected = {
+		file: "/profiles/custom.json",
+		id: "custom",
+		profile: {
+			chainId: 54321,
+			release: "v3",
+			timelock: {
+				address: "0x4444444444444444444444444444444444444444",
+				proposers: ["0x5555555555555555555555555555555555555555"],
+				executors: [],
+				delays: Object.fromEntries([
+					["minDelay", 86400],
+					...TIMELOCKED_FUNCTION_NAMES.map((name) => [name, 172800]),
+				]),
+			},
+		},
+	} as unknown as ProfileFile;
+	const rpc = "http://127.0.0.1:1";
+	for (const command of ["timelock", "handoff"] as const) {
+		const unsigned = timelockCommand(command, selected, rpc, false);
+		assert.equal(unsigned[0], command);
+		assert.ok(!unsigned.includes("--signed-rpc"));
+		assert.deepEqual(timelockCommand(command, selected, rpc, true), [
+			...unsigned,
+			"--signed-rpc",
+		]);
+	}
+	// The launcher's hand-off always executes: its confirmation is the review.
+	assert.ok(
+		timelockCommand("handoff", selected, rpc, false).includes("--execute"),
+	);
+});
+
+test("--signed-rpc is refused on a launcher command that sends no transaction, before anything else", async () => {
+	for (const command of ["funding", "sponsorship", "doctor"]) {
+		assert.ok(!SIGNED_RPC_COMMANDS.includes(command));
+		await assert.rejects(
+			exec(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"deploy/operations.ts",
+					command,
+					"--config",
+					"/does/not/exist.json",
+					"--signed-rpc",
+				],
+				{ cwd: new URL("..", import.meta.url) },
+			),
+			(error: unknown) => {
+				assert.ok(error && typeof error === "object" && "stderr" in error);
+				assert.match(
+					String(error.stderr),
+					new RegExp(
+						`--signed-rpc applies to provision, timelock, handoff: .* ${command} sends none`,
+					),
+				);
+				return true;
+			},
+		);
 	}
 });

@@ -9,6 +9,11 @@
  *
  * A deployment record names such a contract's release as `fixture` and carries the artifact's
  * fingerprint, which `gen:addresses` checks like a release fingerprint.
+ *
+ * A chain keeps the code it was deployed with, and the token's address depends only on its label. So
+ * the artifact also lists the fingerprints of its earlier versions (`previous`), and a chain that holds
+ * an earlier version still matches: `gen:addresses` and a re-run of `testing` accept it. A new chain
+ * gets the current code.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -44,7 +49,12 @@ export type FixtureArtifact = {
 	size: number;
 	/** keccak256 of the runtime code. The fixtures have no immutables, so nothing is masked. */
 	fingerprint: Hex;
+	/** The earlier versions of this artifact, newest first, kept by `pnpm gen:fixtures`. */
+	previous: FixtureCode[];
 };
+
+/** One version of a fixture's runtime code: its fingerprint and its size in bytes. */
+export type FixtureCode = { fingerprint: Hex; size: number };
 
 export function isFixtureContract(
 	contract: string,
@@ -70,29 +80,75 @@ export function loadFixture(contract: FixtureContractName): FixtureArtifact {
 	return artifact;
 }
 
-/** Every fixture's fingerprint, in the shape gen:addresses checks release fingerprints in. */
+/** Every version of `artifact`'s code: the current one first, then its `previous` ones. */
+export function fixtureVersions(
+	artifact: Pick<FixtureArtifact, "fingerprint" | "size" | "previous">,
+): FixtureCode[] {
+	return [
+		{ fingerprint: artifact.fingerprint, size: artifact.size },
+		// An artifact written before `previous` existed has none.
+		...(artifact.previous ?? []),
+	];
+}
+
+/**
+ * The `previous` list of an artifact whose code now has `fingerprint`, given the artifact it replaces
+ * (`old`). When the code changed, the old code becomes the newest earlier version. A version is listed
+ * once, and never as both current and earlier.
+ */
+export function previousVersions(
+	old: Pick<FixtureArtifact, "fingerprint" | "size" | "previous"> | undefined,
+	fingerprint: Hex,
+): FixtureCode[] {
+	if (!old) return [];
+	const versions = fixtureVersions(old);
+	const seen = new Set<string>([fingerprint.toLowerCase()]);
+	return versions.filter((version) => {
+		const key = version.fingerprint.toLowerCase();
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
+/** Every fixture's fingerprints, every version, in the shape gen:addresses checks release fingerprints in. */
 export function fixtureFingerprints(): {
 	contract: FixtureContractName;
 	release: string;
 	fingerprint: Hex;
 }[] {
-	return (Object.keys(FIXTURE_CONTRACTS) as FixtureContractName[]).map(
-		(contract) => ({
-			contract,
-			release: FIXTURE_RELEASE,
-			fingerprint: loadFixture(contract).fingerprint,
-		}),
+	return (Object.keys(FIXTURE_CONTRACTS) as FixtureContractName[]).flatMap(
+		(contract) =>
+			fixtureVersions(loadFixture(contract)).map(({ fingerprint }) => ({
+				contract,
+				release: FIXTURE_RELEASE,
+				fingerprint,
+			})),
 	);
 }
 
-/** The fixture's fingerprint when `runtimeCode` (from `eth_getCode`) is its code; else undefined. */
+/** The matching version's fingerprint when `runtimeCode` is one of `artifact`'s versions; else undefined. */
+export function artifactMatch(
+	artifact: FixtureArtifact,
+	runtimeCode: Hex,
+): Hex | undefined {
+	const size = (runtimeCode.length - 2) / 2;
+	const versions = fixtureVersions(artifact).filter((v) => v.size === size);
+	if (versions.length === 0) return undefined;
+	const hash = keccak256(runtimeCode);
+	return versions.find(
+		(v) => v.fingerprint.toLowerCase() === hash.toLowerCase(),
+	)?.fingerprint;
+}
+
+/**
+ * The fixture's fingerprint when `runtimeCode` (from `eth_getCode`) is its code, current or earlier;
+ * else undefined.
+ */
 export function fixtureMatch(
 	contract: FixtureContractName,
 	runtimeCode: Hex,
 ): { release: string; fingerprint: Hex } | undefined {
-	const { size, fingerprint } = loadFixture(contract);
-	if ((runtimeCode.length - 2) / 2 !== size) return undefined;
-	return keccak256(runtimeCode) === fingerprint
-		? { release: FIXTURE_RELEASE, fingerprint }
-		: undefined;
+	const fingerprint = artifactMatch(loadFixture(contract), runtimeCode);
+	return fingerprint ? { release: FIXTURE_RELEASE, fingerprint } : undefined;
 }

@@ -38,16 +38,16 @@ no code change:
   of at most 9,000 blocks. That answer is not verified, so they report it as a warning. Once the
   paymaster proxy exists, the deploy tooling refuses it unless you pass
   `--accept-unverified-implementation`.
-- **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `deploy:cli` (step 4),
-  `provision:paymaster` (step 7) and `deploy:cli timelock` and `handoff` (step 7a). Each request
-  is then signed with the key the command sends from, so the RPC keeps the operator as `from`:
-  `DEPLOYER_PRIVATE_KEY` for steps 4 and 7, `ROLE_ADMIN_PRIVATE_KEY` for step 7a. A later
-  `deploy:cli upgrade --execute --signed-rpc` signs with `DEPLOYER_PRIVATE_KEY`, and the
+- **`from` rewritten on unsigned calls:** pass `--signed-rpc` to `pnpm contracts:deploy`
+  (step 4), `pnpm contracts:provision` (step 7) and `pnpm contracts:timelock` and
+  `pnpm contracts:handoff` (step 7a). Each request is then signed with the key the command sends
+  from, so the RPC keeps the operator as `from`: `CANONICAL_DEPLOYER_PRIVATE_KEY` for step 4,
+  `DEPLOYER_PRIVATE_KEY` for step 7, and the ROLE_ADMIN key for step 7a. Each command refuses to
+  start without its key. The low-level `deploy:cli` and `provision:paymaster` take the same flag. A
+  later `deploy:cli upgrade --execute --signed-rpc` signs with `DEPLOYER_PRIVATE_KEY`, and the
   upgrader's own requests with `UPGRADER_PRIVATE_KEY`. Without the flag, role-gated calls fail
   with `AccessControlUnauthorizedAccount`, and the CreateX simulation runs from a random address.
-  The wizard (`pnpm contracts:deploy`), `pnpm contracts:provision`, `pnpm contracts:timelock` and
-  `pnpm contracts:handoff` do not sign their requests, so on such an RPC run the low-level
-  commands directly.
+  A command that sends no transaction (a `--plan`, `contracts:doctor`) needs no signature.
 
 ## The checklist
 
@@ -90,14 +90,13 @@ no code change:
       <profile>` typed in the wizard. The low-level `deploy:cli core` runs the same chain
       prerequisite checks (CreateX codehash, EntryPoint v0.9, Cancun) but has no prompt, so it
       refuses every mainnet deviation.
-      Where the RPC rewrites `from` on unsigned calls (see above), deploy with the low-level command
-      instead: the wizard does not sign its requests. Load the same key as DEPLOYER_PRIVATE_KEY; the
-      command refuses to start without it:
+      Where the RPC rewrites `from` on unsigned calls (see above), add --signed-rpc. The wizard then
+      signs every request with CANONICAL_DEPLOYER_PRIVATE_KEY, and refuses to start without it:
+        pnpm contracts:deploy --chain <profile> --role-admin <bootstrap operator EOA> --signed-rpc
+      Anyone can verify the deployment afterwards WITHOUT a key. The check only reads, so it needs
+      no --signed-rpc; it verifies every contract and its code and sends nothing:
         pnpm --filter @appliedblockchain/giano-contracts \
-          deploy:cli core --rpc <url> --chain <profile> --role-admin <bootstrap operator EOA> --signed-rpc
-      Anyone can re-run the same command WITHOUT a key afterwards: it verifies every contract and its
-      code and sends nothing. Drop --signed-rpc for that run too: the flag refuses to start without
-      a key, and the verification only reads.
+          deploy:cli core --rpc <url> --chain <profile> --role-admin <bootstrap operator EOA>
       From a committed release, never a fresh build (MC-26): the release's creation code is
       what every chain gets. Idempotent; commit the record it writes
       (packages/contracts/deployments/<chainId>.json).
@@ -124,12 +123,12 @@ no code change:
       address). Sponsorship is per chain: every tenant
       that sponsors here funds a balance HERE, and configures its rules HERE — nothing is
       inherited from another chain (MC-67).
-      contracts:provision does not sign its requests. Where the RPC rewrites `from` on unsigned
-      calls, run provision:paymaster directly with the flags that deploy/contracts/provision-paymaster.sh
-      builds, plus --signed-rpc.
+      Where the RPC rewrites `from` on unsigned calls, add --signed-rpc: provisioning then signs
+      every request with DEPLOYER_PRIVATE_KEY.
       On a gas-charging chain with bundler.stateOverride: false, every operation carries the
       bundler's fixed limits: verification 1,000,000, call 300,000 (unless the wallet sends its
-      own), paymaster verification 200,000 and post-op 100,000. The maximum charge is then about
+      own), paymaster verification 200,000 and post-op 100,000. Giano's wallet sends 800,000
+      verification and wallet-api's stub 150,000 paymaster verification, so these are the maxima. The maximum charge is then about
       1.6 million gas plus pre-verification gas, times maxFeePerGas, about four times that of a
       simulated ETH transfer. Settlement still charges the actual cost. Size for that maximum:
         - the paymaster deposit: it must cover the prefund of every operation in flight;
@@ -138,7 +137,8 @@ no code change:
         - each tenant's maxCostPerTxWei rule, and the platform's wallet-management cap
           (SPONSORSHIP_WALLET_MANAGEMENT_CAP_WEI): a cap below the maximum charge refuses the
           operation.
-      A gasless chain (base fee 0) needs none of this: the gas part of the charge is 0.
+      A gasless chain needs none of this: the gas part of the charge is 0. Gasless means a gas
+      price of 0 and, on an OP Stack chain, an L1 fee of 0 (`chargesNoGas`).
 
 7a. Hand the timelocked roles to the timelock (G9; docs/PAYMASTER-TIMELOCK-RUNBOOK.md §2).
       pnpm contracts:timelock, then pnpm contracts:handoff. The hand-off first checks the timelock
@@ -147,10 +147,12 @@ no code change:
       because it renounces the operator's ROLE_ADMIN and cannot be undone. From then on
       contracts:provision refuses (ROLE_ADMIN is the timelock's); role changes are timelock
       proposals.
-      contracts:timelock and contracts:handoff do not sign their requests. Where the RPC rewrites
-      `from` on unsigned calls, run deploy:cli timelock and deploy:cli handoff directly, with the
-      flags that packages/contracts/deploy/operations.ts builds, plus --signed-rpc. Both sign with
-      ROLE_ADMIN_PRIVATE_KEY and refuse to start without it.
+      Where the RPC rewrites `from` on unsigned calls, add --signed-rpc to both. They then sign every
+      request with the ROLE_ADMIN key (ROLE_ADMIN_PRIVATE_KEY, or DEPLOYER_PRIVATE_KEY), and refuse
+      to start without it. Where ROLE_ADMIN is a Safe, plan the hand-off without --execute and send
+      the Safe batch it writes. The plan only reads, so it needs no key and no --signed-rpc:
+        pnpm --filter @appliedblockchain/giano-contracts deploy:cli handoff --rpc <url> \
+          --chain <profile> --timelock <0x…> --role-admin <Safe> --safe-json <file>
 
 8.  giano-doctor chain --rpc <url> --chain-id <id> …  → must be green.
       The same checks the wallet-api runs at boot: endpoint identity, EntryPoint, factory +

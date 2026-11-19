@@ -98,9 +98,8 @@ const servedProbes = new Map<number, string>();
 				{ chainId: chain.chainId },
 				unverifiedImplementationWarning(chain.chainId),
 			);
-		if (
-			verification.failures.some((failure) => failure.kind === "unreachable")
-		) {
+		// Not fatal, but not verified: served only once a background check completes.
+		if (verification.failures.some((failure) => !isFatalFailure(failure))) {
 			chain.status = "unavailable";
 		}
 		recordVerification(chain, verification);

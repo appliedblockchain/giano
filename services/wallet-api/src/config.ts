@@ -2,6 +2,7 @@ import { isIP } from "node:net";
 import {
 	type ChainPolicy,
 	defaultChainName,
+	type GianoDeployment,
 	gianoAddresses,
 	validateChainList,
 	walletApiChainSchema,
@@ -53,6 +54,12 @@ export type ResolvedChain = {
 	 */
 	implementation?: `0x${string}`;
 	sponsorshipPaymaster?: `0x${string}`;
+	/**
+	 * The block that deployed {@link sponsorshipPaymaster}, from the contracts registry, and only
+	 * when the chain uses the registry's paymaster. On an RPC that refuses `eth_getStorageAt`, the
+	 * walk through the proxy's `Upgraded` logs starts here instead of at block 0.
+	 */
+	sponsorshipPaymasterDeployBlock?: bigint;
 	/**
 	 * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
 	 * address denotes different contracts on different chains, so a chain-agnostic address
@@ -807,6 +814,10 @@ const envSchema = z
 					| undefined,
 				sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
 					deployment?.sponsorshipPaymaster) as `0x${string}` | undefined,
+				sponsorshipPaymasterDeployBlock: registryDeployBlock(
+					env.SPONSORSHIP_PAYMASTER_ADDRESS,
+					deployment,
+				),
 				policy: resolvePolicy({
 					allowedTargets: env.USEROP_ALLOWED_TARGETS as `0x${string}`[],
 					allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS as `0x${string}`[],
@@ -845,6 +856,10 @@ const envSchema = z
 							| undefined,
 						sponsorshipPaymaster: (descriptor.sponsorshipPaymaster ??
 							registry?.sponsorshipPaymaster) as `0x${string}` | undefined,
+						sponsorshipPaymasterDeployBlock: registryDeployBlock(
+							descriptor.sponsorshipPaymaster,
+							registry,
+						),
 						policy: resolvePolicy(walletApi.policy),
 					};
 				})
@@ -856,6 +871,28 @@ const envSchema = z
 			ENVIRONMENT: resolveEnvironment(env.GIANO_ENVIRONMENT),
 		};
 	});
+
+/**
+ * The registry's deployment block for its sponsorship paymaster, when the chain uses that paymaster:
+ * `configured` is unset, or names the same address. Undefined otherwise: a block that belongs to
+ * another proxy would start the log walk past that proxy's upgrades.
+ */
+function registryDeployBlock(
+	configured: string | undefined,
+	registry: GianoDeployment | undefined,
+): bigint | undefined {
+	if (
+		registry?.sponsorshipPaymaster === undefined ||
+		registry.sponsorshipPaymasterDeployBlock === undefined
+	)
+		return undefined;
+	if (
+		configured !== undefined &&
+		configured.toLowerCase() !== registry.sponsorshipPaymaster.toLowerCase()
+	)
+		return undefined;
+	return BigInt(registry.sponsorshipPaymasterDeployBlock);
+}
 
 export type AppConfig = z.infer<typeof envSchema>;
 

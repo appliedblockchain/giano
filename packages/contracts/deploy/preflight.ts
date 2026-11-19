@@ -39,7 +39,7 @@ import {
 	unverifiedImplementation,
 } from "./plan";
 import { type ChainProfile, paymasterParams } from "./profiles";
-import type { DeploymentRecord } from "./records";
+import { type DeploymentRecord, paymasterProxyDeployBlock } from "./records";
 
 export { CORE_KEYS, IMPLEMENTATION_SLOT };
 
@@ -120,6 +120,8 @@ export async function verifyCoreState(
 		 * the proxy delegates to can emit an `Upgraded` event that names another address.
 		 */
 		acceptUnverifiedImplementation?: boolean;
+		/** The chain's record: its paymaster proxy's deployment block bounds the `Upgraded` log walk. */
+		record?: DeploymentRecord;
 	} = {},
 ): Promise<string[]> {
 	const proxy = planned(plan, "paymasterProxy");
@@ -128,7 +130,9 @@ export async function verifyCoreState(
 	if (!code || code === "0x") return [];
 	const implementation = planned(plan, "paymasterImplementation")?.actual;
 	const { implementation: current, source } =
-		await proxyImplementationWithSource(client, proxy.actual);
+		await proxyImplementationWithSource(client, proxy.actual, {
+			fromBlock: paymasterProxyDeployBlock(options.record, proxy.actual),
+		});
 	const warnings: string[] = [];
 	if (source === "logs") {
 		if (!options.acceptUnverifiedImplementation)
@@ -401,6 +405,7 @@ export async function inspectDeployment(
 						timelock: profile.timelock?.address,
 						acceptUnverifiedImplementation:
 							options.acceptUnverifiedImplementation,
+						record: options.record,
 					},
 				);
 				if (warnings.length) return `⚠ ${warnings.join("; ")}`;

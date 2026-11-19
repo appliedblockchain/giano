@@ -131,7 +131,9 @@ cli([
 
 const testing = env.DEPLOY_TESTING === "true";
 // The rule `testing` selects the private test token by (privateTestErc20Wanted in deploy/deploy.ts):
-// a local chain, or a profile that opts in. Otherwise `testing` neither deploys nor checks it.
+// a local chain (LOCAL_CHAIN_IDS in deploy/config.ts), or a profile that opts in. Otherwise `testing`
+// neither deploys nor checks it. This file cannot import either, so deploy/deployer-entrypoint.test.ts
+// keeps this copy in step.
 const privateTestErc20 =
 	testing &&
 	([31337, 31338].includes(chainId) || profile?.privateTestErc20 === true);

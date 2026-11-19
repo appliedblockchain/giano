@@ -15,7 +15,9 @@
 #
 # ⚠ Costs real testnet ETH: the stake, the tenant's funded balance, and gas for ~10 transactions.
 #
-# Usage: pnpm contracts:provision --chain <profile> --env-file <file>
+# Usage: pnpm contracts:provision --chain <profile> --env-file <file> [--signed-rpc]
+#   --signed-rpc signs every request with DEPLOYER_PRIVATE_KEY, for an RPC that replaces `from` on
+#   unsigned calls (Silent Data). The launcher passes it here as GIANO_SIGNED_RPC=1.
 #   Idempotent for roles, signer and stake. NOT for funding: re-running adds TENANT_FUND_ETH to
 #   each tenant's balance again rather than topping it up to that figure.
 set -euo pipefail
@@ -169,7 +171,8 @@ DEPLOYER_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY" RPC_URL="$RPC_URL" \
     --signer "$SIGNER_ADDR" \
     --stake-eth "$STAKE_ETH" \
     --unstake-delay "$UNSTAKE_DELAY" \
-    "${TENANT_ARGS[@]}"
+    "${TENANT_ARGS[@]}" \
+    ${GIANO_SIGNED_RPC:+--signed-rpc}
 
 echo
 echo "==> Verifying on-chain (adoption checklist step 8)"

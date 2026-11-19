@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { encodeFunctionData, erc20Abi } from "viem";
+import { testErc20Abi } from "../src/lib/erc20.ts";
 import type { LedgerEntry } from "../src/lib/ledger.ts";
 import {
 	findLatestTransfer,
@@ -29,7 +30,6 @@ describe("redactionOf", () => {
 			hidden: true,
 			calldataHidden: true,
 			senderHidden: true,
-			value: "0x0",
 		});
 	});
 
@@ -207,7 +207,6 @@ describe("findLatestTransfer", () => {
 
 	it("skips restored entries whose fields have the wrong type", () => {
 		const entries = [
-			transfer({ label: undefined }),
 			transfer({ account: 42 }),
 			transfer({ params: { data: "0x" } }),
 			transfer({ txHash: 7 }),
@@ -219,11 +218,34 @@ describe("findLatestTransfer", () => {
 		});
 	});
 
-	it("reads no recipient from a request that is not an object or has no string data", () => {
-		for (const params of [[null], [5], [{ data: 5 }], undefined])
-			assert.deepEqual(
+	it("decides by the decoded call, not by the label", () => {
+		const mint = encodeFunctionData({
+			abi: testErc20Abi,
+			functionName: "mint",
+			args: [1n],
+		});
+		// A mint, then a transfer whose label is missing: the transfer is found.
+		const entries = [
+			transfer({ label: "Transfer 1 PTK", params: [{ data: mint }] }),
+			transfer({ label: undefined, txHash: `0x${"cd".repeat(32)}` }),
+		];
+		assert.deepEqual(findLatestTransfer(entries, CHAIN_ID, WALLET), {
+			txHash: `0x${"cd".repeat(32)}`,
+			recipient: RECIPIENT,
+		});
+	});
+
+	it("skips a request that is not an object or has no transfer data", () => {
+		for (const params of [
+			[null],
+			[5],
+			[{ data: 5 }],
+			[{ data: "0x" }],
+			undefined,
+		])
+			assert.equal(
 				findLatestTransfer([transfer({ params })], CHAIN_ID, WALLET),
-				{ txHash: TX_HASH, recipient: undefined },
+				undefined,
 			);
 	});
 });

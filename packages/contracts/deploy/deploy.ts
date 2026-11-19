@@ -22,6 +22,7 @@ import {
 	zeroAddress,
 } from "viem";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
+import { waitForReceipt } from "../receipt";
 import { type ReleaseContractName, releaseOf } from "../release-code";
 import {
 	delayPolicyProblems,
@@ -107,7 +108,7 @@ export type TestingParams = {
 /**
  * Whether `testing` deploys GianoTestPrivateErc20 (openspec silent-data-network, design D7). Its
  * privacy holds only where the RPC enforces private reads, so a remote chain needs its profile to opt
- * in (`privateTestErc20: true`; a mainnet profile cannot, R-29). A local chain always gets it, for the
+ * in (`privateTestErc20: true`; a production chain's profile cannot, R-29). A local chain always gets it, for the
  * local Silent Data gateway. It comes from a committed artifact (deploy/fixtures.ts), so the release
  * plays no part.
  */
@@ -220,7 +221,7 @@ export async function deployLabel(
 
 	const transactionHash = await walletClient.writeContract(request);
 	ctx.log(`  → ${label}: submitted ${transactionHash}; waiting for receipt`);
-	const receipt = await ctx.publicClient.waitForTransactionReceipt({
+	const receipt = await waitForReceipt(ctx.publicClient, {
 		hash: transactionHash,
 	});
 	if (receipt.status !== "success")
@@ -234,6 +235,7 @@ export async function deployLabel(
 	return {
 		...releaseCode(label, release, contract, address, code),
 		transactionHash,
+		blockNumber: Number(receipt.blockNumber),
 	};
 }
 
@@ -456,6 +458,26 @@ export async function deployTesting(
 	params: TestingParams,
 ): Promise<void> {
 	const c = release.contracts;
+	const privateToken = {
+		label: LABELS.privateTestErc20,
+		release: FIXTURE_RELEASE,
+		contract: CONTRACT_OF.privateTestErc20,
+	};
+	if (params.privateTestErc20) {
+		// Checked before the first send: code at its address that is not the artifact's would
+		// otherwise stop the run after the other fixtures are deployed and funded, before the CLI
+		// saves their record entries.
+		const address = create3Address(ctx.deployer, privateToken.label);
+		const existing = await ctx.publicClient.getCode({ address });
+		if (existing && existing !== "0x")
+			releaseCode(
+				privateToken.label,
+				privateToken.release,
+				privateToken.contract,
+				address,
+				existing,
+			);
+	}
 	await deployTestToken(ctx, release, params.holder);
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
@@ -478,7 +500,7 @@ export async function deployTesting(
 			to: testPaymaster.address,
 			value: params.fundWei,
 		});
-		await ctx.publicClient.waitForTransactionReceipt({ hash });
+		await waitForReceipt(ctx.publicClient, { hash });
 		ctx.log(
 			`  + funded the test paymaster's deposit with ${params.fundWei} wei`,
 		);
@@ -488,10 +510,8 @@ export async function deployTesting(
 			ctx,
 			"privateTestErc20",
 			await deployLabel(ctx, {
-				label: LABELS.privateTestErc20,
-				release: FIXTURE_RELEASE,
-				contract: CONTRACT_OF.privateTestErc20,
-				initCode: loadFixture(CONTRACT_OF.privateTestErc20).creationCode,
+				...privateToken,
+				initCode: loadFixture(privateToken.contract).creationCode,
 			}),
 		);
 }
@@ -582,7 +602,7 @@ export async function deployTimelock(
 	if (!ctx.walletClient) throw new Error("Timelock deployment needs a signer");
 	const hash = await ctx.walletClient.sendTransaction({ data: initCode });
 	ctx.log(`  → GianoTimelock: submitted ${hash}; waiting for receipt`);
-	const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash });
+	const receipt = await waitForReceipt(ctx.publicClient, { hash });
 	if (receipt.status !== "success" || !receipt.contractAddress)
 		throw new Error(`deploying GianoTimelock reverted (${hash})`);
 	const address = getAddress(receipt.contractAddress);
