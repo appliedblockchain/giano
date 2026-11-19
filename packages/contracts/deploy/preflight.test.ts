@@ -600,6 +600,15 @@ test("testing (the permissive paymaster too): never on a production chain, serve
 			testingProblem(chainId, "testnet") ?? "",
 			new RegExp(`chain ${chainId} is a production chain.*use test-token`),
 		);
+	// The served Silent Data testnets: off the production list (they carry the private test token),
+	// but never the permissive paymaster.
+	for (const chainId of [19874, 19877])
+		assert.match(
+			testingProblem(chainId, "testnet") ?? "",
+			new RegExp(
+				`chain ${chainId} is a production chain.*use private-test-token`,
+			),
+		);
 	assert.match(testingProblem(8453, "mainnet") ?? "", /production chain/);
 	// A chain declared mainnet, off the fixed list.
 	assert.match(testingProblem(4242, "mainnet") ?? "", /production chain/);

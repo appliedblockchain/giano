@@ -241,6 +241,26 @@ export function isProductionChain(
 }
 
 /**
+ * The Silent Data testnets (iron-kestrel, copper-heron). The platform serves them, but they are not on
+ * PRODUCTION_CHAIN_IDS because they carry the private test token (openspec silent-data-network, D7).
+ */
+export const SILENT_DATA_TESTNET_CHAIN_IDS = [19874, 19877] as const;
+
+/**
+ * R-29 for the permissive paymaster: every production chain, plus the served Silent Data testnets,
+ * which may carry the private test token but never the permissive paymaster.
+ */
+export function forbidsPermissivePaymaster(
+	chainId: number,
+	network?: NetworkClass,
+): boolean {
+	return (
+		isProductionChain(chainId, network) ||
+		(SILENT_DATA_TESTNET_CHAIN_IDS as readonly number[]).includes(chainId)
+	);
+}
+
+/**
  * The configured canonical deployers equal to `address`. A deployer only places contracts: it must
  * never hold a role on one, which is what keeps its key outside ABIP-8 (docs/key-ceremony.md).
  */

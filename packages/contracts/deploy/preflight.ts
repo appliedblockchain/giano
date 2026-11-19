@@ -23,6 +23,7 @@ import {
 import {
 	DEPLOYERS,
 	ENTRY_POINT_V09,
+	forbidsPermissivePaymaster,
 	isClassDeployer,
 	isMainnetChain,
 	isProductionChain,
@@ -527,15 +528,15 @@ export async function scanStartProblem(
 
 /**
  * Why `deploy:cli testing` must not run, or undefined when it may: never on a production chain, the
- * fixed list (mainnets and the served testnets) or any chain declared mainnet, because it deploys the
- * permissive paymaster (R-29, PAYMASTER-SPECS §12.1 layer 1).
+ * fixed list (mainnets and the served testnets) or any chain declared mainnet, nor on a served Silent
+ * Data testnet, because it deploys the permissive paymaster (R-29, PAYMASTER-SPECS §12.1 layer 1).
  */
 export function testingProblem(
 	chainId: number,
 	network: NetworkClass,
 ): string | undefined {
-	return isProductionChain(chainId, network)
-		? `chain ${chainId} is a production chain; the test fixtures must never be deployed there (R-29). For the test ERC-20 alone on a served testnet, use test-token`
+	return forbidsPermissivePaymaster(chainId, network)
+		? `chain ${chainId} is a production chain; the test fixtures must never be deployed there (R-29). For the test ERC-20 alone on a served testnet, use test-token; for the private test token alone, use private-test-token`
 		: undefined;
 }
 
