@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
 import { proxyImplementationWithSource } from "../erc1967";
+import { chargesNoGas } from "../gasless";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
 import { releaseOf } from "../release-code";
 import {
@@ -425,9 +426,18 @@ export async function inspectDeployment(
 	const missing = plan.contracts.some(
 		(c) => c.code.state === "empty" && c.source !== "override",
 	);
-	if (missing && payer)
+	if (!missing || !payer) return { checks, plan };
+	const who = `${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer}`;
+	// A chain that charges nothing for gas (H6, Silent Data copper-heron) can hold no ETH at all, so
+	// the deployer needs none. A failed read counts as "charges gas": the reserve is then required.
+	if (await chargesNoGas(client).catch(() => false))
+		checks.push({
+			ok: true,
+			message: `${who} needs no ETH: the chain charges nothing for gas (gas price 0), so the ${profile.minDeployerBalanceEth} ETH reserve check is skipped`,
+		});
+	else
 		await check(
-			`${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
+			`${who} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
 			async () => {
 				if (
 					(await client.getBalance({ address: payer })) <

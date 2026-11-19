@@ -174,6 +174,59 @@ test("a plan without a key checks the canonical deployer's balance, naming the a
 	);
 });
 
+test("a chain that charges nothing for gas skips the deployer balance check, and says so", async () => {
+	const { checks } = await inspectDeployment(
+		client({
+			getBlock: async () => ({ baseFeePerGas: 0n }),
+			getGasPrice: async () => 0n,
+		}),
+		profile,
+		"v2",
+		admin,
+		options,
+	);
+	assert.ok(
+		!checks.some((c) => c.message.includes(`Fund ${CANONICAL_DEPLOYER}`)),
+		JSON.stringify(checks),
+	);
+	assert.ok(
+		checks.some(
+			(c) =>
+				c.ok &&
+				c.message.startsWith(
+					`Canonical testnet deployer ${CANONICAL_DEPLOYER} needs no ETH: the chain charges nothing for gas`,
+				) &&
+				c.message.includes("reserve check is skipped"),
+		),
+		JSON.stringify(checks),
+	);
+});
+
+test("a chain that charges gas still refuses a deployer below the reserve", async () => {
+	const { checks } = await inspectDeployment(
+		client({
+			getBlock: async () => ({ baseFeePerGas: 1_000_000_000n }),
+			getGasPrice: async () => 1_000_000_000n,
+		}),
+		profile,
+		"v2",
+		admin,
+		options,
+	);
+	assert.ok(
+		checks.some(
+			(c) =>
+				!c.ok &&
+				c.message.startsWith(
+					`Canonical testnet deployer ${CANONICAL_DEPLOYER} has at least ${profile.minDeployerBalanceEth} ETH`,
+				) &&
+				c.message.includes(`Fund ${CANONICAL_DEPLOYER} on ${profile.name}`),
+		),
+		JSON.stringify(checks),
+	);
+	assert.ok(!checks.some((c) => /needs no ETH/.test(c.message)));
+});
+
 const planFor = (chain: PublicClient) =>
 	planCore(chain, {
 		network: "testnet",
@@ -437,12 +490,17 @@ async function guidedPlan(
 	}
 }
 
-/** eth_call simulates without sending: the chain prerequisites probe Cancun's opcodes with one. */
+/**
+ * eth_call simulates without sending: the chain prerequisites probe Cancun's opcodes with one.
+ * eth_getBlockByNumber and eth_gasPrice tell whether the chain charges gas (`chargesNoGas`).
+ */
 const READ_METHODS = [
 	"eth_chainId",
 	"eth_getCode",
 	"eth_getBalance",
 	"eth_call",
+	"eth_getBlockByNumber",
+	"eth_gasPrice",
 ];
 
 test("deploy:cli --network cannot move a chain out of its committed profile's class", async () => {
