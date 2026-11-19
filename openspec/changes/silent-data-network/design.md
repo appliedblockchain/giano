@@ -150,7 +150,7 @@ The work ships as one stack of PRs, listed at the top of `tasks.md`. It merges b
 2. Merge PRs 1, 2 and 3, the next three layers. With defaults, nothing changes on existing chains: `stateOverride` defaults to `true`, the log fallback runs only on a refused storage read, and `--signed-rpc` is opt-in. Each PR carries its own changeset.
 3. Release `giano-contracts` and `giano-paymaster-sdk` from the merged changesets. Bump the bundler and wallet-api images.
 4. Merge PR 4 (the private test token) and PR 5 (the demo section), the next two layers.
-5. Merge PR 5a: the two chain profiles and `deploy:cli private-test-token`. Then adopt iron-kestrel per `specs/CHAIN-ADOPTION.md` and `tasks.md` group 8, and commit `deployments/19874.json` in PR 6a. When the copper-heron presigned senders are funded, adopt it (group 7) and commit `deployments/19877.json` in PR 6b.
+5. Merge PR 5a: the two chain profiles and `deploy:cli private-test-token`. Then adopt iron-kestrel per `specs/CHAIN-ADOPTION.md` and `tasks.md` group 8, and commit `deployments/19874.json` in PR 6a. When Silent Data has installed the Arachnid factory and CreateX on copper-heron (`tasks.md` task 7.1), adopt it (group 7) and commit `deployments/19877.json` in PR 6b.
 6. After each adoption PR merges, release `giano-contracts` from its changeset, so the published `addresses.ts` lists the new chain. Then add that chain's entry to the dev `chains` secret, and add `privateToken` to the demo's chain list.
 7. Rollback: revert the PR, or remove the chain's entry from the `chains` secret and the demo's chain list. Other chains are unaffected.
 

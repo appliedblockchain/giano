@@ -29,7 +29,7 @@ Still to do:
 
 - Make the bundler's `eth_getUserOperationByHash` answer `null` when the bundle transaction's calldata is redacted. Today it fails to decode `0x` and returns an error.
 - Adopt both Silent Data testnets per `specs/CHAIN-ADOPTION.md`, at the same testnet-class addresses. The goal is Giano deployed on both chains:
-  - copper-heron (19877): CreateX and the Arachnid factory from their presigned keyless transactions, then EntryPoint v0.9;
+  - copper-heron (19877): CreateX and the Arachnid factory, which Silent Data installs (no native ETH exists on 19877), then EntryPoint v0.9;
   - iron-kestrel (19874): CreateX and the Arachnid factory are already there, so only EntryPoint v0.9 is needed;
   - on each chain: `core`, `testing`, `provision:paymaster`, `giano-doctor`, a `GIANO_CHAINS` entry in the dev environment, and one sponsored transaction.
 - Add the Silent Data section to the demo app (R3). For a chain that names a private token, it shows the token balance the wallet can read with a signed request, and shows that an unsigned read is refused.
@@ -74,9 +74,9 @@ Decided:
   - The UCEF Solidity sources (MIT, `appliedblockchain/ucef-contracts`), a git submodule pinned to a commit.
   - The demo signs Silent Data reads for a smart wallet (`x-signer-swc`) itself, in a small viem module (design D6). It adds no Silent Data package.
 - **Configuration:** a `GIANO_CHAINS` entry for 19877 and one for 19874. Each sets `bundler.rpcUrl` to that chain's write URL (which carries a token) and `bundler.stateOverride: false`. The `chains` secret holds them.
-- **Blocked:** copper-heron needs funds for the two presigned senders: 0.01 ETH for Arachnid and 0.3 ETH for CreateX. The testnet canonical deployer key, which both chains waited for, exists since #296 (`DEPLOYERS.testnet`).
+- **Blocked:** copper-heron has no native ETH, so nobody can fund the two presigned senders (0.01 ETH for Arachnid, 0.3 ETH for CreateX). Silent Data must install both contracts (task 7.1). The testnet canonical deployer key, which both chains waited for, exists since #296 (`DEPLOYERS.testnet`).
 - **Funding:** both chains need funds.
   - iron-kestrel: the key that deploys EntryPoint v0.9 (task 8.2), the paymaster deposit and the dev tenant's balance, sized for the fixed limits at the chain's gas price (task 8.4), and the bundler executor (task 8.4).
-  - copper-heron: 0.01 ETH for the Arachnid presigned sender and 0.3 ETH for the CreateX presigned sender (task 7.1), and the bundler executor (task 7.6).
+  - copper-heron: gas is free, so only the paymaster's stake, its deposit and the dev tenants' balances need ETH (task 7.2). They wait for native ETH on 19877.
 - **Docs:** `specs/CHAIN-ADOPTION.md`, `packages/contracts/README.md`, `services/bundler` README.
 - **Integrators:** no breaking change. `stateOverride` defaults to `true`, and `--signed-rpc` is opt-in.
