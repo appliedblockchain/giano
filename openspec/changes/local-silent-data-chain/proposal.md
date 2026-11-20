@@ -26,7 +26,7 @@ Decided:
 - The gasless variant of a Silent Data chain (base fee 0). Anvil charges gas, as iron-kestrel does.
 - The L1 data fee. Anvil is not OP Stack, so the local chain does not reproduce iron-kestrel's L1 fee.
 - A readable consent screen for the read-delegate approval. The wallets show the `personal_sign` message as a raw hash, as they do today.
-- The `byoui` demo on the AWS dev environment. It can list iron-kestrel after PR 2, as a follow-up outside this stack.
+- The `byoui` demo on the AWS dev environment. Decided: it lists iron-kestrel, in a separate infra PR after PR 2 merges (`tasks.md`, "Workflow follow-up"). That PR needs only PR 2 of this stack.
 - Publishing the gateway image. It runs only in local stacks and in CI.
 
 ## Capabilities

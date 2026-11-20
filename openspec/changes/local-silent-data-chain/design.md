@@ -70,7 +70,7 @@ All three states are regenerated in PR 3, so every local chain carries the priva
 
 `CHAINS` is a JSON array of `{ chainId, name }`. `serve.mjs` validates it and passes it to the SPA as one `define`. `src/config.ts` maps it to wallet-kit chain entries. Without `CHAINS`, `serve.mjs` builds the list from `CHAIN_ID` / `CHAIN_B_ID` as today, so the dev environment keeps working. When both are set, it exits with a message that names both. In a devnet checkout with no chain variables, the default list is every local chain: two in PR 2, three from PR 4.
 
-The pair stays because `infra/iac` sets it. Moving `infra/iac` to `CHAINS` belongs to the follow-up that lists iron-kestrel for `byoui`.
+The pair stays because `infra/iac` sets it. Moving `infra/iac` to `CHAINS` belongs to the infra PR that lists iron-kestrel for `byoui` (`tasks.md`, "Workflow follow-up").
 
 ### D7. The e2e tests
 
@@ -99,4 +99,4 @@ None for deployed environments: 31339 exists only in local stacks. A developer r
 
 ## Open Questions
 
-- Whether the `byoui` demo on the AWS dev environment lists iron-kestrel. That follow-up needs PR 2 and an `infra/iac` change, and does not change this stack.
+None. The one open question is decided: the `byoui` demo on the AWS dev environment lists iron-kestrel. A separate infra PR does it after PR 2 merges (`tasks.md`, "Workflow follow-up"). It does not change this stack.

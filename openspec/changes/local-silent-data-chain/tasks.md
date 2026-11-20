@@ -15,12 +15,12 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 - Every PR is one layer of the same stack, based on the PR in the row above. The stack merges bottom-up with `gh stack merge`, with merge commits, never squash.
 - PR 1's description has `## Summary`, `## Open questions` and `## Test plan` (`openspec validate local-silent-data-chain --strict`, `biome ci .`), and says the implementation follows as a `gh stack` set out in this file. Every other PR's description starts "Layer N of the `local-silent-data-chain` stack (OpenSpec change in #<PR 1>, tasks …)", then has `## What` and `## Verification`.
 - PR 3 commits the manifest and lockfile change for the gateway on its own, in one commit with nothing else (AGENTS.md, ABIP-6).
-- The `byoui` demo on the AWS dev environment is outside this stack. It can list iron-kestrel after PR 2 merges (design, Open Questions).
+- The `byoui` demo on the AWS dev environment is outside this stack. It lists iron-kestrel in a separate infra PR after PR 2 merges ("Workflow follow-up").
 
 ## 1. The plan (PR 1)
 
 - [x] 1.1 Write `proposal.md`, `design.md`, `specs/local-silent-data-chain/spec.md`, `specs/demo-deployment/spec.md` and this file. Verified: `openspec validate local-silent-data-chain --strict` reports the change valid, and `pnpm lint` passes.
-- [ ] 1.2 After the user approves the commit, push the branch, open PR 1, and register the stack with `gh stack init`. Verify with `gh stack view` that PR 1 is the bottom layer on `main`.
+- [x] 1.2 After the user approves the commit, push the branch, open PR 1, and register the stack with `gh stack init`. Verified: PR 1 is #319, and `gh stack view` shows it as the bottom layer on `main`.
 
 ## 2. The BYO wallet fixture takes a list of chains (PR 2)
 
@@ -64,5 +64,13 @@ The work lands in these PRs, in this order, as one stack managed with `gh stack`
 
 ## Workflow follow-up
 
-- After PR 5 merges, list iron-kestrel for the `byoui` demo on the AWS dev environment: move `infra/iac/ecs_services.tf` from `CHAIN_ID` / `CHAIN_B_ID` to `CHAINS`. This is a separate PR.
+- After PR 2 merges and dev runs an image that includes it, list iron-kestrel for the `byoui` demo on the AWS dev environment. Decided: `byoui` lists iron-kestrel, as `example` does. This is a separate infra PR, outside this stack. It changes:
+  - `svc-wallet-byo` in `infra/iac/ecs_services.tf`: remove `CHAIN_ID` and `CHAIN_B_ID`, and set `CHAINS` to the chains wallet-web serves, each with a name (`var.chain_name`, `var.chain_b_name` and `local.silent_data_chains`). Both changes go in the same PR, because PR 2's fixture refuses `CHAINS` set together with the pair. The names also replace today's fallback name, "chain <id>".
+  - `svc-custom-example-byoui` in `infra/iac/ecs_services.tf`: set `GIANO_CHAINS = local.example_dapp_chains`. Remove `byoui_dapp_chains` and its comment from `infra/iac/_locals.tf`.
+  - "Adding iron-kestrel to dev" in `deploy/contracts/TESTNET-ROLLOUT.md`: remove "The `byoui` dApp keeps the two testnets", and make step 5 install the `byoui` tenant's rules too.
+- The order on dev for that infra PR:
+  1. Roll an image that includes PR 2 first. The old fixture does not read `CHAINS`, and refuses to start without `CHAIN_ID`.
+  2. Merge the infra PR. DevOps runs `terraform apply`.
+  3. Install the `byoui` tenant's sponsorship rules on 19874, with `SPONSOR_ALLOWLIST` set to the private test token.
+  4. Check that the `byoui` dApp shows Iron Kestrel and the private token card, and that one sponsored transaction goes through the BYO wallet.
 - Archive this change after the stack merges and its tasks are done.
