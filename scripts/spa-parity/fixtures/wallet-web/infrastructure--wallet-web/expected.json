@@ -15,12 +15,19 @@
         "name": "Devnet B",
         "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2",
         "sponsorship": "off"
+      },
+      {
+        "chainId": 31339,
+        "name": "Devnet SD (Silent Data)",
+        "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2",
+        "sponsorship": "service"
       }
     ],
     "walletApiUrl": "/api",
     "allowedDappOrigins": [
       "http://stock.giano.localhost"
     ],
+    "passkeyDevicePreference": "browser-default",
     "rpId": "wallet.stock.giano.localhost",
     "branding": {
       "name": "Giano Local"
