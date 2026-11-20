@@ -37,9 +37,10 @@ reads and refusal paths on this stack.
 
 To update the baked paymaster implementation while keeping its proxy and funded tenants,
 run `pnpm devnet:upgrade:paymaster:all` in this package. For each chain (`state.json` for
-31337, `state-31338.json` for 31338) it loads the committed fixture into a fresh pinned Anvil
-on port 18545, performs the UUPS upgrade while preserving the signer allowlist, and saves the
-upgraded fixture. Restart both Anvil containers and wallet-api
+31337, `state-31338.json` for 31338, `state-31339.json` for 31339) it loads the committed fixture
+into a fresh pinned Anvil on port 18545, performs the UUPS upgrade while preserving the signer
+allowlist, and saves the upgraded fixture. `devnet:upgrade:paymaster:sd` upgrades 31339 alone.
+Restart every Anvil container and wallet-api
 afterwards so they load the new state. The bundler needs no restart: it deploys nothing.
 
 The dApp fixture holds two thin-SDK providers over the same wallet origin, one per chain
@@ -56,8 +57,25 @@ single-chain shape.
 
 To regenerate the baked state with the pinned anvil: `pnpm -F @appliedblockchain/giano-e2e
 devnet:generate` (chain A; also writes `devnet/addresses.json`). `devnet:generate:b` produces a
-`state-31338.json` and asserts its addresses are identical to chain A's — a divergent pair is
-refused rather than committed (MC-119).
+`state-31338.json` and `devnet:generate:sd` a `state-31339.json`. Each asserts its addresses are
+identical to chain A's — a divergent state is refused rather than committed (MC-119).
+`devnet:generate:all` runs all three. `addresses.json` records every canonical address, including
+the private test token `privateTestErc20` (`GianoTestPrivateErc20`), which every local chain
+carries at the same address.
+
+### A third chain: Devnet SD (31339)
+
+Chain 31339, "Devnet SD (Silent Data)", is an anvil node with its own baked state,
+`devnet/state-31339.json`, from the same generator as the other two. It exists for Silent Data's
+private token: anvil answers every read, so privacy holds only when Silent Data's RPC gateway sits
+in front of the node. The gateway is the published package
+`@appliedblockchain/silentdatarollup-custom-rpc`, pinned in `services/silent-data-gateway` and
+built into a local-only image (its `README.md` explains the image, its environment and how to
+upgrade the pin). The gateway refuses `eth_getStorageAt` and every `anvil_*` method, which the
+tests and the demo's "fund from devnet" control use on 31337 and 31338. So the gateway sits only
+in front of this third chain, and Devnet A and B stay plain anvil.
+
+The state and the gateway image are in place, but the compose files do not run chain 31339 yet.
 
 Sponsorship is not the only thing provisioned at bring-up. `tx-mapping-provisioner`
 (`devnet/provision-tx-mappings.mjs`) publishes the demo ERC-20's **ERC-7730 transaction-display

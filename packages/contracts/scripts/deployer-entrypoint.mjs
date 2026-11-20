@@ -8,7 +8,7 @@
 //                              The canonical deployer keys are Applied Blockchain development-team
 //                              keys kept in 1Password (docs/key-ceremony.md): never put one in a
 //                              client's secret. Adopting a new chain is Applied Blockchain's operation.
-//   DEPLOYER_IMPERSONATE=true  local chains (31337/31338) only: impersonate the canonical deployer
+//   DEPLOYER_IMPERSONATE=true  local chains (31337/31338/31339) only: impersonate the canonical deployer
 //                              instead of signing; the CLI refuses it on any other chain
 //   CHAIN_PROFILE_JSON         the chain's profile (deploy/chains/<profile>.json, verbatim): its network
 //                              class, address overrides and paymaster parameters. The image ships no
@@ -19,7 +19,7 @@
 //                              class's deterministic addresses.
 //   NETWORK                    mainnet or testnet: the chain's network class, which picks the
 //                              canonical deployer whose addresses are expected. Required for any
-//                              chain but a local one (31337/31338) unless CHAIN_PROFILE_JSON is set;
+//                              chain but a local one (31337/31338/31339) unless CHAIN_PROFILE_JSON is set;
 //                              with it, it must agree with the profile.
 //   ROLE_ADMIN                 the paymaster's sole ROLE_ADMIN; a TimelockController in production
 //   ACCEPT_UNVERIFIED_IMPLEMENTATION=true
@@ -136,7 +136,8 @@ const testing = env.DEPLOY_TESTING === "true";
 // keeps this copy in step.
 const privateTestErc20 =
 	testing &&
-	([31337, 31338].includes(chainId) || profile?.privateTestErc20 === true);
+	([31337, 31338, 31339].includes(chainId) ||
+		profile?.privateTestErc20 === true);
 if (testing) {
 	cli([
 		"testing",

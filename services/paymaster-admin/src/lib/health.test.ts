@@ -230,7 +230,8 @@ describe("chainChecks", () => {
 				chainId,
 				node: { ...healthy.node, headAgeSeconds: 90_000 },
 			}).node;
-		expect(idle(31338)).toBe("ok");
+		for (const chainId of [31337, 31338, 31339])
+			expect(idle(chainId), String(chainId)).toBe("ok");
 		expect(idle(84532)).toBe("fail");
 	});
 
