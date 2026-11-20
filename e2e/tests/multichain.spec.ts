@@ -112,6 +112,7 @@ test("a dApp requesting an unserved chain is refused at connection time, with th
 	expect(refusal.supportedChainIds).toEqual([
 		CHAINS.a.chainId,
 		CHAINS.b.chainId,
+		CHAINS.sd.chainId,
 	]);
 });
 
@@ -164,7 +165,7 @@ test("chain switching is refused with EIP-1193 4200, never silently ignored (MC-
 	expect(error?.message).toContain("one chain per provider instance");
 });
 
-test("the wallet-api reports both chains and their health (MC-56)", async ({
+test("the wallet-api reports every chain and its health (MC-56)", async ({
 	request,
 }) => {
 	const response = await request.get(
@@ -179,6 +180,7 @@ test("the wallet-api reports both chains and their health (MC-56)", async ({
 	expect(body.chains.map((chain) => chain.chainId).sort()).toEqual([
 		CHAINS.a.chainId,
 		CHAINS.b.chainId,
+		CHAINS.sd.chainId,
 	]);
 	for (const chain of body.chains) expect(chain.status).toBe("ready");
 });
