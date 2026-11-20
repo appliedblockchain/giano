@@ -15,7 +15,7 @@ import {
  *
  * What it proves: the page comes up with its preflight verdict, connecting through the header grants
  * an account, a sponsored send produces a `confirmed` ledger row with a receipt, and connecting on
- * chain B grants the SAME address (the identity invariant, R11).
+ * chain B and on Devnet SD grants the SAME address (the identity invariant, R11).
  */
 const tenant = TENANTS.stock;
 
@@ -82,5 +82,25 @@ test("preflight, connect, sponsored send, identity across chains", async ({
 	await expect(page.getByTestId("identity-held")).toBeVisible({
 		timeout: 20_000,
 	});
+	await expect(page.locator("[data-testid=violation]")).toHaveCount(0);
+
+	// Connect on Devnet SD: the gateway's chain grants the SAME address too (R11).
+	await page.getByTestId("tab-setup").click();
+	await page.getByTestId("chain-selector").getByText(CHAINS.sd.name).click();
+	const connectSd = await openActionPopup(
+		page,
+		"[data-testid=connect-chain]",
+		credentials,
+	);
+	await expect(connectSd.getByTestId("consent-chain")).toHaveText(
+		CHAINS.sd.name,
+	);
+	await connectSd.getByRole("button", { name: tenant.ui.connect }).click();
+	await page.getByTestId("tab-wallet").click();
+	await expect(page.getByTestId(`identity-${CHAINS.sd.chainId}`)).toContainText(
+		"identical",
+		{ timeout: 20_000 },
+	);
+	await expect(page.getByTestId("identity-held")).toContainText("3 of 3");
 	await expect(page.locator("[data-testid=violation]")).toHaveCount(0);
 });

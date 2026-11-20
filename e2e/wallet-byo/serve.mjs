@@ -110,9 +110,13 @@ const factoryAddress = required(
 	"the account factory this wallet derives addresses from, e.g. 0x26dC…",
 );
 
+// In a devnet checkout, tenant byo's two dApps: the fixture dApp and the reference demo (`pnpm
+// demo:byo`). wallet-api's TENANT_FIXTURES in deploy/docker-compose.e2e.yml allows the same two.
 const allowedDappOrigins = required(
 	process.env.BYO_ALLOWED_DAPP_ORIGINS ??
-		(origins ? JSON.stringify([origins.ORIGINS.dappByo]) : undefined),
+		(origins
+			? JSON.stringify([origins.ORIGINS.dappByo, origins.ORIGINS.demoByo])
+			: undefined),
 	"BYO_ALLOWED_DAPP_ORIGINS",
 	'a JSON array of the dApp origins allowed to connect, e.g. ["https://app.example"] — this tenant\'s own allowlist (R9)',
 );
