@@ -71,10 +71,11 @@ unnecessary.
 | Service | URL | Notes |
 | --- | --- | --- |
 | devnet A (anvil) | http://rpc.localhost | chain 31337, contracts pre-deployed |
-| bundler (giano-bundler) | http://bundler.localhost | both chains: `POST /31337`, `POST /31338` |
-| devnet B (anvil) | http://rpc-b.localhost | chain 31338 — same contracts at the SAME addresses (the stack is two-chain by default; see `e2e/README.md`) |
-| wallet-api | http://api.localhost | serves both chains; also reached via the wallet-web `/api` proxy |
-| wallet-web | http://wallet.localhost | the wallet origin, serving both chains (open it directly for the Settings view) |
+| bundler (giano-bundler) | http://bundler.localhost | every chain: `POST /31337`, `POST /31338`, `POST /31339` |
+| devnet B (anvil) | http://rpc-b.localhost | chain 31338 — same contracts at the SAME addresses (see `e2e/README.md`) |
+| devnet SD (`sd-gateway` in front of `anvil-sd`) | http://rpc-sd.localhost | chain 31339, "Devnet SD (Silent Data)", same contracts at the same addresses. Silent Data's RPC gateway (`services/silent-data-gateway`) sits in front of the node, because only the gateway keeps the private token's balances private: anvil answers every read. The gateway refuses `eth_getStorageAt` and every `anvil_*` method, so Devnet A and B stay plain anvil. The node itself is at http://rpc-sd-node.localhost, for checks only |
+| wallet-api | http://api.localhost | serves every chain; also reached via the wallet-web `/api` proxy |
+| wallet-web | http://wallet.localhost | the wallet origin, serving every chain (open it directly for the Settings view) |
 | paymaster admin | http://paymaster.localhost | operator console: tenant balances, treasury, roles, health; its Platform area manages tenants and platform admins (anvil 0 is bootstrapped as platform admin `admin-console`) |
 
 `*.localhost` hosts resolve to `127.0.0.1` automatically. Point a dApp at

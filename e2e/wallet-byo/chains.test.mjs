@@ -204,9 +204,25 @@ describe("the CHAIN_ID / CHAIN_B_ID pair", () => {
 });
 
 describe("devnet checkout", () => {
-	it("defaults to Devnet A and Devnet B with no chain variable", () => {
+	it("defaults to every local chain with no chain variable", () => {
 		assert.deepEqual(resolveChains({}, DEVNET), [
 			{ chainId: 31337, name: "Devnet A" },
+			{ chainId: 31338, name: "Devnet B" },
+			{ chainId: 31339, name: "Devnet SD (Silent Data)" },
+		]);
+	});
+
+	it("defaults to every local chain when CHAINS is empty", () => {
+		assert.equal(resolveChains({ CHAINS: "" }, DEVNET).length, 3);
+	});
+
+	it("uses the pair, not the default, when any pair variable is set", () => {
+		assert.deepEqual(resolveChains({ CHAIN_ID: "31337" }, DEVNET), [
+			{ chainId: 31337, name: "Devnet A" },
+			{ chainId: 31338, name: "Devnet B" },
+		]);
+		assert.deepEqual(resolveChains({ CHAIN_NAME: "A" }, DEVNET), [
+			{ chainId: 31337, name: "A" },
 			{ chainId: 31338, name: "Devnet B" },
 		]);
 	});

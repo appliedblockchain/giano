@@ -15,6 +15,12 @@
         "name": "Devnet B",
         "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2",
         "sponsorship": "service"
+      },
+      {
+        "chainId": 31339,
+        "name": "Devnet SD (Silent Data)",
+        "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2",
+        "sponsorship": "service"
       }
     ],
     "walletApiUrl": "/api",
@@ -22,6 +28,7 @@
       "http://app.localhost",
       "http://demo.localhost"
     ],
+    "passkeyDevicePreference": "browser-default",
     "rpId": "wallet.localhost",
     "branding": {
       "name": "Giano E2E"

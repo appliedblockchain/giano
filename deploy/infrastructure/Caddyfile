@@ -62,6 +62,8 @@ http://giano.localhost {
 		<li><a href="http://wallet.giano.localhost">wallet.giano.localhost</a> — the shared wallet UI host. No tenant is bound to it, so
 		<a href="http://wallet.giano.localhost/.well-known/webauthn">/.well-known/webauthn</a> must 404 here.</li>
 		<li>rpc.giano.localhost, rpc-b.giano.localhost — the two anvil chains (31337, 31338)</li>
+		<li>rpc-sd.giano.localhost — Devnet SD (31339): Silent Data's gateway in front of an anvil node. It refuses
+		private reads without a signature, <code>eth_getStorageAt</code> and every <code>anvil_*</code> method.</li>
 		</ul>
 		</body>
 		HTML 200
@@ -102,7 +104,7 @@ http://byo.giano.localhost {
 # Browser-facing, and the only endpoints in the stack the dApps dial cross-origin: the demo
 # reads balances, token metadata and allowances dApp-side. anvil answers CORS preflights and
 # sends `access-control-allow-origin: *`, so no header rewriting is needed here — and each
-# dApp's CSP `connect-src` names these two origins (services/custom-example/docker/entrypoint.sh).
+# dApp's CSP `connect-src` names these origins (services/custom-example/docker/entrypoint.sh).
 #
 # The wallets do NOT use these names: wallet-web and the BYO server each proxy /rpc, /rpc-b,
 # /bundler and /bundler-b same-origin, which is the posture a real deployment wants because it
@@ -113,4 +115,13 @@ http://rpc.giano.localhost {
 
 http://rpc-b.giano.localhost {
 	reverse_proxy anvil-b:8545
+}
+
+# Devnet SD (31339): Silent Data's gateway, not the node. The gateway is what enforces privacy, so
+# no name here reaches anvil-sd directly (the node publishes host port 8547 for `cast`). The
+# gateway sends its own `Access-Control-Allow-Origin: *` and answers preflights, so this route
+# adds and removes no header: a second Access-Control-Allow-Origin would make the browser refuse
+# the response.
+http://rpc-sd.giano.localhost {
+	reverse_proxy sd-gateway:8545
 }

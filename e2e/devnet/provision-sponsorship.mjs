@@ -53,10 +53,21 @@ const addresses = tenantsOverride
 		}
 	: JSON.parse(fs.readFileSync(path.join(dir, "addresses.json"), "utf8"));
 
-/** The allowlist: the demo ERC-20, then SPONSOR_ALLOWLIST, each contract once, every function. */
+/**
+ * The allowlist: the demo ERC-20, the private test token, then SPONSOR_ALLOWLIST, each contract
+ * once, every function. The private test token (`privateTestErc20`) comes only from
+ * addresses.json: every local chain carries it at the same address, and the demo's private token
+ * section on Devnet SD (31339) mints and transfers it. The list is the same on every chain, so the
+ * entry is on Devnet A and B too, where it is harmless. A SPONSOR_TENANTS stack has no
+ * addresses.json and names its contracts in SPONSOR_ALLOWLIST.
+ */
 const allowlisted = [
 	...new Set(
-		[addresses.testErc20, ...(process.env.SPONSOR_ALLOWLIST ?? "").split(",")]
+		[
+			addresses.testErc20,
+			addresses.privateTestErc20,
+			...(process.env.SPONSOR_ALLOWLIST ?? "").split(","),
+		]
 			.map((contract) => contract?.trim().toLowerCase())
 			.filter(Boolean),
 	),
@@ -70,11 +81,11 @@ if (allowlisted.length === 0) {
 
 /**
  * Every chain the stack sponsors on, provisioned identically (MC-117) so a sponsored
- * transaction can be exercised on either without per-test setup. Sponsorship rules are per
+ * transaction can be exercised on any of them without per-test setup. Sponsorship rules are per
  * (tenant, chain) and never inherited (MC-67), so each chain gets its own explicit PUT —
  * which is also exactly what enabling a chain looks like for a real tenant.
  */
-const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? "31337,31338")
+const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? "31337,31338,31339")
 	.split(",")
 	.map((id) => Number(id.trim()));
 
