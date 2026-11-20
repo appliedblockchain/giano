@@ -63,7 +63,11 @@ export function addIronKestrel(
 	}
 	if (parsedUrl.protocol !== "https:")
 		throw new Error(`${profile.rpcUrlEnv} is not an https URL`);
-	if (writeUrl.replace(/\/+$/, "") === profile.rpcUrl.replace(/\/+$/, ""))
+	// Compare what the server receives: URL parsing lowercases the host and drops a default port,
+	// and the fragment is never sent, so `https://IRON-KESTREL.silentdata.com:443/#x` is the public URL too.
+	const endpoint = (u: URL) =>
+		`${u.origin}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+	if (endpoint(parsedUrl) === endpoint(new URL(profile.rpcUrl)))
 		throw new Error(
 			`${profile.rpcUrlEnv} is the public URL; the bundler needs the write URL with the token`,
 		);
