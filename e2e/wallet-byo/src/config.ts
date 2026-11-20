@@ -15,16 +15,20 @@ const SPONSORSHIP = (process.env.SPONSORSHIP_MODE ||
 	| "off";
 
 /**
- * 0 when there is no second chain. serve.mjs defines this as '' for a single-chain
- * deployment, and the chain falls away below rather than being advertised as a fiction (§16.5).
+ * The chains this wallet serves, ids and names only. serve.mjs builds the list from `CHAINS` or
+ * the older `CHAIN_ID` / `CHAIN_B_ID` pair (chains.mjs), checks it, and defines it here as JSON.
+ * A single-chain deployment lists one chain, so no second chain is advertised as a fiction (§16.5).
  */
-const CHAIN_B_ID = Number(process.env.CHAIN_B_ID || "0");
+const CHAINS = JSON.parse(process.env.CHAINS as string) as {
+	chainId: number;
+	name: string;
+}[];
 
 export const BRAND_NAME = "BYO Wallet";
 
 /**
  * The kit's `WalletConfig`, constructed directly rather than loaded from /config.json.
- * The chains list mirrors the stock wallet's (MC-45); both chains carry the canonical
+ * The chains list mirrors the stock wallet's (MC-45); every chain carries the canonical
  * contracts at identical addresses (MC-19).
  *
  * Names come from the environment: a deployment on a real chain calling it 'Devnet A' is
@@ -45,12 +49,7 @@ export function walletConfig(): WalletConfig {
 	});
 
 	return {
-		chains: [
-			chain(Number(process.env.CHAIN_ID), process.env.CHAIN_NAME as string),
-			...(CHAIN_B_ID > 0
-				? [chain(CHAIN_B_ID, process.env.CHAIN_B_NAME as string)]
-				: []),
-		],
+		chains: CHAINS.map(({ chainId, name }) => chain(chainId, name)),
 		walletApiUrl: "/api",
 		/** fail closed: only the tenant's own dApp origins may drive this wallet */
 		allowedDappOrigins: JSON.parse(
