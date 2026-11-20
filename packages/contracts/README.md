@@ -45,7 +45,7 @@ No bytecode, compiler setting or constructor argument enters an address, so a ne
 toolchain never moves one.
 
 - **One canonical deployer per network class.** Every chain profile declares its class, `mainnet`
-  or `testnet` (`deploy/chains/*.json`); local chains (31337/31338) are `local`. `deploy/config.ts`
+  or `testnet` (`deploy/chains/*.json`); local chains (31337/31338/31339) are `local`. `deploy/config.ts`
   names one deployer per class (`DEPLOYERS`). Every chain of a class gets the same **deterministic
   addresses**, CREATE3 of the class deployer and the label, so all mainnets share one set and all
   testnets another. The two keys are independent, so a compromised testnet key never touches
@@ -129,7 +129,7 @@ shell's environment only; never write it to a file in the repository or to a cli
   The timelock is not an override key: its address is the profile's `timelock.address`. The
   `address-overrides.json` file sets only third-party addresses (the EntryPoint).
 - **R-29** covers 8453, 84532 and 11155111, and every chain whose profile or record says `mainnet`.
-- **Local chains** (31337/31338) impersonate the local deployer with `--impersonate` and need no key.
+- **Local chains** (31337/31338/31339) impersonate the local deployer with `--impersonate` and need no key.
 
 ```bash
 pnpm deploy:cli addresses                                          # deterministic addresses per class
