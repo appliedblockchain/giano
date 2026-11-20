@@ -13,7 +13,7 @@
 		"penaltyBps": 1000
 	},
 	"timelock": {
-		"address": null,
+		"address": "0xc9B6F06Fdee5990718fdB4876C2a6Bdb90548B8e",
 		"proposers": ["0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030"],
 		"executors": [],
 		"delays": {
