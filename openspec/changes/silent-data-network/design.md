@@ -98,6 +98,7 @@ The private token section builds the gateway headers in a small module in the de
 - The token imports `UCEFOwned.sol` by its path under `lib/`, with no new remapping. solc records every remapping in the metadata hash of every contract, so a new remapping would change the bytecode of every release contract, not only the token's.
 - A test contract `GianoTestPrivateErc20 is UCEFOwned` allows anyone to mint to themselves.
 - It deploys under the label `giano.test.private-erc20` through `deploy:cli testing`, on chains whose profile enables it (`"privateTestErc20": true`), and on every local chain, so `local:deploy` deploys it on each run. A production chain's profile cannot enable it: a mainnet's, Base Sepolia's or Sepolia's (`isProductionChain`).
+- On a remote chain, `deploy:cli private-test-token` deploys it alone. `testing` also deploys the permissive paymaster, which must not be on a chain the platform serves (R-29), and the Silent Data testnets are served by `dev`. The command keeps the same rules: the profile must opt in, never on a production chain, and on a public chain only from the class's canonical deployer, as `test-token` (F12). The testnet address is `0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b`.
 - No release carries it. Its creation code, runtime code and fingerprint are committed as `packages/contracts/fixtures/private-test-erc20.json`, generated from the Foundry build by `pnpm gen:fixtures`, and the deploy CLI deploys it from there, whatever the release. CI fails when the artifact does not match the source and the UCEF submodule (`pnpm gen:fixtures --check`). The deployer image ships the artifact, as it ships `vendor/createx`. A deployment record names its release as `fixture` and carries the artifact's fingerprint, which `gen:addresses` checks.
 - *Why a committed artifact rather than a release:* a release is what every chain of a class is adopted at, forever, and it also freezes the wallet, factory and paymaster changes made since the last one. The token exists only for the demo (H6 R3, R4), so it must not wait for a release, and no release should carry it. A testnet still cannot compile anything at deploy time, because the deployer image has no forge and no solc, so the code has to be committed.
 - *Versions:* a chain keeps the code it was deployed with, and its address depends only on the label. So the artifact keeps the fingerprints of its earlier versions (`previous`, newest first): when the code changes, `pnpm gen:fixtures` moves the fingerprint of the artifact at git HEAD there. A testnet that holds an earlier version still matches, in `gen:addresses` and in a re-run of `testing`; a new chain gets the current code. Any change to the source changes the code, even a comment, because solc appends the metadata hash.
@@ -106,28 +107,38 @@ The private token section builds the gateway headers in a small module in the de
 - *Why a Forge library rather than a copy or the npm package:* `ucef-contracts` is public, so CI fetches the submodule without credentials, and Giano keeps no second copy of the sources. The npm package `@appliedblockchain/ucef-contracts` 0.1.1 (February 2026) is older than commit `03913b1`.
 - *Why opt-in per chain:* on a public chain, the token's privacy is not enforced, because anyone can read storage and the calldata. A demo showing "private" there would mislead.
 
-### 8. Both Silent Data testnets are adopted, one of each kind
+### 8. Only iron-kestrel is adopted: copper-heron has no native currency
 
-The two chains, as read from their public RPC on 2026-11-16:
+The two Silent Data testnets, as read from their public RPC on 2026-11-16:
 
 | | copper-heron | iron-kestrel |
 |---|---|---|
 | Chain ID | 19877 | 19874 |
 | Base fee / gas price | 0 / 0 | 251 wei / about 0.001 gwei |
 | OP Stack (GasPriceOracle predeploy) | no | yes |
+| Native currency | none | bridged Sepolia ETH |
 | CreateX, Arachnid factory | absent | present |
 | EntryPoint v0.9 | absent | absent |
 | `eth_getStorageAt` | refused | refused |
 | `eth_call` state override | refused | refused |
 | Unsigned `eth_call` `from` | rewritten | rewritten |
 
-- *Why both:* together they cover every combination this change handles: gasless and gas-charging, and an L1 data fee or none, under the same gateway. Giano's code makes no distinction between them. The base fee and `chainType: auto` decide the rest.
-- *Same addresses:* both chains are in the testnet class and use the same canonical deployer, so they get the same contract addresses and the same wallet address for a passkey (MC-16). Task 9.2 checks the wallet address on both chains.
+The plan was to adopt both chains, one of each kind. Copper-heron is dropped:
 
-### 9. Adoption follows `specs/CHAIN-ADOPTION.md` unchanged, with two new notes
+- *No native currency:* gasless means a gas price of 0. It does not mean the chain has no native currency. Copper-heron has none: Silent Data confirmed that its genesis prefunds no account and that it has no block reward, so nobody holds or can send any.
+- *Giano needs one:*
+  - CreateX and the Arachnid factory are absent on copper-heron. Their keyless presigned transactions have a fixed gas price of 100 gwei, whatever the chain charges, so their senders need 0.3 ETH and 0.01 ETH.
+  - The paymaster's stake, its deposit and the tenants' balances are sent as `msg.value`. `msg.value` works on such a chain only with 0, and `addStake` reverts with 0.
+- *Rule:* a chain may charge nothing for gas, but it must have a native currency. `specs/CHAIN-ADOPTION.md` lists it as a prerequisite.
+- *What stays:* all support for chains that charge no gas (D3, `chargesNoGas`, the bundler and wallet-api fee-0 paths, and the deploy preflight that needs no deployer ETH on such a chain). A chain can be gasless and still have a native currency, for example a Besu free-gas network with a genesis prefund. No adopted chain is gasless now, so the gasless path is tested only locally: the unit tests (task 2.10) and the anvil run with base fee 0 (task 9.1).
+- *Later support:* chains without a native currency could be supported in a separate change. The chain operator would have to preinstall the Arachnid factory and CreateX (in genesis, for example). `contracts:provision` and `giano-doctor` would need a gasless mode, because today they expect a stake of at least 0.1 ETH and a funded deposit. At run time, a paymaster with stake 0, deposit 0 and fee 0 works with giano-bundler: EntryPoint does not check the stake in `handleOps`, and giano-bundler has no stake rule. The default fee would have to be set to 0. A public ERC-7562 bundler would still require a stake.
+- *Same addresses:* iron-kestrel is in the testnet class and uses the same canonical deployer as Base Sepolia, so it gets the same contract addresses and the same wallet address for a passkey (MC-16). Task 8.4 checks the addresses.
+
+### 9. Adoption follows `specs/CHAIN-ADOPTION.md` unchanged, with two new notes and one new prerequisite
 
 - `bundler.stateOverride: false` and `bundler.rpcUrl` set to the write URL. That URL holds a token, so it lives only in the `chains` secret.
 - `--signed-rpc` on `core` and `provision:paymaster`.
+- The chain must have a native currency, even when it charges nothing for gas (D8).
 
 ## Risks / Trade-offs
 
@@ -138,8 +149,9 @@ The two chains, as read from their public RPC on 2026-11-16:
 - **[Risk]** On a gas-charging chain, the bundler executor pays for every bundle, and the paymaster deposit must cover each operation's prefund from the fixed limits. → The usual per-chain monitoring applies: `giano_bundler_executor_balance_wei` and the paymaster low-balance alert. The gateway does not restrict `eth_getBalance` or `eth_getTransactionCount` (it restricts only `eth_getProof`), so both monitors work unsigned.
 - **[Risk]** Fixed gas limits can be too low for an unusual call. The operation then reverts on chain, and on a gas-charging chain it costs the reserved gas. → The caller's call gas is kept when sent. The limits are named constants in the estimator, so they are easy to change.
 - **[Risk]** With `stateOverride: false` the bundler skips every simulation, not only the gas measurement. It loses the call-revert probe and the `simulateValidation` run at the real fee, because both run `EntryPointSimulations` through a state override. So a user operation whose call reverts, or whose account cannot pay its prefund, now passes estimation. → A prefund failure is still refused at `eth_sendUserOperation`: the submitter checks `handleOps` with `eth_estimateGas` against the real EntryPoint, with no override (`submitter.ts`), so nothing is sent. A reverting call is not caught, because `handleOps` does not revert when the inner call reverts. The operation is included with `success: false`, and on a gas-charging chain it costs the gas used plus the unused-call-gas penalty. Recorded, not solved here.
+- **[Trade-off]** No adopted chain is gasless, so the fee-0 path runs only in tests (D8). → The unit tests cover the estimator, the submitter and `pm_getPaymasterData` at fee 0 (task 2.10). A gasless chain with a native currency can be adopted later with no code change.
 - **[Trade-off]** The bundler's public endpoints and wallet-api's records still hold user operation calldata (recipients, amounts) before inclusion. On Silent Data, the operator therefore sees what the chain hides from outsiders. → Recorded, not solved here. It is inherent to an ERC-4337 bundler, and it is the same trust the Skandha bundler needs. The integration guide should state it.
-- **[Trade-off]** Copper-heron cannot be adopted until the testnet canonical deployer key exists. → Shared blocker with Base Sepolia and Ethereum Sepolia. This change does not work around it with a deviation.
+- **[Trade-off]** Iron-kestrel could not be adopted until the testnet canonical deployer key existed. → Shared blocker with Base Sepolia and Ethereum Sepolia, resolved by #296. This change did not work around it with a deviation.
 
 ## Migration Plan
 
@@ -149,8 +161,8 @@ The work ships as one stack of PRs, listed at the top of `tasks.md`. It merges b
 2. Merge PRs 1, 2 and 3, the next three layers. With defaults, nothing changes on existing chains: `stateOverride` defaults to `true`, the log fallback runs only on a refused storage read, and `--signed-rpc` is opt-in. Each PR carries its own changeset.
 3. Release `giano-contracts` and `giano-paymaster-sdk` from the merged changesets. Bump the bundler and wallet-api images.
 4. Merge PR 4 (the private test token) and PR 5 (the demo section), the next two layers.
-5. When the testnet key exists, add PR 6a to the top of the stack: adopt iron-kestrel per `specs/CHAIN-ADOPTION.md`, and commit `deployments/19874.json`. When the copper-heron presigned senders are also funded, add PR 6b on top of it and commit `deployments/19877.json`.
-6. After each adoption PR merges, release `giano-contracts` from its changeset, so the published `addresses.ts` lists the new chain. Then add that chain's entry to the dev `chains` secret, and add `privateToken` to the demo's chain list.
+5. Merge PR 5a: the iron-kestrel chain profile and `deploy:cli private-test-token`. Then adopt iron-kestrel per `specs/CHAIN-ADOPTION.md` and `tasks.md` group 8, and commit `deployments/19874.json` in PR 6a.
+6. After PR 6a merges, release `giano-contracts` from its changeset, so the published `addresses.ts` lists 19874. Then add its entry to the dev `chains` secret, and add `privateToken` to the demo's chain list.
 7. Rollback: revert the PR, or remove the chain's entry from the `chains` secret and the demo's chain list. Other chains are unaffected.
 
 ## Open Questions

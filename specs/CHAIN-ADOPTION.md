@@ -26,6 +26,18 @@ EntryPoint v0.9 requires Cancun EVM opcodes (including `MCOPY`, `TLOAD`, and `TS
 an EIP-1559 `basefee`. Confirm RPC support for `eth_call` state overrides and gas estimation.
 See [E1 upgrade implications and chain evidence](../docs/ENTRYPOINT-V09-UPGRADE.md).
 
+**The chain must have a native currency.** It may charge nothing for gas (a gas price of 0), but
+some account must hold the native currency and be able to send it. Giano needs it for two things:
+
+- **CreateX and the Arachnid factory, where absent:** their keyless presigned transactions have a
+  fixed gas price of 100 gwei, whatever the chain charges, so their senders need 0.3 ETH and
+  0.01 ETH (step 1).
+- **`msg.value`:** the paymaster's stake and deposit, and the tenants' balances, are sent as value
+  (step 7).
+
+A chain whose genesis prefunds no account and that has no block reward or bridge has no native
+currency, so it cannot be adopted.
+
 **An RPC that restricts reads** (a Silent Data gateway, for example) needs three settings, and
 no code change:
 

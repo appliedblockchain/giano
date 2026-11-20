@@ -70,8 +70,8 @@ import {
 import {
 	activateRehearsal,
 	classDeployer,
+	forbidsPermissivePaymaster,
 	isMainnetChain,
-	isProductionChain,
 	type NetworkClass,
 	redactRpcUrl,
 	redactRpcUrls,
@@ -1227,8 +1227,8 @@ async function doctorChain(flags: Record<string, string>) {
 		const addr = requireAddress(testPaymaster, "test-paymaster");
 		const pmHasCode = await hasCode(provider, addr);
 		report(pmHasCode ? "ok" : "fail", "test paymaster deployed", addr);
-		// R-29: the fixed list, or a chain whose --profile declares mainnet.
-		if (isProductionChain(chainId, profile?.network)) {
+		// R-29: the fixed list, a served Silent Data testnet, or a chain whose --profile declares mainnet.
+		if (forbidsPermissivePaymaster(chainId, profile?.network)) {
 			report(
 				"fail",
 				"test paymaster on a production chain",

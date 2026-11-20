@@ -15,7 +15,7 @@ wait for a release, and a release must not carry it.
 Regenerate with `pnpm gen:fixtures` after a change to the token, to UCEF or to the build settings, and
 commit the result. CI (`pnpm gen:fixtures --check`) fails when the artifact does not match the source.
 
-`deploy:cli testing` and `local:deploy` deploy the token from here, so the deployer image ships this
+`deploy:cli testing`, `deploy:cli private-test-token` and `local:deploy` deploy the token from here, so the deployer image ships this
 directory (`Dockerfile.deployer`). A deployment record names its release as `fixture` and carries the
 artifact's fingerprint, which `gen:addresses` checks.
 

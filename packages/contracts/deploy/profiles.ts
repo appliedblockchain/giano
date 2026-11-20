@@ -137,7 +137,8 @@ export const profileSchema = z
 		timelock: timelockSchema.optional(),
 		addresses: overridesSchema.optional(),
 		/**
-		 * Opt in to the private test token (GianoTestPrivateErc20) in `deploy:cli testing`. Set it only
+		 * Opt in to the private test token (GianoTestPrivateErc20) in `deploy:cli private-test-token`
+		 * and `deploy:cli testing`. Set it only
 		 * where the RPC enforces private reads (Silent Data): elsewhere anyone can read the token's
 		 * storage, and a "private" token would mislead. Never on a production chain (R-29): a mainnet,
 		 * or a chain `isProductionChain` lists, as `testing` refuses.

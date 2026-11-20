@@ -448,6 +448,50 @@ export async function deployTestToken(
 	);
 }
 
+const PRIVATE_TOKEN = {
+	label: LABELS.privateTestErc20,
+	release: FIXTURE_RELEASE,
+	contract: CONTRACT_OF.privateTestErc20,
+};
+
+/**
+ * Refuses code at the private test token's address that is not its committed artifact's. `testing`
+ * runs it before its first send: otherwise such code would stop the run after the other fixtures
+ * are deployed and funded, before the CLI saves their record entries.
+ */
+async function assertPrivateTestTokenSlot(ctx: DeployContext): Promise<void> {
+	const address = create3Address(ctx.deployer, PRIVATE_TOKEN.label);
+	const existing = await ctx.publicClient.getCode({ address });
+	if (existing && existing !== "0x")
+		releaseCode(
+			PRIVATE_TOKEN.label,
+			PRIVATE_TOKEN.release,
+			PRIVATE_TOKEN.contract,
+			address,
+			existing,
+		);
+}
+
+/**
+ * GianoTestPrivateErc20 alone, from its committed artifact whatever the release (openspec
+ * silent-data-network, design D7). `deploy:cli private-test-token` runs it, so a Silent Data testnet
+ * gets the token without the permissive paymaster that `testing` also deploys. The token takes no
+ * constructor arguments: anyone mints to themselves.
+ */
+export async function deployPrivateTestToken(
+	ctx: DeployContext,
+): Promise<void> {
+	await assertPrivateTestTokenSlot(ctx);
+	record(
+		ctx,
+		"privateTestErc20",
+		await deployLabel(ctx, {
+			...PRIVATE_TOKEN,
+			initCode: loadFixture(PRIVATE_TOKEN.contract).creationCode,
+		}),
+	);
+}
+
 /**
  * PrivateERC20 and PermissivePaymaster from `release`, and GianoTestPrivateErc20 from its committed
  * artifact when `params.privateTestErc20`. Never on a production chain (the CLI enforces it).
@@ -458,26 +502,7 @@ export async function deployTesting(
 	params: TestingParams,
 ): Promise<void> {
 	const c = release.contracts;
-	const privateToken = {
-		label: LABELS.privateTestErc20,
-		release: FIXTURE_RELEASE,
-		contract: CONTRACT_OF.privateTestErc20,
-	};
-	if (params.privateTestErc20) {
-		// Checked before the first send: code at its address that is not the artifact's would
-		// otherwise stop the run after the other fixtures are deployed and funded, before the CLI
-		// saves their record entries.
-		const address = create3Address(ctx.deployer, privateToken.label);
-		const existing = await ctx.publicClient.getCode({ address });
-		if (existing && existing !== "0x")
-			releaseCode(
-				privateToken.label,
-				privateToken.release,
-				privateToken.contract,
-				address,
-				existing,
-			);
-	}
+	if (params.privateTestErc20) await assertPrivateTestTokenSlot(ctx);
 	await deployTestToken(ctx, release, params.holder);
 	const testPaymaster = await deployLabel(ctx, {
 		label: LABELS.testPaymaster,
@@ -505,15 +530,7 @@ export async function deployTesting(
 			`  + funded the test paymaster's deposit with ${params.fundWei} wei`,
 		);
 	}
-	if (params.privateTestErc20)
-		record(
-			ctx,
-			"privateTestErc20",
-			await deployLabel(ctx, {
-				...privateToken,
-				initCode: loadFixture(privateToken.contract).creationCode,
-			}),
-		);
+	if (params.privateTestErc20) await deployPrivateTestToken(ctx);
 }
 
 export type UpgradeOf = "paymasterImplementation" | "walletImplementation";

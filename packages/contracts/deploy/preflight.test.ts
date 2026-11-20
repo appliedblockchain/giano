@@ -22,6 +22,7 @@ import {
 	GateError,
 	handOffScanStart,
 	inspectDeployment,
+	privateTestTokenProblem,
 	profileCoreConfig,
 	roleAdmin,
 	scanStartProblem,
@@ -171,6 +172,59 @@ test("a plan without a key checks the canonical deployer's balance, naming the a
 		),
 		JSON.stringify(checks),
 	);
+});
+
+test("a chain that charges nothing for gas skips the deployer balance check, and says so", async () => {
+	const { checks } = await inspectDeployment(
+		client({
+			getBlock: async () => ({ baseFeePerGas: 0n }),
+			getGasPrice: async () => 0n,
+		}),
+		profile,
+		"v2",
+		admin,
+		options,
+	);
+	assert.ok(
+		!checks.some((c) => c.message.includes(`Fund ${CANONICAL_DEPLOYER}`)),
+		JSON.stringify(checks),
+	);
+	assert.ok(
+		checks.some(
+			(c) =>
+				c.ok &&
+				c.message.startsWith(
+					`Canonical testnet deployer ${CANONICAL_DEPLOYER} needs no ETH: the chain charges nothing for gas`,
+				) &&
+				c.message.includes("reserve check is skipped"),
+		),
+		JSON.stringify(checks),
+	);
+});
+
+test("a chain that charges gas still refuses a deployer below the reserve", async () => {
+	const { checks } = await inspectDeployment(
+		client({
+			getBlock: async () => ({ baseFeePerGas: 1_000_000_000n }),
+			getGasPrice: async () => 1_000_000_000n,
+		}),
+		profile,
+		"v2",
+		admin,
+		options,
+	);
+	assert.ok(
+		checks.some(
+			(c) =>
+				!c.ok &&
+				c.message.startsWith(
+					`Canonical testnet deployer ${CANONICAL_DEPLOYER} has at least ${profile.minDeployerBalanceEth} ETH`,
+				) &&
+				c.message.includes(`Fund ${CANONICAL_DEPLOYER} on ${profile.name}`),
+		),
+		JSON.stringify(checks),
+	);
+	assert.ok(!checks.some((c) => /needs no ETH/.test(c.message)));
 });
 
 const planFor = (chain: PublicClient) =>
@@ -436,12 +490,17 @@ async function guidedPlan(
 	}
 }
 
-/** eth_call simulates without sending: the chain prerequisites probe Cancun's opcodes with one. */
+/**
+ * eth_call simulates without sending: the chain prerequisites probe Cancun's opcodes with one.
+ * eth_getBlockByNumber and eth_gasPrice tell whether the chain charges gas (`chargesNoGas`).
+ */
 const READ_METHODS = [
 	"eth_chainId",
 	"eth_getCode",
 	"eth_getBalance",
 	"eth_call",
+	"eth_getBlockByNumber",
+	"eth_gasPrice",
 ];
 
 test("deploy:cli --network cannot move a chain out of its committed profile's class", async () => {
@@ -599,6 +658,12 @@ test("testing (the permissive paymaster too): never on a production chain, serve
 			testingProblem(chainId, "testnet") ?? "",
 			new RegExp(`chain ${chainId} is a production chain.*use test-token`),
 		);
+	// The served Silent Data testnet: off the production list (it carries the private test token),
+	// but never the permissive paymaster.
+	assert.match(
+		testingProblem(19874, "testnet") ?? "",
+		/chain 19874 is a production chain.*use private-test-token/,
+	);
 	assert.match(testingProblem(8453, "mainnet") ?? "", /production chain/);
 	// A chain declared mainnet, off the fixed list.
 	assert.match(testingProblem(4242, "mainnet") ?? "", /production chain/);
@@ -643,6 +708,64 @@ test("test-token: never on a mainnet, and only from the canonical deployer on a 
 	// Local chains: any signer (the devnet's deployer is anvil's).
 	assert.equal(
 		testTokenProblem({
+			chainId: 31337,
+			network: "local",
+			local: true,
+			canonical: null,
+			signer: admin,
+		}),
+		undefined,
+	);
+});
+
+test("private-test-token: only where the profile opts in, never on a production chain, and only from the canonical deployer (silent-data-network D7)", () => {
+	const canonical = getAddress("0xBf8e1e80ac0687f2dd0b2909f5a68E3f6d5c41B5");
+	const admin = getAddress("0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030");
+	// iron-kestrel, a Silent Data testnet whose profile opts in.
+	const silentData = {
+		chainId: 19874,
+		network: "testnet" as const,
+		local: false,
+		optIn: true,
+		canonical,
+	};
+	assert.equal(
+		privateTestTokenProblem({ ...silentData, signer: canonical }),
+		undefined,
+	);
+	// Without a key the run only verifies.
+	assert.equal(privateTestTokenProblem(silentData), undefined);
+	assert.match(
+		privateTestTokenProblem({ ...silentData, signer: admin }) ?? "",
+		/signer 0x033178C012FAAB6977FE3b760e5Ca9BBAb4F3030 is not the testnet canonical deployer/,
+	);
+	// A remote chain whose profile does not opt in, or has no profile.
+	for (const optIn of [false, undefined])
+		assert.match(
+			privateTestTokenProblem({ ...silentData, optIn, signer: canonical }) ??
+				"",
+			/chain 19874's profile does not set "privateTestErc20": true/,
+		);
+	// The served testnets and the mainnets, even with an opt-in.
+	for (const chainId of [84532, 11155111, 8453, 1])
+		assert.match(
+			privateTestTokenProblem({ ...silentData, chainId, signer: canonical }) ??
+				"",
+			new RegExp(`chain ${chainId} is a production chain`),
+		);
+	// A chain declared mainnet, off the fixed list.
+	assert.match(
+		privateTestTokenProblem({
+			...silentData,
+			chainId: 4242,
+			network: "mainnet",
+			canonical: null,
+		}) ?? "",
+		/chain 4242 is a production chain/,
+	);
+	// Local chains: always wanted, any signer.
+	assert.equal(
+		privateTestTokenProblem({
 			chainId: 31337,
 			network: "local",
 			local: true,

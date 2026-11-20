@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { isCanonicalEntryPointCode } from "../entrypoint";
 import { proxyImplementationWithSource } from "../erc1967";
+import { chargesNoGas } from "../gasless";
 import { gianoPaymasterAbi, gianoTimelockAbi } from "../generated";
 import { releaseOf } from "../release-code";
 import {
@@ -23,13 +24,14 @@ import {
 import {
 	DEPLOYERS,
 	ENTRY_POINT_V09,
+	forbidsPermissivePaymaster,
 	isClassDeployer,
 	isMainnetChain,
 	isProductionChain,
 	type NetworkClass,
 } from "./config";
 import { CREATEX_ADDRESS } from "./create3";
-import type { PaymasterParams } from "./deploy";
+import { type PaymasterParams, privateTestErc20Wanted } from "./deploy";
 import {
 	CORE_KEYS,
 	formatPlan,
@@ -424,9 +426,18 @@ export async function inspectDeployment(
 	const missing = plan.contracts.some(
 		(c) => c.code.state === "empty" && c.source !== "override",
 	);
-	if (missing && payer)
+	if (!missing || !payer) return { checks, plan };
+	const who = `${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer}`;
+	// On a chain that charges nothing for gas (H6), the deployer pays nothing, so it needs no ETH.
+	// A failed read counts as "charges gas": the reserve is then required.
+	if (await chargesNoGas(client).catch(() => false))
+		checks.push({
+			ok: true,
+			message: `${who} needs no ETH: the chain charges nothing for gas (gas price 0), so the ${profile.minDeployerBalanceEth} ETH reserve check is skipped`,
+		});
+	else
 		await check(
-			`${plan.signer ? "Signer" : `Canonical ${plan.network} deployer`} ${payer} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
+			`${who} has at least ${profile.minDeployerBalanceEth} ETH (conservative gas reserve)`,
 			async () => {
 				if (
 					(await client.getBalance({ address: payer })) <
@@ -527,15 +538,15 @@ export async function scanStartProblem(
 
 /**
  * Why `deploy:cli testing` must not run, or undefined when it may: never on a production chain, the
- * fixed list (mainnets and the served testnets) or any chain declared mainnet, because it deploys the
- * permissive paymaster (R-29, PAYMASTER-SPECS §12.1 layer 1).
+ * fixed list (mainnets and the served testnets) or any chain declared mainnet, nor on a served Silent
+ * Data testnet, because it deploys the permissive paymaster (R-29, PAYMASTER-SPECS §12.1 layer 1).
  */
 export function testingProblem(
 	chainId: number,
 	network: NetworkClass,
 ): string | undefined {
-	return isProductionChain(chainId, network)
-		? `chain ${chainId} is a production chain; the test fixtures must never be deployed there (R-29). For the test ERC-20 alone on a served testnet, use test-token`
+	return forbidsPermissivePaymaster(chainId, network)
+		? `chain ${chainId} is a production chain; the test fixtures must never be deployed there (R-29). For the test ERC-20 alone on a served testnet, use test-token; for the private test token alone, use private-test-token`
 		: undefined;
 }
 
@@ -559,6 +570,34 @@ export function testTokenProblem(options: {
 	if (local || !signer) return undefined;
 	if (!canonical || getAddress(signer) !== getAddress(canonical))
 		return `signer ${getAddress(signer)} is not the ${network} canonical deployer ${canonical ?? "(not configured)"}: the test ERC-20 would land at another address. Load the canonical deployer key as DEPLOYER_PRIVATE_KEY for this command only, without an operator file`;
+	return undefined;
+}
+
+/**
+ * Why `deploy:cli private-test-token` must not run, or undefined when it may (openspec
+ * silent-data-network, design D7). Never on a production chain: a mainnet, a served testnet, or any
+ * chain declared mainnet (R-29), as a production profile cannot opt in either. A remote chain needs
+ * its profile to opt in (`privateTestErc20: true`), because the token's privacy holds only where the
+ * RPC enforces private reads. On a public chain, only from the class's canonical deployer, so the
+ * token lands at the address the profiles expect (as `test-token`, F12). Without a key the run only
+ * verifies.
+ */
+export function privateTestTokenProblem(options: {
+	chainId: number;
+	network: NetworkClass;
+	local: boolean;
+	optIn?: boolean;
+	signer?: Address;
+	canonical: Address | null;
+}): string | undefined {
+	const { chainId, network, local, optIn, signer, canonical } = options;
+	if (isProductionChain(chainId, network))
+		return `chain ${chainId} is a production chain; the private test token is a test fixture and never goes there (R-29)`;
+	if (!privateTestErc20Wanted({ local, optIn }))
+		return `chain ${chainId}'s profile does not set "privateTestErc20": true. Set it only where the RPC enforces private reads (Silent Data): elsewhere anyone can read the token's storage`;
+	if (local || !signer) return undefined;
+	if (!canonical || getAddress(signer) !== getAddress(canonical))
+		return `signer ${getAddress(signer)} is not the ${network} canonical deployer ${canonical ?? "(not configured)"}: the private test token would land at another address. Load the canonical deployer key as DEPLOYER_PRIVATE_KEY for this command only, without an operator file`;
 	return undefined;
 }
 

@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	CONTRACT_OF,
+	forbidsPermissivePaymaster,
 	isMainnetChain,
 	isProductionChain,
 	type LabelKey,
@@ -200,9 +201,9 @@ export function generateRegistry(
 		.join("\n");
 
 	// R-29 layer 2: the permissive paymaster on a production chain (the fixed list, served testnets
-	// included, or any chain recorded as mainnet) is a build failure, not a warning. The test ERC-20
-	// moves no sponsorship funds: the served testnets may carry it for the reference dApp, a mainnet
-	// never does.
+	// included, or any chain recorded as mainnet) or a served Silent Data testnet is a build failure,
+	// not a warning. The test ERC-20 moves no sponsorship funds: the served testnets may carry it for
+	// the reference dApp, a mainnet never does.
 	const testingRules: {
 		field: string;
 		forbiddenOn: (chainId: number, network?: NetworkClass) => boolean;
@@ -211,7 +212,7 @@ export function generateRegistry(
 	}[] = [
 		{
 			field: "testPaymaster",
-			forbiddenOn: isProductionChain,
+			forbiddenOn: forbidsPermissivePaymaster,
 			where: "a production chain",
 			message:
 				"Testing contracts must never be deployed to a production chain.",

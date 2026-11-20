@@ -110,8 +110,8 @@ role or funds on them once deployment ends ([`docs/key-ceremony.md`](../../docs/
 names the items). Load the key for the chain's class from its 1Password item into the deploying
 shell's environment only; never write it to a file in the repository or to a client's configuration.
 
-- **Verifying a chain needs no key.** Without `DEPLOYER_PRIVATE_KEY`, `core`, `testing` and
-  `test-token` check that every contract is already in place with a release's code, record it, and
+- **Verifying a chain needs no key.** Without `DEPLOYER_PRIVATE_KEY`, `core`, `testing`,
+  `test-token` and `private-test-token` check that every contract is already in place with a release's code, record it, and
   send nothing. A missing contract fails the run.
 - **Adopting a chain** needs the class's canonical deployer key. Each run prints, per contract, the
   expected address, the address it will use and the code there.
@@ -142,6 +142,8 @@ pnpm deploy:cli p256 --rpc <url>                                   # P-256 verif
 #   testing --rpc <url> --holder <0x…> --owner <0x…>               # never on an R-29 chain
 #   test-token --rpc <url> --chain <profile> --holder <0x…>       # the test ERC-20 alone: served testnets
 #                                                                  # too, never a mainnet; canonical deployer only
+#   private-test-token --rpc <url> --chain <profile> --signed-rpc # the private test token alone: a Silent
+#                                                                  # Data testnet whose profile opts in
 #   upgrade --rpc <url> --contract paymaster --release v2
 #   core --rpc <url> --chain <profile> --role-admin <timelock> --signed-rpc   # an RPC that rewrites `from`
 ```
@@ -170,6 +172,12 @@ and no consumer needs it. Its ABI is in `generated.ts`.
   so a "private" token would mislead. A production chain's profile (a mainnet, Base Sepolia or
   Sepolia) cannot set it.
 - On a local chain, always.
+
+`private-test-token` deploys that token alone, without `PrivateERC20` and `PermissivePaymaster`. Use it
+on a remote Silent Data chain that the platform serves, where the permissive paymaster must not go. It
+runs only where the chain's profile sets `"privateTestErc20": true`, never on a production chain, and on
+a public chain only from the class's canonical deployer, so the token lands at its deterministic address
+(`0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b` on testnet). Add `--signed-rpc` on a Silent Data RPC.
 
 No release carries the token: it exists only for the demo. The CLI deploys it from the committed
 artifact `fixtures/private-test-erc20.json`, whatever the release (`fixtures/README.md`). Regenerate
