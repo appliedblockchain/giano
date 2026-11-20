@@ -86,6 +86,31 @@ variable "test_erc20_address" {
   }
 }
 
+# Silent Data chains per workspace (openspec silent-data-network, H6). dev only: iron-kestrel,
+# the one adopted Silent Data chain, where the RPC enforces private reads, so the dApp's private
+# token card works. Each entry is added to wallet-web's and custom-example's chain lists. The
+# chain's backend entry (wallet-api, bundler, console) is in the `chains` secret, with the tokened
+# write URL as bundler.rpcUrl (deploy/contracts/TESTNET-ROLLOUT.md, "Adding iron-kestrel to dev").
+variable "silent_data_chains" {
+  description = "Silent Data chains per workspace, added to wallet-web's and custom-example's chain lists (dev: iron-kestrel)"
+  type = map(list(object({
+    chain_id      = number
+    name          = string
+    rpc_url       = string
+    private_token = string
+  })))
+  default = {
+    dev = [{
+      chain_id      = 19874
+      name          = "Iron Kestrel (Silent Data)"
+      rpc_url       = "https://iron-kestrel.silentdata.com"
+      private_token = "0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b"
+    }]
+    stg = []
+    prd = []
+  }
+}
+
 # rpc_origin / rpc_b_origin (wallet-web's CSP connect-src for direct browser RPC) are gone: the
 # SPA no longer dials either chain's node directly, only wallet-api's same-origin relay — R3.
 

@@ -41,14 +41,25 @@ locals {
     }
   }
 
-  # The reference dApp's chain list (services/custom-example), rendered once and shared by both
-  # example services. rpcUrl is the same-origin proxy path; the keyed upstreams are secrets.
-  # defaultToken is Giano's test ERC-20 in dev, at the same address on both testnets; blank (unset
-  # for the dApp) in stg and prd.
-  example_dapp_chains = jsonencode([
+  # The reference dApp's chain list (services/custom-example). rpcUrl is the same-origin proxy
+  # path; the keyed upstreams are secrets. defaultToken is Giano's test ERC-20 in dev, at the same
+  # address on both testnets; blank (unset for the dApp) in stg and prd.
+  testnet_dapp_chains = [
     { chainId = tonumber(var.chain_id), name = var.chain_name, rpcUrl = "/rpc/${var.chain_id}", defaultToken = var.test_erc20_address[terraform.workspace] },
     { chainId = tonumber(var.chain_b_id), name = var.chain_b_name, rpcUrl = "/rpc/${var.chain_b_id}", defaultToken = var.test_erc20_address[terraform.workspace] },
-  ])
+  ]
+
+  # Silent Data chains (var.silent_data_chains): dev's iron-kestrel, nothing elsewhere. Their node
+  # URL is public, so the dApp reads it directly, with no /rpc proxy, and the entrypoint adds its
+  # origin to the CSP. privateToken shows the dApp's private token card for the chain.
+  silent_data_chains = lookup(var.silent_data_chains, terraform.workspace, [])
+
+  # custom-example (the stock wallet) serves every chain. custom-example-byoui keeps the two
+  # testnets: the BYO wallet fixture (e2e/wallet-byo) serves at most two chains.
+  example_dapp_chains = jsonencode(concat(local.testnet_dapp_chains, [
+    for c in local.silent_data_chains : { chainId = c.chain_id, name = c.name, rpcUrl = c.rpc_url, privateToken = c.private_token }
+  ]))
+  byoui_dapp_chains = jsonencode(local.testnet_dapp_chains)
 
   # The application database name — matches the compose reference's POSTGRES_DB default (§8, §7.4).
   app_db_name = "giano"
