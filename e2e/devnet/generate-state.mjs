@@ -14,6 +14,8 @@
  *   - the Giano wallet factory and implementation
  *   - the permissive test paymaster and the demo ERC-20 (fixtures whose subject is not sponsorship
  *     keep using these, so a sponsorship rule change cannot break a token-transfer test)
+ *   - the private test token (GianoTestPrivateErc20), which the deploy CLI deploys on every local
+ *     chain. Its privacy holds only behind Silent Data's gateway, so only 31339 enforces it
  *   - the **production** paymaster: implementation, proxy, initialised, staked, with the demo
  *     tenants registered and generously funded
  *
@@ -48,11 +50,12 @@ const contractsDir = path.join(repoRoot, "packages", "contracts");
 const RPC = process.env.RPC_URL ?? "http://127.0.0.1:8545";
 
 /**
- * Which chain this state is for. The two-chain stack runs 31337 (chain A, `state.json`) and
- * 31338 (chain B, `state-31338.json`) — the SAME generator run twice, so both chains carry
- * identical canonical contracts at identical addresses (MC-116, MC-119). For any chain other
- * than 31337, the produced addresses are asserted equal to the committed `addresses.json`,
- * and generation FAILS rather than emitting a divergent pair.
+ * Which chain this state is for. The local stacks run 31337 (chain A, `state.json`), 31338
+ * (chain B, `state-31338.json`) and 31339 (Devnet SD, `state-31339.json`, the anvil node behind
+ * Silent Data's gateway) — the SAME generator run three times, so every chain carries identical
+ * canonical contracts at identical addresses (MC-116, MC-119). For any chain other than 31337,
+ * the produced addresses are asserted equal to the committed `addresses.json`, and generation
+ * FAILS rather than emitting a divergent state.
  */
 const CHAIN_ID = Number(process.env.CHAIN_ID ?? 31337);
 const STATE_FILE = CHAIN_ID === 31337 ? "state.json" : `state-${CHAIN_ID}.json`;
@@ -188,7 +191,16 @@ const deployed = {
 		record.contracts.paymasterImplementation.address,
 	testPaymaster: record.contracts.testPaymaster.address,
 	testErc20: record.contracts.testErc20.address,
+	// local:deploy deploys the private test token on every local chain (privateTestErc20Wanted in
+	// packages/contracts/deploy/deploy.ts). Without it, the demo's private token section has nothing
+	// to read on 31339.
+	privateTestErc20: record.contracts.privateTestErc20?.address,
 };
+if (!deployed.privateTestErc20) {
+	throw new Error(
+		`the deployment record for chain ${CHAIN_ID} has no privateTestErc20 — is ${CHAIN_ID} in LOCAL_CHAIN_IDS (packages/contracts/deploy/config.ts)?`,
+	);
+}
 
 const { sponsorshipPaymaster } = deployed;
 
@@ -253,8 +265,9 @@ run("pnpm", [
 
 // ── 6. Cross-chain address identity ───────────────────────────────────────────
 // The whole multi-chain design rests on the factory (and everything downstream) sitting at
-// identical addresses on every chain (MC-16, MC-19). Both chains' states come from this one
-// generator, and a divergent pair is REFUSED rather than committed.
+// identical addresses on every chain (MC-16, MC-19). Every chain's state comes from this one
+// generator, and a divergent state is REFUSED rather than committed: the check runs before the
+// state file is written.
 if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, "addresses.json"))) {
 	const canonical = JSON.parse(
 		fs.readFileSync(path.join(dir, "addresses.json"), "utf8"),
@@ -265,6 +278,7 @@ if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, "addresses.json"))) {
 		["sponsorshipPaymaster", sponsorshipPaymaster],
 		["testPaymaster", deployed.testPaymaster],
 		["testErc20", deployed.testErc20],
+		["privateTestErc20", deployed.privateTestErc20],
 	];
 	for (const [field, address] of pairs) {
 		if (
@@ -273,7 +287,7 @@ if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, "addresses.json"))) {
 		) {
 			throw new Error(
 				`chain ${CHAIN_ID} deployed ${field} at ${address}, but chain 31337's state has ${canonical[field]} — ` +
-					"the two chains MUST carry identical addresses (MC-116); refusing to write a divergent state",
+					"every local chain MUST carry identical addresses (MC-116); refusing to write a divergent state",
 			);
 		}
 	}
@@ -300,6 +314,7 @@ const addresses = {
 	paymasterRoleAdmin: ANVIL.deployer.address,
 	testPaymaster: deployed.testPaymaster,
 	testErc20: deployed.testErc20,
+	privateTestErc20: deployed.privateTestErc20,
 	tenants: DEMO_TENANTS,
 };
 // addresses.json records the canonical devnet addresses once; they are identical on every
