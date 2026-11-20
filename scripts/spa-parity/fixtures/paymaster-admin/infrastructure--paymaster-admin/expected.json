@@ -8,19 +8,28 @@
         "name": "local devnet A",
         "chainId": 31337,
         "rpcUrl": "/rpc/31337",
-        "walletRpcUrl": "http://localhost:8545",
         "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+        "walletRpcUrl": "http://localhost:8545",
         "refreshSeconds": 5
       },
       {
         "name": "local devnet B",
         "chainId": 31338,
         "rpcUrl": "/rpc/31338",
-        "walletRpcUrl": "http://localhost:8546",
         "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+        "walletRpcUrl": "http://localhost:8546",
+        "refreshSeconds": 5
+      },
+      {
+        "name": "local devnet SD",
+        "chainId": 31339,
+        "rpcUrl": "/rpc/31339",
+        "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+        "walletRpcUrl": "http://localhost:8548",
         "refreshSeconds": 5
       }
-    ]
+    ],
+    "platformApi": false
   },
-  "conf": "server {\nlisten 8080;\nserver_name _;\nroot /usr/share/nginx/html;\nindex index.html;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\nlocation = /rpc/31337 {\nproxy_pass http://anvil:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\n}\nlocation = /rpc/31338 {\nproxy_pass http://anvil-b:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\n}\nlocation = /config.json {\nadd_header Cache-Control \"no-store\" always;\n}\nlocation /assets/ {\nadd_header Cache-Control \"public, max-age=31536000, immutable\" always;\n}\nlocation / {\ntry_files $uri $uri/ /index.html;\n}\n}"
+  "conf": "map \"\" $giano_rpc_limit_key { default rpc; }\nlimit_req_zone $giano_rpc_limit_key zone=giano_rpc:1m rate=20r/s;\nserver {\nlisten 8080;\nserver_name _;\nroot /usr/share/nginx/html;\nindex index.html;\nadd_header_inherit merge;\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"no-referrer\" always;\nlocation = /rpc/31337 {\nproxy_pass http://anvil:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\nclient_max_body_size 16k;\nlimit_req zone=giano_rpc burst=40 nodelay;\nlimit_req_status 429;\n}\nlocation = /rpc/31338 {\nproxy_pass http://anvil-b:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\nclient_max_body_size 16k;\nlimit_req zone=giano_rpc burst=40 nodelay;\nlimit_req_status 429;\n}\nlocation = /rpc/31339 {\nproxy_pass http://sd-gateway:8545/;\nproxy_http_version 1.1;\nproxy_ssl_server_name on;\nproxy_set_header Host $proxy_host;\nclient_max_body_size 16k;\nlimit_req zone=giano_rpc burst=40 nodelay;\nlimit_req_status 429;\n}\nlocation = /config.json {\nadd_header Cache-Control \"no-store\" always;\n}\nlocation /assets/ {\nadd_header Cache-Control \"public, max-age=31536000, immutable\" always;\n}\nlocation / {\ntry_files $uri $uri/ /index.html;\n}\n}"
 }
