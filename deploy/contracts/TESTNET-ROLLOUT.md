@@ -190,6 +190,64 @@ needed (measured: `eth_getLogs` served up to 10,000 blocks on both chains; the b
 The Ethereum Sepolia entry is the same with `"chainId": 11155111`, `"name": "Ethereum Sepolia"` and its own
 `rpcUrl`.
 
+## Adding iron-kestrel to dev
+
+Adds Silent Data's iron-kestrel (19874) to `dev` next to the two testnets (openspec `silent-data-network`,
+task 8.8). It is a new chain, so nothing is reset and the other chains keep working. DevOps runs steps 2 to
+4; the development team runs the rest.
+
+What changes:
+- **The `chains` secret** gets a 19874 entry: the v3 addresses and timelock from the committed record,
+  `rpcUrl` set to the public URL, `bundler.rpcUrl` set to the write URL with Silent Data's token, and
+  `bundler.stateOverride: false`. wallet-api, the bundler and the console read it.
+- **Terraform** (`var.silent_data_chains`, dev only) adds 19874 to wallet-web's chain list and to the
+  `example` dApp's list, with `privateToken`, so the dApp shows its private token card. The `byoui` dApp keeps
+  the two testnets, because the BYO wallet fixture serves at most two chains.
+
+Why this order: the image `dev` runs before 7.2.0 has no 19874 in its registry. So the new image rolls
+first, with the secret unchanged, and the secret changes after it.
+
+1. **Roll the new image**: merge the infrastructure PR (it applies nothing), then open and merge the deploy PR
+   `deploy/dev-<sha>`, with a `main` SHA at release 7.2.0 or later. `GET /v1/version` still lists the two
+   testnets ready.
+2. **Add 19874 to the `chains` secret.** [`dev-iron-kestrel-chains.mts`](dev-iron-kestrel-chains.mts)
+   rewrites the `secrets-dev` bundle, as `dev-v3-chains.mts` did in step 5 of the cut-over. It reads the
+   write URL from `IRON_KESTREL_RPC_URL` and refuses the public URL. `read -s` keeps the URL out of the
+   terminal and the shell history:
+
+   ```sh
+   read -rs IRON_KESTREL_RPC_URL && export IRON_KESTREL_RPC_URL
+   op item get secrets-dev --vault "Giano dev/stg" --format json \
+     | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
+     | (cd packages/contracts && node --import tsx ../../deploy/contracts/dev-iron-kestrel-chains.mts) | pbcopy
+   ```
+
+   Paste the clipboard back into the note as-is, then mirror only that secret:
+   `terraform apply -target='module.asm-app.aws_secretsmanager_secret_version.secret["chains"]'`.
+3. **Run the full `terraform apply`.** It changes the chain lists in the task definitions of wallet-web and
+   the `example` dApp, so those two services restart. The `byoui` dApp's list does not change.
+4. **Restart the services that read the secret.** A new secret value does not change their task
+   definitions, so they keep the old value until they restart:
+   `aws ecs update-service --cluster giano-dev-ecs --service <service> --force-new-deployment` for
+   `giano-dev-wallet-api`, `giano-dev-bundler` and `giano-dev-paymaster-admin`.
+5. **Install the `example` tenant's sponsorship rules on 19874.** The command calls `dev`'s wallet-api admin
+   API, so it works only after step 4: `pnpm contracts:sponsorship --chain iron-kestrel --env-file <file>
+   --accept-unverified-implementation`. The operator file sets `WALLET_API_URL` to `dev`'s wallet-api, the
+   `example` tenant's `TENANT_SLUG` and `ADMIN_API_KEY`, and `SPONSOR_ALLOWLIST` to the private test token
+   `0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b`. Anyone may mint that token, so the warning of step 8 in
+   "Steps" applies: allow-list it only for a demo tenant.
+
+**Readiness** (task 8.8's "done when"):
+
+6. `GET /v1/version` lists 19874 ready, and the two testnets are still ready.
+7. `giano_paymaster_watcher_lag_blocks` on wallet-api's `/metrics` is within a few blocks on 19874.
+8. The `example` dApp shows Iron Kestrel in its chain list and the private token card on that chain. Then
+   run the end-to-end check (task 9.2).
+
+**Rollback**: restore the previous `secrets-dev` note from the 1Password item's history, apply it with the
+same `-target`, and restart the three services of step 4. Then revert the infrastructure PR and run the full
+`terraform apply`. The two testnets are not affected.
+
 ## Rollback
 
 CREATE3 contracts cannot be removed. Until step 12, the legacy contracts stay funded, so rolling

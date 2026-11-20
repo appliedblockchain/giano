@@ -120,10 +120,11 @@ module "svc-wallet-web" {
     # defaults each to wallet-api's same-origin relay (${walletApiUrl}/v1/rpc/${chainId},
     # .../v1/bundler/${chainId}); GIANO_CHAINS and the single-chain GIANO_CHAIN_ID shorthand
     # are mutually exclusive (services/wallet-web/docker/entrypoint.sh).
-    GIANO_CHAINS = jsonencode([
+    # A Silent Data chain also carries its name: the wallet knows only the public chains' names.
+    GIANO_CHAINS = jsonencode(concat([
       { chainId = tonumber(var.chain_id) },
       { chainId = tonumber(var.chain_b_id) },
-    ])
+    ], [for c in local.silent_data_chains : { chainId = c.chain_id, name = c.name }]))
     GIANO_WALLET_API_UPSTREAM  = "http://wallet-api.${local.name_prefix}.local:8080"
     GIANO_SPONSORSHIP_MODE     = "service"
     GIANO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.example.dapp}"]) # R9 — one stock-UI tenant only
@@ -243,8 +244,8 @@ module "svc-custom-example-byoui" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAINS           = local.example_dapp_chains
-    GIANO_WALLET_URL       = "https://${local.tenant_hosts.byoui.wallet}" # the whole difference from custom-example
+    GIANO_CHAINS           = local.byoui_dapp_chains # the two testnets only, see _locals.tf
+    GIANO_WALLET_URL       = "https://${local.tenant_hosts.byoui.wallet}"
     GIANO_OTHER_WALLET_URL = "https://${local.tenant_hosts.example.wallet}"
     GIANO_APP_LABEL        = var.byoui_brand_name
   }

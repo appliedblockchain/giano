@@ -45,7 +45,7 @@ type Entry = Record<string, unknown> & {
 	paymasterAdmin?: Record<string, unknown>;
 };
 
-function v3For(chainId: number, profileId: string) {
+export function v3For(chainId: number, profileId: string) {
 	const record = JSON.parse(
 		readFileSync(
 			join(REPO_ROOT, "packages/contracts/deployments", `${chainId}.json`),
@@ -61,7 +61,7 @@ function v3For(chainId: number, profileId: string) {
 		throw new Error(
 			`deployments/${chainId}.json lacks a v3 contract or the timelock`,
 		);
-	if (profile.timelock?.address !== timelock)
+	if (!profile.timelock || profile.timelock.address !== timelock)
 		throw new Error(
 			`${profileId}'s timelock.address is not the recorded timelock ${timelock}`,
 		);

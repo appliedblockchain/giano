@@ -1,0 +1,11 @@
+{
+	// The dev operator scripts (*.mts) run with tsx from packages/contracts and import its code, so they
+	// use its settings and its Node types. Without this file the editor checks them without Node types.
+	"extends": "../../packages/contracts/tsconfig.json",
+	"compilerOptions": {
+		"typeRoots": ["../../packages/contracts/node_modules/@types"],
+		// dev-iron-kestrel-chains.mts imports dev-v3-chains.mts by its file name.
+		"allowImportingTsExtensions": true
+	},
+	"include": ["*.mts"]
+}
