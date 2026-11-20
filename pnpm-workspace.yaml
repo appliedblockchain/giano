@@ -89,6 +89,18 @@ overrides:
   "source-map-js@>=1.0.0 <1.2.2": "1.2.2"
   # Critical — ethereum-cryptography (hardhat), create-hash/create-hmac and @coinbase/wallet-sdk.
   "sha.js@>=2.0.0 <2.4.12": "2.4.12"
+  # The Silent Data gateway (services/silent-data-gateway, local stacks only) pins express 4.21.2,
+  # body-parser 1.20.3 and http-proxy-middleware 3.0.5, and express pins path-to-regexp 0.1.12 and
+  # qs 6.13.0. Each entry moves one line to its fixed release. Drop them once a gateway release
+  # depends on fixed versions.
+  # GHSA-27r3-jxmh-p828 (high), GHSA-v422-hmwv-36x6 — 1.20.9 depends on qs ~6.16.0
+  "body-parser@>=1.20.0 <1.20.9": "1.20.9"
+  # GHSA-37ch-88jc-xwx2 (high)
+  "path-to-regexp@<0.1.13": "0.1.13"
+  # GHSA-gcq2-9pq2-cxqm (high), GHSA-64mm-vxmg-q3vj
+  "http-proxy-middleware@>=3.0.0 <3.0.7": "3.0.10"
+  # GHSA-6pq8-jhm2-2vcw, GHSA-4mjr-xmp4-gh2g, GHSA-q8mj-m7cp-5q26, GHSA-6rw7-vpxm-498p, GHSA-w7fw-mjwx-w883
+  "qs@>=6.7.0 <6.16.1": "6.16.2"
 
 # Supply-chain policy (ABIP-6, docs/abip-compliance.md): reject any package version published less
 # than 7 days ago — the ABIP's tier for projects that handle financial transactions. No package is
