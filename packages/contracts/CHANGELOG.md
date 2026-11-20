@@ -1,5 +1,23 @@
 # @appliedblockchain/giano-contracts
 
+## 7.2.0
+
+### Minor Changes
+
+- 9191197: Contracts: the new `chargesNoGas` tells whether a chain charges nothing for gas, so that a user operation with a fee of 0 is the correct fee (H6). The gas price is 0 only when the latest block's base fee (where blocks carry one) and `eth_gasPrice` are both 0. On an OP Stack chain, the GasPriceOracle's L1 fee must also be 0. `GAS_PRICE_ORACLE` exports the predeploy's address. giano-bundler (estimation and submission) and wallet-api's `pm_getPaymasterData` use it, so a fee of 0 is no longer accepted on a legacy-priced chain that charges gas, on a chain with base fee 0 that still asks for a tip, or on an OP Stack chain whose L1 fee is above 0.
+- 9191197: Reading a proxy's implementation from its `Upgraded` logs, on an RPC that refuses `eth_getStorageAt`, is now bounded by the proxy's deployment block and keeps its progress after a failed request (H6).
+
+  Contracts: the deploy CLI records the deployment block of each contract it deploys (`blockNumber` in `deployments/<chainId>.json`). The registry gains an optional `sponsorshipPaymasterDeployBlock`, and the deploy tooling and giano-doctor start the log search there. When an `eth_getLogs` request fails, `proxyImplementationWithSource` keeps the blocks already searched, and the next read through the same client continues below them. A search that stops at `maxChunks` throws the new `UpgradedLogWalkLimitError`; `isUpgradedLogWalkLimitError` tells it from a failed request. giano-doctor uses `proxyImplementationWithSource`, and no longer reports an empty implementation slot that it did not read.
+
+  Contracts: the new `waitForReceipt` waits for a transaction receipt as viem's `waitForTransactionReceipt` does. When the RPC refuses the full block (`eth_getBlockByNumber` with `true`) that viem's replacement check asks for, as the Silent Data gateway does, it waits again without that check, for the time the first wait left of the caller's `timeout`. `isFullBlockRequestError` tells that failure from any other. The deploy CLI uses it for every receipt it waits for. On an RPC that returns full blocks nothing changes.
+
+  Paymaster SDK: the `wait()` of every write uses `waitForReceipt`, so a console write on Silent Data no longer fails after the transaction was mined. `readImplementationWithSource` sends at most `IMPLEMENTATION_LOG_REQUESTS_PER_READ` (100) `eth_getLogs` requests per read, and takes an optional `{ fromBlock, maxChunks }`. The client config gains `deployBlock`, which `fromRegistry` sets from the registry.
+
+### Patch Changes
+
+- 7031e4a: `gianoAddresses` lists the Silent Data testnet iron-kestrel (chain 19874): the release v3 wallet implementation, factory and sponsorship paymaster, at the same addresses as on Base Sepolia, the paymaster's deployment block, and the private test token (`privateTestErc20`). The deployment record `deployments/19874.json` and the chain profile's timelock address are published with it (H6).
+- 7b1d056: `deploy:cli private-test-token` deploys the private test token (`GianoTestPrivateErc20`) alone, without the test ERC-20 and the permissive paymaster that `testing` also deploys (Silent Data, H6). A Silent Data testnet that the platform serves can then carry the demo's private token. It runs only where the chain's profile sets `privateTestErc20: true`, never on a production chain, and on a public chain only from the class's canonical deployer. Without a key it only verifies. `testing`, the registry build and `doctor` now refuse the permissive paymaster on the Silent Data testnet iron-kestrel (R-29), which the platform serves. The deploy preflight no longer requires the deployer's ETH reserve (`minDeployerBalanceEth`) on a chain that charges nothing for gas, as `chargesNoGas` decides, and prints that it skipped the check. On every chain that charges gas, the check is unchanged.
+
 ## 7.1.0
 
 ### Minor Changes
