@@ -50,12 +50,14 @@ so tests assert both directly. The same passkey produces the **same account addr
 chains** — the property `tests/multichain.spec.ts` exists to verify.
 
 To run the stack with a **single chain** (the on-premises profile, MC-88): comment out the
-`anvil-b`, `anvil-sd` and `sd-gateway` services in `deploy/docker-compose.e2e.yml`, drop every
-entry but 31337 from each `GIANO_CHAINS` list (wallet-api and wallet-web) and from
-paymaster-admin's `GIANO_DEPLOYMENTS`, and set `SPONSOR_CHAIN_IDS=31337` on both the
-`sponsorship-provisioner` and the `tx-mapping-provisioner`. The single-chain wallet flows pass
-unmodified against the three-chain stack, so this is only needed when specifically exercising the
-single-chain shape.
+`anvil-b`, `anvil-sd` and `sd-gateway` services in `deploy/docker-compose.e2e.yml`, and remove
+the `depends_on` entries that name them: `anvil-b` and `sd-gateway` in the bundler, and
+`sd-gateway` in wallet-api and paymaster-admin. Compose refuses a dependency on a service that is
+not defined. Drop every entry but 31337 from the shared `x-giano-chains` list (wallet-api and the
+bundler), from wallet-web's `GIANO_CHAINS` and from paymaster-admin's `GIANO_DEPLOYMENTS`, and set
+`SPONSOR_CHAIN_IDS=31337` on both the `sponsorship-provisioner` and the `tx-mapping-provisioner`.
+The single-chain wallet flows pass unmodified against the three-chain stack, so this is only
+needed when specifically exercising the single-chain shape.
 
 To regenerate the baked state with the pinned anvil: `pnpm -F @appliedblockchain/giano-e2e
 devnet:generate` (chain A; also writes `devnet/addresses.json`). `devnet:generate:b` produces a
