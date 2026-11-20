@@ -19,7 +19,8 @@
 // CHAIN_B_NAME. A missing name is "chain <id>". Setting CHAINS together with any of these four
 // variables is refused at start-up, as are an empty list, an id that is not a positive
 // integer, a repeated id and an empty name. In a devnet checkout with no chain variable, the
-// list is Devnet A (31337) and Devnet B (31338).
+// list is every local chain: Devnet A (31337), Devnet B (31338) and Devnet SD (Silent Data)
+// (31339).
 //
 // The start-up esbuild bundle is deliberately kept: it is why this image is
 // environment-independent without any of wallet-web's /config.json machinery, and it is the
@@ -89,8 +90,8 @@ const walletApiUpstream = required(
 // --- chain configuration ------------------------------------------------------------------
 // Only ids and names: every endpoint is wallet-api's. chains.mjs reads CHAINS, or the older
 // CHAIN_ID / CHAIN_B_ID pair, and refuses a bad list (see its header). In a devnet checkout with
-// no chain variable, the list is Devnet A and Devnet B, which keeps the two-chain e2e suite
-// (MC-129) passing with no environment at all.
+// no chain variable, the list is every chain the e2e stack runs, which keeps the multi-chain e2e
+// suite (MC-129) passing with no environment at all.
 let chains;
 try {
 	chains = resolveChains(process.env, devnet);

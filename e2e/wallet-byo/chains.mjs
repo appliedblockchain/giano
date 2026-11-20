@@ -17,7 +17,9 @@
 // service at start-up.
 //
 // In a devnet checkout (../devnet/addresses.json present) and with no chain variable set, the
-// list is Devnet A (the devnet's chainId, 31337) and Devnet B (31338).
+// list is every local chain: Devnet A (the devnet's chainId, 31337), Devnet B (31338) and
+// Devnet SD (Silent Data) (31339). With only some of the pair's variables set, the pair applies,
+// with the devnet's ids and names for the ones left unset, as before CHAINS existed.
 //
 // Every list, from either form, is checked: it is not empty, every id is a positive integer,
 // no id repeats, and no name is empty. CHAINS replaces all four variables of the pair. Setting
@@ -31,8 +33,20 @@ export class ChainsConfigError extends Error {
 
 const isSet = (value) => value !== undefined && value !== "";
 
-/** The pair's variables. CHAINS replaces all four. */
+/**
+ * The pair's variables. CHAINS replaces all four. Any of them, even set to "", selects the pair
+ * over the devnet default.
+ */
 const PAIR_VARIABLES = ["CHAIN_ID", "CHAIN_NAME", "CHAIN_B_ID", "CHAIN_B_NAME"];
+
+/** Every chain the local stacks run, in a devnet checkout with no chain variable set. */
+function devnetChains(devnet) {
+	return [
+		{ chainId: devnet.chainId ?? 31337, name: "Devnet A" },
+		{ chainId: 31338, name: "Devnet B" },
+		{ chainId: 31339, name: "Devnet SD (Silent Data)" },
+	];
+}
 
 /** The id as a number, or NaN when it is not a positive integer. Env values are strings. */
 function parseId(value) {
@@ -143,6 +157,11 @@ export function resolveChains(env, devnet = null) {
 				"CHAINS is an empty list. It must name at least one chain.",
 			);
 		}
+	} else if (
+		devnet &&
+		PAIR_VARIABLES.every((name) => env[name] === undefined)
+	) {
+		return devnetChains(devnet);
 	} else {
 		chains = fromPair(env, devnet);
 	}
