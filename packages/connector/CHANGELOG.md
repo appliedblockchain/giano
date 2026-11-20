@@ -1,5 +1,11 @@
 # @appliedblockchain/giano-connector
 
+## 7.2.0
+
+### Patch Changes
+
+- @appliedblockchain/giano-wallet-transport@7.2.0
+
 ## 7.1.0
 
 ### Patch Changes
