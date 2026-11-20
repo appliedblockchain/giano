@@ -12,8 +12,8 @@
  * lives in Postgres, so a `down -v` wipes it — running this at bring-up is what makes the demo
  * show descriptions for everyone who starts the stack, not only for whoever published one by hand.
  *
- * Both tenants, both chains: `demo.localhost` is tenant `stock` and `demo-byo.localhost` is
- * tenant `byo`, they offer the same token on both chains, and mappings are per
+ * Both tenants, every chain: `demo.localhost` is tenant `stock` and `demo-byo.localhost` is
+ * tenant `byo`, they offer the same token on every chain, and mappings are per
  * (tenant, chain, contract) and never inherited — so each pair gets its own explicit PUT.
  *
  * Fails loudly, for the same reason the sponsorship provisioner does: a mapping the API stored but
@@ -38,7 +38,7 @@ const addresses = JSON.parse(
 );
 
 /** The chains the stack runs, kept in step with provision-sponsorship.mjs. */
-const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? "31337,31338")
+const CHAIN_IDS = (process.env.SPONSOR_CHAIN_IDS ?? "31337,31338,31339")
 	.split(",")
 	.map((id) => Number(id.trim()));
 
