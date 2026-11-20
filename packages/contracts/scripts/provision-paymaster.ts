@@ -134,8 +134,17 @@ function signedProvider(
 	return new JsonRpcProvider(request, Network.from(chainId), {
 		staticNetwork: true,
 		batchMaxCount: 1,
+		cacheTimeout: NO_REQUEST_CACHE,
 	});
 }
+
+/**
+ * ethers caches the result of an identical request for 250 ms by default. This script sends one
+ * transaction after another from the same key, and on a fast node two grants can finish inside
+ * that window: the second then reads the nonce the first already used ("nonce has already been
+ * used"). So every request goes to the node.
+ */
+const NO_REQUEST_CACHE = -1;
 
 function log(message: string): void {
 	console.log(message);
@@ -188,7 +197,9 @@ async function main(): Promise<void> {
 	const { flags, repeated } = parseArgs(process.argv.slice(2));
 
 	const rpcUrl = flags.rpc ?? process.env.RPC_URL ?? "http://localhost:8545";
-	let provider = new JsonRpcProvider(rpcUrl);
+	let provider = new JsonRpcProvider(rpcUrl, undefined, {
+		cacheTimeout: NO_REQUEST_CACHE,
+	});
 	const chainId = Number((await provider.getNetwork()).chainId);
 
 	let registryAddress: string | undefined;
