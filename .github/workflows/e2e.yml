@@ -85,7 +85,7 @@ jobs:
         run: |
           node scripts/verify-dhi-bases.mjs \
             services/wallet-api/Dockerfile services/wallet-web/Dockerfile services/paymaster-admin/Dockerfile \
-            services/bundler/Dockerfile
+            services/bundler/Dockerfile services/silent-data-gateway/Dockerfile
       # The same builder docker.yml writes main's layer cache with. The runner's built-in `docker`
       # driver imports that cache but matches none of its RUN steps, so every image rebuilt cold;
       # a docker-container builder computes the same cache keys as the one that wrote them.
@@ -166,6 +166,9 @@ jobs:
           # the proxy is routing and that /etc/hosts resolution is in place.
           wait_for 'wallet-web config.json' curl -fsS http://wallet.localhost/config.json
           wait_for 'wallet-api /api/healthz' curl -fsS http://wallet.localhost/api/healthz
+          # Chain 31339's RPC, by its portless name: the demo dApp reads Devnet SD there.
+          wait_for 'silent data gateway' curl -fsS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' http://rpc-sd.localhost
           # tenant resolution sanity: both tenants resolvable by Host on the raw API port
           # (catches Host-normalization breakage before spending Playwright time). Deliberately
           # NOT through portless — portless routes *by* Host, so a spoofed Host is exactly what
@@ -212,6 +215,7 @@ jobs:
           docker compose -f deploy/docker-compose.e2e.yml logs wallet-api --tail 200
           docker compose -f deploy/docker-compose.e2e.yml logs sponsorship-provisioner --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs tx-mapping-provisioner --tail 100
+          docker compose -f deploy/docker-compose.e2e.yml logs sd-gateway --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs --tail 200
       # A sponsorship failure is usually an accounting failure, and the numbers are the diagnosis.
       # Collecting them here means a CI failure is explicable without reproducing it locally.
