@@ -34,7 +34,7 @@
  *       that the RPC accepts one before funding, or the 0.1 ETH is stranded.
  *   pnpm deploy:cli install-createx | install-entrypoint --rpc <url>      (local chains only)
  *
- * Network class: local chains (31337/31338) are `local`. Any other chain takes its class, and any
+ * Network class: local chains (31337/31338/31339) are `local`. Any other chain takes its class, and any
  * address overrides, from --chain <profile> (deploy/chains/) or --chain-config <file>, else from the
  * committed profile with its chain id, else from --network. A profile always wins: --network may
  * restate its class but never change it. The class picks the canonical deployer whose CREATE3 addresses
@@ -79,7 +79,7 @@
  * use `private-test-token` instead: it deploys that token alone.
  *
  * Every run records what it found and deployed in deployments/<chainId>.json (or --record-dir).
- * Commit that file for any chain other than 31337/31338.
+ * Commit that file for any chain other than 31337/31338/31339.
  */
 
 import { writeFileSync } from "node:fs";

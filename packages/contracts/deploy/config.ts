@@ -9,7 +9,7 @@ import { ENTRY_POINT_ADDRESS } from "../entrypoint";
 import type { ReleaseContractName } from "../release-fingerprints";
 import type { FixtureContractName } from "./fixtures";
 
-/** A chain's network class. Local chains (31337, 31338) are `local`; a profile declares the rest. */
+/** A chain's network class. Local chains (31337, 31338, 31339) are `local`; a profile declares the rest. */
 export type NetworkClass = "mainnet" | "testnet" | "local";
 
 /** The classes a chain profile may declare. */
@@ -182,7 +182,7 @@ export function upgradeLabel(base: string, release: string): string {
 }
 
 /** Chains the deploy CLI treats as local: impersonation and installing CreateX are allowed. */
-export const LOCAL_CHAIN_IDS = [31337, 31338] as const;
+export const LOCAL_CHAIN_IDS = [31337, 31338, 31339] as const;
 
 /** Chains that hold real money: the paymaster timelock is mandatory there (G9 R4). */
 export const MAINNET_CHAIN_IDS = [1, 8453] as const;

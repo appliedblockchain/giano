@@ -7,7 +7,7 @@ deterministic, release, runtime codehash, release fingerprint and deploying tran
 lists the upgrade targets deployed later under versioned labels, the timelock, and every deviation
 from the deterministic addresses.
 
-Commit the record for every chain except the local ones (31337 and 31338, gitignored).
+Commit the record for every chain except the local ones (31337, 31338 and 31339, gitignored).
 `pnpm gen:addresses` builds `addresses.ts` from these files and fails if a recorded fingerprint
 matches no release of that contract, or if the recorded release is not one of the releases with that
 fingerprint. Addresses are not compared with fixed constants: a chain's contracts may sit at

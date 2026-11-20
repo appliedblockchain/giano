@@ -96,6 +96,7 @@ const KNOWN_CHAIN_NAMES: Record<number, string> = {
 	11155111: "Sepolia",
 	31337: "Local devnet A",
 	31338: "Local devnet B",
+	31339: "Local devnet SD",
 };
 
 /**
