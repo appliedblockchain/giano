@@ -10,7 +10,7 @@ Only the local infrastructure and e2e stacks build and run this image. `.github/
 
 ## Where the package comes from
 
-The gateway comes from npmjs, not GitHub Packages. The root workspace has no `.npmrc` that maps the `@appliedblockchain` scope to another registry. Only `services/custom-example`, a separate workspace, does that. If someone adds such a line to the root workspace, the install fails. It does not pick another package.
+The gateway comes from npmjs, not GitHub Packages. The root `.npmrc` routes the `@appliedblockchain` scope to `https://registry.npmjs.org/`. It takes priority over a developer's `~/.npmrc`, which may route the scope to GitHub Packages, as `services/custom-example/.npmrc` does for that separate workspace. Without the root line, such a `~/.npmrc` makes the root install fail: GitHub Packages has no gateway package. The published Giano packages still go to GitHub Packages, because each package's `publishConfig.registry` takes priority over the scope line.
 
 ## Build and run
 
