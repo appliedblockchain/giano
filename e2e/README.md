@@ -213,9 +213,18 @@ It prints one line per chain with the account, the user-operation and transactio
 paymaster and an explorer link. Both wallet UIs work: the stock wallet and the BYO fixture.
 
 Each run creates a user on the target tenant, which needs open registration, and spends a little of
-its sponsorship balance. It refuses a chain that is not a known testnet (viem's chain list) unless
-`--allow-production` is given. On a chain the watcher is still catching up on, run it after the lag
-is down: settlement waits for the watcher.
+its sponsorship balance. It refuses a chain that is not a known testnet unless `--allow-production`
+is given: every viem entry for that chain ID must be a testnet. A target on `localhost` or
+`*.localhost` counts as a local stack, whose devnets viem does not list as testnets, so it runs there
+without the flag. A chain viem does not list at all, such as Silent Data's iron-kestrel (19874), is
+refused too: pick the others with `--chain`, or pass the flag. On a chain the watcher is still
+catching up on, run it after the lag is down: settlement waits for the watcher.
+
+What a pass shows depends on the path it took. With a default token, the mint goes through the
+tenant's allowlist, so a pass also shows the sponsorship rules allow that token. Without one (stg,
+prd), the 0 ETH send to self is sponsored as wallet management, under platform policy, so a pass
+says nothing about the tenant's allowlist. That path has not yet run against a deployment: dev has a
+default token on both chains.
 
 ## Where the names live
 

@@ -87,6 +87,25 @@ const knownChains = Object.values(viemChains).filter(
 	(chain): chain is (typeof viemChains)[keyof typeof viemChains] =>
 		typeof chain === "object" && chain !== null && "id" in chain,
 );
+const entriesFor = (chainId: number) =>
+	knownChains.filter((candidate) => candidate.id === chainId);
+/**
+ * A known testnet: viem lists the chain ID, and EVERY entry for it is a testnet. Some IDs have both
+ * a mainnet and a testnet entry in viem (9, 260 and 999 in 2.57.10), so the first match is not enough.
+ */
+const isKnownTestnet = (chainId: number) => {
+	const entries = entriesFor(chainId);
+	return entries.length > 0 && entries.every((entry) => entry.testnet === true);
+};
+/** A local stack: its devnets are not testnets in viem (Anvil 31337 is `testnet: false`; 31338, 31339 are absent). */
+const isLocalTarget = (target: string) => {
+	const { hostname } = new URL(target);
+	return (
+		hostname === "localhost" ||
+		hostname === "127.0.0.1" ||
+		hostname.endsWith(".localhost")
+	);
+};
 
 if (targets.length === 0) {
 	test("smoke needs a target", () => {
@@ -115,10 +134,11 @@ for (const target of targets) {
 				})
 			: chains;
 		for (const chain of selected) {
-			const known = knownChains.find(
-				(candidate) => candidate.id === chain.chainId,
-			);
-			if (!known?.testnet && !allowProduction)
+			if (
+				!isLocalTarget(target) &&
+				!isKnownTestnet(chain.chainId) &&
+				!allowProduction
+			)
 				throw new Error(
 					`chain ${chain.chainId} (${chain.name}) is not a known testnet; pass --allow-production to run there`,
 				);
@@ -175,25 +195,36 @@ for (const target of targets) {
 				expect(account).toMatch(/^0x[0-9a-fA-F]{40}$/);
 				expect(txHash).toMatch(/^0x[0-9a-fA-F]{64}$/);
 
-				// On chain, through the dApp's own RPC for this chain.
-				const code = await rpc<string>(page, chain.rpcUrl, "eth_getCode", [
-					account,
-					"latest",
-				]);
-				expect(code, "account deployed").toMatch(/^0x[0-9a-fA-F]+$/);
-				expect(code).not.toBe("0x");
-				const receipt = await rpc<{ status?: string } | null>(
-					page,
-					chain.rpcUrl,
-					"eth_getTransactionReceipt",
-					[txHash],
-				);
-				expect(receipt?.status, "transaction status").toBe("0x1");
+				// On chain, through the dApp's own RPC for this chain. Polled: that RPC is not always the
+				// node the bundler used, so it can be a block behind the receipt the dApp already holds.
+				await expect
+					.poll(
+						() =>
+							rpc<string>(page, chain.rpcUrl, "eth_getCode", [
+								account,
+								"latest",
+							]),
+						{ message: "account deployed", timeout: 30_000 },
+					)
+					.toMatch(/^0x[0-9a-fA-F]{2,}$/);
+				await expect
+					.poll(
+						async () =>
+							(
+								await rpc<{ status?: string } | null>(
+									page,
+									chain.rpcUrl,
+									"eth_getTransactionReceipt",
+									[txHash],
+								)
+							)?.status,
+						{ message: "transaction status", timeout: 30_000 },
+					)
+					.toBe("0x1");
 
-				const known = knownChains.find(
-					(candidate) => candidate.id === chain.chainId,
-				);
-				const explorer = known?.blockExplorers?.default.url;
+				const explorer = entriesFor(chain.chainId).find(
+					(entry) => entry.blockExplorers,
+				)?.blockExplorers?.default.url;
 				const result: Result = {
 					chain: `${chain.name} (${chain.chainId})`,
 					action,
