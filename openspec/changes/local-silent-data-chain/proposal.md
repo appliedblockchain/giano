@@ -19,7 +19,7 @@ Decided:
 
 - 31339 is a new chain. Devnet B stays plain anvil. The gateway refuses every `anvil_*` method and `eth_getStorageAt`, and the existing tests and the demo's "fund from devnet" control use them on 31337 and 31338.
 - The gateway runs from the published package, not from a copy of its source. A version change is an ordinary pinned dependency upgrade.
-- No component treats 31339 differently by its id. It is configured like iron-kestrel in dev: through `GIANO_CHAINS`, with `stateOverride: false`.
+- No component treats 31339 as a Silent Data chain by its id. It is configured like iron-kestrel in dev: through `GIANO_CHAINS`, with `stateOverride: false`. 31339 does join the lists of local devnet chain ids, next to 31337 and 31338.
 
 **Non-goals:**
 

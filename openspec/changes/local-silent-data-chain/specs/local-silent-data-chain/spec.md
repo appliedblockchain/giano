@@ -18,7 +18,7 @@ The infrastructure and e2e stacks SHALL run chain 31339, named "Devnet SD (Silen
 - **THEN** the gateway refuses the method, and the same request sent to the node directly succeeds
 
 ### Requirement: Components reach the Silent Data chain only through the gateway
-wallet-api, the bundler, paymaster-admin, both wallets and the demo dApp SHALL reach chain 31339 only through the gateway. The chain's backend entry SHALL set `bundler.stateOverride: false`. No component SHALL check for chain 31339 by its id to change its behaviour.
+wallet-api, the bundler, paymaster-admin, both wallets and the demo dApp SHALL reach chain 31339 only through the gateway. The chain's backend entry SHALL set `bundler.stateOverride: false`. No component SHALL check for chain 31339 by its id to handle Silent Data or the gateway differently. That behaviour SHALL come only from the chain's `GIANO_CHAINS` entry. The lists of local devnet chain ids are separate: 31339 SHALL join them next to 31337 and 31338.
 
 #### Scenario: Backend configuration
 - **WHEN** the local stack's `GIANO_CHAINS` is read
