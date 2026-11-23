@@ -6,8 +6,8 @@
 	"description": "Giano reference dApp: the thin two-origin SDK, every method reachable, every outcome recorded. Vite + React + Chakra UI.",
 	"scripts": {
 		"dev": "vite --host --port 4410 --strictPort",
-		"dev:stock": "env GIANO_WALLET_URL=http://wallet.localhost GIANO_OTHER_WALLET_URL=http://wallet-byo.localhost GIANO_APP_LABEL='tenant: stock' vite --host --port 4410 --strictPort",
-		"dev:byo": "env GIANO_WALLET_URL=http://wallet-byo.localhost GIANO_OTHER_WALLET_URL=http://wallet.localhost GIANO_APP_LABEL='tenant: byo' vite --host --port 4411 --strictPort",
+		"dev:stock": "env DEMO_VITE_CACHE_DIR=node_modules/.vite-stock GIANO_WALLET_URL=http://wallet.localhost GIANO_OTHER_WALLET_URL=http://wallet-byo.localhost GIANO_APP_LABEL='tenant: stock' vite --host --port 4410 --strictPort",
+		"dev:byo": "env DEMO_VITE_CACHE_DIR=node_modules/.vite-byo GIANO_WALLET_URL=http://wallet-byo.localhost GIANO_OTHER_WALLET_URL=http://wallet.localhost GIANO_APP_LABEL='tenant: byo' vite --host --port 4411 --strictPort",
 		"lint": "biome check --error-on-warnings .",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
