@@ -2,8 +2,8 @@
 # Giano — the whole platform, running locally.
 #
 # Everything a deployment has, on one machine, with nothing to fill in: two tenants, both
-# demo dApps, both wallet UIs, the multi-tenant API, the paymaster console, two chains and a
-# bundler each. No .env file, no keys to source, no accounts to fund.
+# demo dApps, both wallet UIs, the multi-tenant API, the paymaster console, three chains and one
+# bundler for all of them. No .env file, no keys to source, no accounts to fund.
 #
 #   docker compose -f deploy/docker-compose.infrastructure.yml up --build --wait
 #   open http://giano.localhost
@@ -40,7 +40,7 @@
 #
 # Unlike the e2e stack, nothing here needs `portless` on the host and nothing needs sudo:
 # Docker binds :80 through its own privileged helper. Because it holds :80, this stack and
-# the e2e stack cannot run at the same time — and they also collide on 8545/8546/4337
+# the e2e stack cannot run at the same time — and they also collide on 8545–8548, 4337
 # and 8080 below, exactly as the e2e and dev stacks already do. `down` one before `up` the
 # other; `lsof -nP -iTCP -sTCP:LISTEN | grep 8545` is the fastest way to spot a leftover.
 #
@@ -52,11 +52,22 @@
 #   http://api.giano.localhost             wallet-api
 #   http://paymaster.giano.localhost       the paymaster console
 #   http://wallet.giano.localhost          the shared UI serving host — never a relying party
-#   http://rpc.giano.localhost  /  rpc-b   the two anvil chains
+#   http://rpc.giano.localhost  /  rpc-b   the two plain anvil chains (31337, 31338)
+#   http://rpc-sd.giano.localhost          Devnet SD (31339): Silent Data's gateway → anvil-sd
 #
 # The ports that ARE published are the server-side ones, for tooling rather than for a
-# browser: 8545/8546 for `cast`, 4337 for the bundler, 8080 for `curl` against the
-# admin API. Open the wallet on a port and nothing works — the origin matches no tenant.
+# browser: 8545/8546 for `cast`, 8547 for the Devnet SD node and 8548 for its gateway, 4337
+# for the bundler, 8080 for `curl` against the admin API. Open the wallet on a port and
+# nothing works — the origin matches no tenant.
+#
+# ── The third chain: Devnet SD (Silent Data) ──────────────────────────────────────────────
+#
+# Chain 31339 is for Silent Data's private token, which only the holder can read. anvil
+# answers every read, so privacy holds only behind Silent Data's own RPC gateway: `sd-gateway`
+# (services/silent-data-gateway, the published package at a pinned version) in front of the
+# node `anvil-sd`. Every service reaches 31339 through the gateway, as the AWS dev environment
+# reaches iron-kestrel. Only this chain sits behind it: the gateway refuses eth_getStorageAt and
+# every anvil_* method, which the demo's "fund from devnet" control uses on Devnet A and B.
 #
 # ── The two tenants, and why they are the two shapes ──────────────────────────────────────
 #
@@ -96,8 +107,24 @@ x-giano-chains: &giano-chains |
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
         "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
       }
+    },
+    {
+      "chainId": 31339, "name": "Devnet SD (Silent Data)", "rpcUrl": "http://sd-gateway:8545",
+      "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
+      "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
+      "walletApi": {
+        "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
+        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+      },
+      "bundler": { "stateOverride": false }
     }
   ]
+# 31339 is configured as the AWS dev environment configures iron-kestrel: its rpcUrl is Silent
+# Data's gateway, never the node, and the gateway refuses eth_call state overrides, so the bundler
+# estimates with fixed gas limits (bundler.stateOverride false). No service checks for 31339 by
+# its id. The gateway also refuses eth_getStorageAt, so wallet-api and the console read the
+# paymaster implementation from its Upgraded logs, and log that it is not verified against the
+# implementation slot. That warning is expected here, as on dev.
 
 # Read access to GitHub Packages for the giano-example build: export GITHUB_TOKEN (read:packages).
 secrets:
@@ -133,6 +160,7 @@ services:
       - paymaster-admin
       - anvil
       - anvil-b
+      - sd-gateway
     healthcheck:
       # The index page, which Caddy answers itself. Deliberately not a route through to an
       # upstream: this reports whether the ROUTER is up, not the stack behind it.
@@ -147,14 +175,14 @@ services:
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # anvil / anvil-b — two chains, one baked state file.
+  # anvil / anvil-b — two of the three chains, one baked state file each.
   #
   # Instant boot: state.json carries EntryPoint v0.9, the Giano factory and implementation,
   # the GianoPaymaster with both tenants registered and funded, and the demo ERC-20 — all
   # pre-deployed by e2e/devnet/generate-state.mjs. Nothing is deployed at `up` time.
   #
   # Two separately generated states: EntryPoint v0.9 caches its chain ID in runtime code.
-  # The generator verifies identical Giano contract addresses on both chains, preserving
+  # The generator verifies identical Giano contract addresses on every chain, preserving
   # "one passkey, one address, every chain" for the demo's cross-chain panel.
   #
   # ⚠ The image is pinned by digest and the pin matters: state.json's format is tied to the
@@ -201,12 +229,64 @@ services:
       - "8546:8545"
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # bundler — one giano-bundler serving both chains (POST /31337, POST /31338).
+  # anvil-sd / sd-gateway — chain 31339, "Devnet SD (Silent Data)".
+  #
+  # Silent Data's private token needs an RPC that enforces privacy, and anvil answers every
+  # read. So this chain is an anvil node behind Silent Data's own gateway: the published
+  # @appliedblockchain/silentdatarollup-custom-rpc package, pinned in services/silent-data-gateway
+  # and built into a local-only image. The gateway allows a fixed list of methods, checks the
+  # signer of private reads, and refuses everything else, including eth_getStorageAt and every
+  # anvil_* method. Devnet A and B stay plain anvil, because the tests and the demo's "fund from
+  # devnet" control use those methods there.
+  #
+  # Every service reaches 31339 through the gateway: wallet-api, the bundler and the console at
+  # sd-gateway:8545, the dApps at rpc-sd.giano.localhost. Inside the network the gateway listens
+  # on 8545, like every other RPC here.
+  #
+  # The node publishes 8547 for `cast` and for checks that must bypass the gateway. The gateway
+  # publishes 8548. The state comes from the same generator and the same pinned anvil as the
+  # other two chains (`devnet:generate:sd`), so the contracts are at the same addresses.
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  anvil-sd:
+    image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
+    entrypoint:
+      [
+        "anvil",
+        "--host",
+        "0.0.0.0",
+        "--chain-id",
+        "31339",
+        "--load-state",
+        "/devnet/state.json",
+      ]
+    restart: unless-stopped
+    volumes:
+      - ../e2e/devnet/state-31339.json:/devnet/state.json:ro
+    ports:
+      # The node itself, without the gateway: for `cast`, not for a browser or a service.
+      - "8547:8545"
+
+  sd-gateway:
+    build:
+      context: ..
+      dockerfile: services/silent-data-gateway/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - anvil-sd
+    environment:
+      CUSTOM_RPC_PROXY_URL: http://anvil-sd:8545
+    # The image's healthcheck sends eth_chainId through the gateway, so it passes only when the
+    # gateway and the node both answer.
+    ports:
+      - "8548:8545"
+
+  # ════════════════════════════════════════════════════════════════════════════════════════
+  # bundler — one giano-bundler serving every chain (POST /31337, /31338, /31339).
   #
   # Nothing chain-bound is shared between the chains inside it: each has its own lanes,
   # estimator and lookup. The executor key is anvil's well-known account 0 — deterministic,
-  # worthless, committed on purpose, funded on both chains by the baked state, and refused
-  # unless GIANO_DEV_MODE=true. Nonces are per chain, so one key serves both.
+  # worthless, committed on purpose, funded on every chain by the baked state, and refused
+  # unless GIANO_DEV_MODE=true. Nonces are per chain, so one key serves all three.
   #
   # The same image and settings as the AWS stack's bundler service; only the key and the
   # document differ. It needs no trace-capable RPC: operations are simulated with eth_call.
@@ -217,8 +297,12 @@ services:
       dockerfile: services/bundler/Dockerfile
     restart: unless-stopped
     depends_on:
-      - anvil
-      - anvil-b
+      anvil:
+        condition: service_started
+      anvil-b:
+        condition: service_started
+      sd-gateway:
+        condition: service_healthy
     environment:
       GIANO_CHAINS: *giano-chains
       BUNDLER_EXECUTOR_PRIVATE_KEYS: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -312,7 +396,7 @@ services:
         ]
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # wallet-api — one backend, both tenants, both chains.
+  # wallet-api — one backend, both tenants, every chain.
   #
   # The only service with database access. It resolves the tenant PER REQUEST — from `Origin`
   # on ceremonies, sessions and the userop relay, and from `Host` on /.well-known/webauthn —
@@ -326,6 +410,10 @@ services:
         condition: service_healthy
       init:
         condition: service_completed_successfully
+      # wallet-api starts without an unreachable chain and checks it again in the background.
+      # Waiting for the gateway means 31339 is ready when `up --wait` returns.
+      sd-gateway:
+        condition: service_healthy
     ports:
       # For `curl` against the admin API. The browser reaches this at api.giano.localhost,
       # and the wallet origins proxy it same-origin under /api, which is the path the SPA
@@ -442,7 +530,7 @@ services:
       sponsorship-provisioner:
         condition: service_completed_successfully
     environment:
-      # Both chains, one wallet origin. Only ids, names and contracts: the wallet reads through
+      # Every chain, one wallet origin. Only ids, names and contracts: the wallet reads through
       # wallet-api's /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId> (behind
       # the session and the policy check), so anvil and the bundlers are dialled by wallet-api only and
       # this origin proxies nothing but /api. On a real chain that is also what keeps a keyed
@@ -450,12 +538,13 @@ services:
       GIANO_CHAINS: |
         [
           { "chainId": 31337, "name": "Devnet A", "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2", "sponsorship": "service" },
-          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2", "sponsorship": "off" }
+          { "chainId": 31338, "name": "Devnet B", "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2", "sponsorship": "off" },
+          { "chainId": 31339, "name": "Devnet SD (Silent Data)", "factoryAddress": "0x9c01925D07527A7920031196396A9c37421715A2", "sponsorship": "service" }
         ]
       # Chain B is deliberately UNSPONSORED here (sponsorship "off"): the reference dApp must be
       # able to reach both the sponsored and the self-paid path (R12), and a wallet origin's
-      # sponsorship mode is per chain and not something a dApp can request. Chain A stays sponsored.
-      # The e2e stack keeps both chains sponsored; its tests depend on that.
+      # sponsorship mode is per chain and not something a dApp can request. Chains A and SD stay
+      # sponsored. The e2e stack sponsors every chain; its tests depend on that.
       # wallet-api base URL nginx proxies /api and /.well-known/webauthn to
       GIANO_WALLET_API_UPSTREAM: http://wallet-api:8080
       # A set of ONE, not a union — see the warning above. Empty fails CLOSED, which is the
@@ -492,12 +581,14 @@ services:
       BYO_WALLET_PORT: "8080"
       # wallet-api base URL /api is proxied to; Host and Origin forwarded untouched
       WALLET_API_UPSTREAM: http://wallet-api:8080
-      CHAIN_ID: "31337"
-      CHAIN_NAME: Devnet A
-      CHAIN_B_ID: "31338"
-      CHAIN_B_NAME: Devnet B
+      # Every chain of this stack, by id and name (e2e/wallet-byo/chains.mjs). The wallet reaches
+      # each one through wallet-api, so the list holds no URL.
+      CHAINS: >-
+        [{"chainId":31337,"name":"Devnet A"},
+         {"chainId":31338,"name":"Devnet B"},
+         {"chainId":31339,"name":"Devnet SD (Silent Data)"}]
       # Required: this image carries no contracts registry and no devnet artefacts, so the
-      # factory it derives addresses from has to be supplied. Same address on both chains.
+      # factory it derives addresses from has to be supplied. Same address on every chain.
       FACTORY_ADDRESS: "0x9c01925D07527A7920031196396A9c37421715A2"
       # The real sponsorship path, through /api/v1/paymaster. `service` needs no permissive
       # paymaster fixture, so PAYMASTER_ADDRESS stays unset.
@@ -538,12 +629,18 @@ services:
       # with the keyed URL in GIANO_RPC_UPSTREAM_<chainId>, which keeps the API key server-side.
       # nginx renders one proxy location per such variable at start (docker/entrypoint.sh).
       # The chains this dApp can address, with the demo ERC-20 baked into the devnet state as each
-      # chain's default token (the only contract the sponsorship rules allow-list). Chain B is
-      # served UNSPONSORED by wallet-web above, so the demo's self-paid path is reachable there.
+      # chain's default token. Chain B is served UNSPONSORED by wallet-web above, so the demo's
+      # self-paid path is reachable there.
+      #
+      # Devnet SD's rpcUrl is Silent Data's gateway, which sends its own CORS headers. Only that
+      # chain names a `privateToken`, so only that chain shows the private token section. The
+      # address is the private test token from e2e/devnet/addresses.json. Devnet A and B carry the
+      # same token, but anvil would answer its private reads without a signature.
       GIANO_CHAINS: |
         [
           { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" },
-          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" }
+          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" },
+          { "chainId": 31339, "name": "Devnet SD (Silent Data)", "rpcUrl": "http://rpc-sd.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7", "privateToken": "0x530d79ef28d4c6407B021523b9F8b2333171E3ac" }
         ]
       # ⚠ The TENANT's wallet hostname. Pointing this at the shared `wallet.giano.localhost`
       # is the one-character mistake that binds a tenant's passkeys to infrastructure,
@@ -566,7 +663,8 @@ services:
       GIANO_CHAINS: |
         [
           { "chainId": 31337, "name": "Devnet A", "rpcUrl": "http://rpc.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" },
-          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" }
+          { "chainId": 31338, "name": "Devnet B", "rpcUrl": "http://rpc-b.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7" },
+          { "chainId": 31339, "name": "Devnet SD (Silent Data)", "rpcUrl": "http://rpc-sd.giano.localhost", "defaultToken": "0xDfA831C33beC58fBB52e5309bdD773deb24CB6C7", "privateToken": "0x530d79ef28d4c6407B021523b9F8b2333171E3ac" }
         ]
       # The values that differ. Everything else is identical to custom-example above.
       GIANO_WALLET_URL: http://wallet.byo.giano.localhost
@@ -597,9 +695,11 @@ services:
         condition: service_started
       anvil-b:
         condition: service_started
+      sd-gateway:
+        condition: service_healthy
     environment:
-      # Both chains, so the header carries a picker — this stack runs two, and a console that
-      # showed one of them would misreport half the platform as absent. The descriptors are
+      # Every chain, so the header carries a picker — a console that showed only some of them
+      # would misreport part of the platform as absent. The descriptors are
       # spelled as `packages/contracts/chains.ts` spells them, the same shape wallet-api's
       # GIANO_CHAINS takes, so the two can be kept in step by eye.
       #
@@ -614,12 +714,19 @@ services:
       # rpc.giano.localhost as well, so `localhost:<port>` is the only spelling that works here.
       #
       # sponsorshipPaymaster is explicit because the devnet has no contracts-registry entry. It
-      # is the same deterministic address on both chains, and the one wallet-api sponsors
+      # is the same deterministic address on every chain, and the one wallet-api sponsors
       # through — a fixed CREATE2 salt puts it there.
+      #
+      # Devnet SD is the exception to "the node itself": its rpcUrl and walletRpcUrl are the
+      # gateway (sd-gateway:8545, and the host port 8548 it publishes), as for every other
+      # component that reaches 31339.
       GIANO_DEPLOYMENTS: >-
         [{"name":"local devnet A","chainId":31337,"rpcUrl":"http://anvil:8545",
           "walletRpcUrl":"http://localhost:8545",
           "sponsorshipPaymaster":"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96","refreshSeconds":5},
          {"name":"local devnet B","chainId":31338,"rpcUrl":"http://anvil-b:8545",
           "walletRpcUrl":"http://localhost:8546",
+          "sponsorshipPaymaster":"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96","refreshSeconds":5},
+         {"name":"local devnet SD","chainId":31339,"rpcUrl":"http://sd-gateway:8545",
+          "walletRpcUrl":"http://localhost:8548",
           "sponsorshipPaymaster":"0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96","refreshSeconds":5}]

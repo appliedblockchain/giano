@@ -16,21 +16,22 @@ Plus the service endpoints, useful when poking at the stack by hand:
 | --- | --- |
 | http://api.localhost | `wallet-api` — public + admin |
 | http://rpc.localhost | anvil devnet JSON-RPC (chain A, 31337) |
-| http://bundler.localhost | giano-bundler, both chains (`POST /31337`, `POST /31338`) |
+| http://bundler.localhost | giano-bundler, every chain (`POST /31337`, `POST /31338`, `POST /31339`) |
 | http://rpc-b.localhost | anvil devnet JSON-RPC (chain B, 31338) |
+| http://rpc-sd.localhost | Silent Data's gateway (`sd-gateway`) in front of chain SD, 31339 |
+| http://rpc-sd-node.localhost | the node behind the gateway (`anvil-sd`), for checks that must bypass the gateway |
 | http://paymaster.localhost | paymaster admin console — tenant balances, treasury, roles, health |
 
-## Two chains, by default
+## Three chains, by default
 
-The stack runs **two chains** — chain A (`31337`) and chain B (`31338`) — with the same canonical
-contracts at the same addresses on both, so multi-chain behaviour is exercised rather than
-reasoned about (MC-116–MC-118). Both anvils load the **same** baked `devnet/state.json` (the
-dumped state carries accounts, code and storage; the chain id comes from `--chain-id`), and both
-are provisioned identically for sponsorship at bring-up (`devnet/provision-sponsorship.mjs`, one
-explicit PUT per tenant per chain). One wallet-api, one wallet origin, one Postgres, two chains —
-the topology the standalone profile actually uses.
+The stack runs **three chains** — chain A (`31337`), chain B (`31338`) and chain SD (`31339`,
+"Devnet SD (Silent Data)") — with the same canonical contracts at the same addresses on each, so
+multi-chain behaviour is exercised rather than reasoned about (MC-116–MC-118). Each anvil loads
+its own baked state from the same generator, and every chain is provisioned identically for
+sponsorship at bring-up (`devnet/provision-sponsorship.mjs`, one explicit PUT per tenant per
+chain). One wallet-api, one wallet origin, one Postgres, three chains.
 
-One giano-bundler serves both chains, reading the same chain document as wallet-api. Run
+One giano-bundler serves every chain, reading the same chain document as wallet-api. Run
 `pnpm test:demo` to exercise
 the reference demo's transactions, token calls, signatures, raw user operations, authenticated
 reads and refusal paths on this stack.
@@ -49,11 +50,17 @@ so tests assert both directly. The same passkey produces the **same account addr
 chains** — the property `tests/multichain.spec.ts` exists to verify.
 
 To run the stack with a **single chain** (the on-premises profile, MC-88): comment out the
-`anvil-b` and `alto-b` services in `deploy/docker-compose.e2e.yml`, drop the second entry from
-each `GIANO_CHAINS` list (wallet-api and wallet-web), and set `SPONSOR_CHAIN_IDS=31337` on both
-the `sponsorship-provisioner` and the `tx-mapping-provisioner`. The single-chain wallet flows pass
-unmodified against the two-chain stack, so this is only needed when specifically exercising the
-single-chain shape.
+`anvil-b`, `anvil-sd` and `sd-gateway` services in `deploy/docker-compose.e2e.yml`, and remove
+the `depends_on` entries that name them: `anvil-b` and `sd-gateway` in the bundler, and
+`sd-gateway` in wallet-api and paymaster-admin. Compose refuses a dependency on a service that is
+not defined. Drop every entry but 31337 from the shared `x-giano-chains` list (wallet-api and the
+bundler), from wallet-web's `GIANO_CHAINS` and from paymaster-admin's `GIANO_DEPLOYMENTS`, and set
+`SPONSOR_CHAIN_IDS=31337` on both the `sponsorship-provisioner` and the `tx-mapping-provisioner`.
+The BYO wallet fixture runs on the host and serves 31337, 31338 and 31339 by default, so start it
+with `CHAIN_B_ID=""` (Devnet A only) or with
+`CHAINS='[{"chainId":31337,"name":"Devnet A"}]'`.
+The single-chain wallet flows pass unmodified against the three-chain stack, so this is only
+needed when specifically exercising the single-chain shape.
 
 To regenerate the baked state with the pinned anvil: `pnpm -F @appliedblockchain/giano-e2e
 devnet:generate` (chain A; also writes `devnet/addresses.json`). `devnet:generate:b` produces a
@@ -75,11 +82,22 @@ upgrade the pin). The gateway refuses `eth_getStorageAt` and every `anvil_*` met
 tests and the demo's "fund from devnet" control use on 31337 and 31338. So the gateway sits only
 in front of this third chain, and Devnet A and B stay plain anvil.
 
-The state and the gateway image are in place, but the compose files do not run chain 31339 yet.
+Both compose files run it as two services: `anvil-sd`, the node, on host port 8547
+(`rpc-sd-node.localhost`), and `sd-gateway`, the gateway, on host port 8548
+(`rpc-sd.localhost`). Every component reaches 31339 through the gateway: wallet-api, the bundler
+and the paymaster console at `sd-gateway:8545`, the wallets through wallet-api's relays, and the
+demo dApp at `rpc-sd.localhost`. The chain's entry in `GIANO_CHAINS` sets
+`bundler.stateOverride: false`, because the gateway refuses `eth_call` state overrides, as the AWS
+dev environment does for iron-kestrel. The gateway also refuses `eth_getStorageAt`, so wallet-api
+logs that it read the paymaster implementation from `Upgraded` logs. That warning is expected.
+Only the state generator, `cast` and checks that the gateway enforces privacy use the node
+directly. The sponsorship rules of both tenants on 31339 allow-list the private test token, and
+the demo dApp lists 31339 with that token as its `privateToken`, so the private token section
+shows only on this chain.
 
 Sponsorship is not the only thing provisioned at bring-up. `tx-mapping-provisioner`
 (`devnet/provision-tx-mappings.mjs`) publishes the demo ERC-20's **ERC-7730 transaction-display
-mapping** for both tenants on both chains, through the same admin API a real tenant would use, so
+mapping** for both tenants on every chain, through the same admin API a real tenant would use, so
 a token transfer reviewed in the wallet reads "Send demo tokens" with a scaled amount and a named
 recipient rather than raw calldata. Like the sponsorship rules it lives in Postgres rather than in
 the baked devnet state — a `down -v` drops it, and bringing the stack back up puts it back.
@@ -166,7 +184,7 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
 | `portless:port80` | brings up the `portless-port80` relay on its own |
 | `portless:proxy` | runs the proxy on port 80 directly; needs `sudo`, and then the relay is unnecessary |
 | `portless:down` | removes the routes and stops the proxy |
-| `test:demo` | reference dApp operations on both chains, signing, raw user operations, failure cases, adapters and ledger export on `http://demo.localhost`; `DEMO=1` adds the project and starts the demo's dev server (`tests/demo/`) |
+| `test:demo` | reference dApp operations on Devnet A and B, signing, raw user operations, failure cases, adapters and ledger export on `http://demo.localhost`; `DEMO=1` adds the project and starts the demo's dev server (`tests/demo/`) |
 | `portless:list` | shows the active routes |
 
 ## Where the names live

@@ -117,13 +117,28 @@ export const ROUTES = [
 		name: "bundler",
 		port: 4337,
 		kind: "compose",
-		what: "giano-bundler ERC-4337 bundler (both chains: /31337, /31338)",
+		what: "giano-bundler ERC-4337 bundler (every chain: /31337, /31338, /31339)",
 	},
 	{
 		name: "rpc-b",
 		port: 8546,
 		kind: "compose",
 		what: "anvil devnet JSON-RPC (chain B, 31338)",
+	},
+	// Chain SD (31339) is an anvil node behind Silent Data's gateway. Browsers and the dApps use the
+	// gateway, which enforces privacy. The node's own name exists only for checks that must bypass
+	// the gateway, for example that the gateway, not the node, refuses an unsigned private read.
+	{
+		name: "rpc-sd",
+		port: 8548,
+		kind: "compose",
+		what: "Silent Data gateway in front of chain SD (31339)",
+	},
+	{
+		name: "rpc-sd-node",
+		port: 8547,
+		kind: "compose",
+		what: "anvil devnet JSON-RPC behind the gateway (chain SD, 31339), checks only",
 	},
 ];
 
@@ -168,11 +183,20 @@ export const ORIGINS = {
 	rpc: originOf("rpc"),
 	bundler: originOf("bundler"),
 	rpcB: originOf("rpc-b"),
+	rpcSd: originOf("rpc-sd"),
 	paymasterAdmin: originOf("paymaster"),
 };
 
-/** The two chains the e2e stack runs (S10): distinct ids that cannot be confused. */
+/**
+ * The chains the e2e stack runs (S10): distinct ids that cannot be confused. `sd` is the Silent Data
+ * chain, and its `rpc` is the gateway, never the node.
+ */
 export const CHAINS = {
 	a: { chainId: 31337, name: "Devnet A", rpc: originOf("rpc") },
 	b: { chainId: 31338, name: "Devnet B", rpc: originOf("rpc-b") },
+	sd: {
+		chainId: 31339,
+		name: "Devnet SD (Silent Data)",
+		rpc: originOf("rpc-sd"),
+	},
 };

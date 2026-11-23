@@ -16,13 +16,16 @@
 // CHAIN_B_ID such as "00" or "-1" used to drop the second chain without a word. Now it stops the
 // service at start-up.
 //
-// In a devnet checkout (../devnet/addresses.json present) and with no chain variable set, the
-// list is Devnet A (the devnet's chainId, 31337) and Devnet B (31338).
+// In a devnet checkout (../devnet/addresses.json and ../origins.mjs present) and with no chain
+// variable set, the list is every local chain, from CHAINS in e2e/origins.mjs: Devnet A (31337),
+// Devnet B (31338) and Devnet SD (Silent Data) (31339). With only some of the pair's variables
+// set, the pair applies, with the devnet's ids and names for the ones left unset, as before
+// CHAINS existed.
 //
-// Every list, from either form, is checked: it is not empty, every id is a positive integer,
-// no id repeats, and no name is empty. CHAINS replaces all four variables of the pair. Setting
-// CHAINS together with any of them is refused, even CHAIN_B_ID=0, because that value would be
-// ignored without a word.
+// Every list, from either form or from e2e/origins.mjs, is checked: it is not empty, every id is
+// a positive integer, no id repeats, and no name is empty. CHAINS replaces all four variables of
+// the pair. Setting CHAINS together with any of them is refused, even CHAIN_B_ID=0, because that
+// value would be ignored without a word.
 
 /** A refusal. serve.mjs prints the message and exits non-zero before it serves anything. */
 export class ChainsConfigError extends Error {
@@ -31,8 +34,21 @@ export class ChainsConfigError extends Error {
 
 const isSet = (value) => value !== undefined && value !== "";
 
-/** The pair's variables. CHAINS replaces all four. */
+/**
+ * The pair's variables. CHAINS replaces all four. Any of them, even set to "", selects the pair
+ * over the devnet default.
+ */
 const PAIR_VARIABLES = ["CHAIN_ID", "CHAIN_NAME", "CHAIN_B_ID", "CHAIN_B_NAME"];
+
+/** Every chain the local stacks run: CHAINS in e2e/origins.mjs, an object of { chainId, name }. */
+function fromLocalChains(localChains) {
+	return Object.entries(localChains).map(([key, { chainId, name }]) => ({
+		chainId,
+		name,
+		idLabel: `e2e/origins.mjs CHAINS.${key}.chainId`,
+		nameLabel: `e2e/origins.mjs CHAINS.${key}.name`,
+	}));
+}
 
 /** The id as a number, or NaN when it is not a positive integer. Env values are strings. */
 function parseId(value) {
@@ -125,10 +141,12 @@ function fromPair(env, devnet) {
  *
  * @param {Record<string, string | undefined>} env usually process.env
  * @param {{ chainId?: number } | null} devnet ../devnet/addresses.json, or null outside a checkout
+ * @param {Record<string, { chainId: number, name: string }> | null} localChains CHAINS from
+ *   ../origins.mjs, or null outside a checkout
  * @returns {{ chainId: number, name: string }[]}
  * @throws {ChainsConfigError} when the configuration is refused
  */
-export function resolveChains(env, devnet = null) {
+export function resolveChains(env, devnet = null, localChains = null) {
 	let chains;
 	if (isSet(env.CHAINS)) {
 		const pair = PAIR_VARIABLES.filter((name) => isSet(env[name]));
@@ -143,6 +161,12 @@ export function resolveChains(env, devnet = null) {
 				"CHAINS is an empty list. It must name at least one chain.",
 			);
 		}
+	} else if (
+		devnet &&
+		localChains &&
+		PAIR_VARIABLES.every((name) => env[name] === undefined)
+	) {
+		chains = fromLocalChains(localChains);
 	} else {
 		chains = fromPair(env, devnet);
 	}
