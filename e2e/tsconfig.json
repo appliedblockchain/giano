@@ -5,5 +5,5 @@
 		"types": [],
 		"allowJs": true
 	},
-	"include": ["*.ts", "tests", "rehearsal", "dapp", "wallet-byo/src"]
+	"include": ["*.ts", "tests", "rehearsal", "smoke", "dapp", "wallet-byo/src"]
 }
