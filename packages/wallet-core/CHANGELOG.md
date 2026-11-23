@@ -1,5 +1,13 @@
 # @appliedblockchain/giano-wallet-core
 
+## 7.2.1
+
+### Patch Changes
+
+- Updated dependencies [63aedfe]
+- Updated dependencies [63aedfe]
+  - @appliedblockchain/giano-contracts@7.2.1
+
 ## 7.2.0
 
 ### Patch Changes
