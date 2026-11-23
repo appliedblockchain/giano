@@ -26,6 +26,12 @@ export default defineConfig({
 	plugins: [react()],
 	// The same GIANO_* names as the container, from .env.development / .env.local, for `pnpm dev` only (see src/config.ts).
 	envPrefix: "GIANO_",
+	// `dev:stock` and `dev:byo` run side by side from this directory: the demo E2E leg starts both.
+	// With one shared cache, one server's dependency optimization replaces the other's files during
+	// the session. The browser then loads two copies of a shared chunk, wagmi and RainbowKit get
+	// different React contexts, and the adapters card throws WagmiProviderNotFoundError.
+	// The name has no GIANO_ prefix on purpose, so it never reaches the browser bundle.
+	cacheDir: process.env.DEMO_VITE_CACHE_DIR ?? "node_modules/.vite",
 	define: { __GIANO_CONNECTOR_VERSION__: JSON.stringify(connectorVersion) },
 	server: { port: 4410 },
 	build: { sourcemap: true },
