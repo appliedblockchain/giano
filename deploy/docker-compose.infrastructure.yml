@@ -175,14 +175,14 @@ services:
       retries: 5
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # anvil / anvil-b — two chains, one baked state file.
+  # anvil / anvil-b — two of the three chains, one baked state file each.
   #
   # Instant boot: state.json carries EntryPoint v0.9, the Giano factory and implementation,
   # the GianoPaymaster with both tenants registered and funded, and the demo ERC-20 — all
   # pre-deployed by e2e/devnet/generate-state.mjs. Nothing is deployed at `up` time.
   #
   # Two separately generated states: EntryPoint v0.9 caches its chain ID in runtime code.
-  # The generator verifies identical Giano contract addresses on both chains, preserving
+  # The generator verifies identical Giano contract addresses on every chain, preserving
   # "one passkey, one address, every chain" for the demo's cross-chain panel.
   #
   # ⚠ The image is pinned by digest and the pin matters: state.json's format is tied to the
@@ -396,7 +396,7 @@ services:
         ]
 
   # ════════════════════════════════════════════════════════════════════════════════════════
-  # wallet-api — one backend, both tenants, both chains.
+  # wallet-api — one backend, both tenants, every chain.
   #
   # The only service with database access. It resolves the tenant PER REQUEST — from `Origin`
   # on ceremonies, sessions and the userop relay, and from `Host` on /.well-known/webauthn —
@@ -530,7 +530,7 @@ services:
       sponsorship-provisioner:
         condition: service_completed_successfully
     environment:
-      # Both chains, one wallet origin. Only ids, names and contracts: the wallet reads through
+      # Every chain, one wallet origin. Only ids, names and contracts: the wallet reads through
       # wallet-api's /api/v1/rpc/<chainId> and submits through /api/v1/bundler/<chainId> (behind
       # the session and the policy check), so anvil and the bundlers are dialled by wallet-api only and
       # this origin proxies nothing but /api. On a real chain that is also what keeps a keyed

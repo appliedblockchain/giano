@@ -18,7 +18,7 @@ name: giano-e2e
 
 # The backend chain document (packages/contracts/chains.ts), read by wallet-api and the bundler
 # alike, so the two cannot disagree about a chain's RPC or EntryPoint. Identical canonical
-# contracts on both chains — verified at boot, not assumed (MC-48). allowedPaymasters is per chain
+# contracts on every chain — verified at boot, not assumed (MC-48). allowedPaymasters is per chain
 # by design (MC-61): only ops sponsored by our own paymaster reach the bundler through the relay.
 x-giano-chains: &giano-chains |
   [
@@ -62,9 +62,9 @@ x-giano-chains: &giano-chains |
 # implementation slot. That warning is expected here, as on dev.
 
 services:
-  # Chain A. The stack runs TWO chains by default (MC-116–MC-118): same canonical contracts
-  # at the same addresses on both, from the same state generator run twice, so multi-chain
-  # behaviour is exercised rather than reasoned about.
+  # Chain A. The stack runs THREE chains by default (MC-116–MC-118): same canonical contracts
+  # at the same addresses on each, from the same state generator run once per chain, so
+  # multi-chain behaviour is exercised rather than reasoned about.
   anvil:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
     entrypoint:

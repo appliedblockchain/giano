@@ -61,7 +61,7 @@ http://giano.localhost {
 		<li><a href="http://paymaster.giano.localhost">paymaster.giano.localhost</a> — the paymaster console</li>
 		<li><a href="http://wallet.giano.localhost">wallet.giano.localhost</a> — the shared wallet UI host. No tenant is bound to it, so
 		<a href="http://wallet.giano.localhost/.well-known/webauthn">/.well-known/webauthn</a> must 404 here.</li>
-		<li>rpc.giano.localhost, rpc-b.giano.localhost — the two anvil chains (31337, 31338)</li>
+		<li>rpc.giano.localhost, rpc-b.giano.localhost — Devnet A and Devnet B, two anvil nodes (31337, 31338)</li>
 		<li>rpc-sd.giano.localhost — Devnet SD (31339): Silent Data's gateway in front of an anvil node. It refuses
 		private reads without a signature, <code>eth_getStorageAt</code> and every <code>anvil_*</code> method.</li>
 		</ul>

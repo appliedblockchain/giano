@@ -56,6 +56,9 @@ the `depends_on` entries that name them: `anvil-b` and `sd-gateway` in the bundl
 not defined. Drop every entry but 31337 from the shared `x-giano-chains` list (wallet-api and the
 bundler), from wallet-web's `GIANO_CHAINS` and from paymaster-admin's `GIANO_DEPLOYMENTS`, and set
 `SPONSOR_CHAIN_IDS=31337` on both the `sponsorship-provisioner` and the `tx-mapping-provisioner`.
+The BYO wallet fixture runs on the host and serves 31337, 31338 and 31339 by default, so start it
+with `CHAIN_B_ID=""` (Devnet A only) or with
+`CHAINS='[{"chainId":31337,"name":"Devnet A"}]'`.
 The single-chain wallet flows pass unmodified against the three-chain stack, so this is only
 needed when specifically exercising the single-chain shape.
 

@@ -117,7 +117,7 @@ export const ROUTES = [
 		name: "bundler",
 		port: 4337,
 		kind: "compose",
-		what: "giano-bundler ERC-4337 bundler (both chains: /31337, /31338)",
+		what: "giano-bundler ERC-4337 bundler (every chain: /31337, /31338, /31339)",
 	},
 	{
 		name: "rpc-b",

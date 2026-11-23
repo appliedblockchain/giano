@@ -1,6 +1,7 @@
 // node --test e2e/wallet-byo/chains.test.mjs
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { CHAINS as LOCAL_CHAINS } from "../origins.mjs";
 import { ChainsConfigError, resolveChains } from "./chains.mjs";
 
 /** The part of ../devnet/addresses.json that resolveChains reads. */
@@ -8,14 +9,15 @@ const DEVNET = { chainId: 31337 };
 
 /** Asserts a refusal whose message contains every one of `names`. */
 function refuses(env, devnet, ...names) {
-	assert.throws(
-		() => resolveChains(env, devnet),
-		(error) => {
-			assert.ok(error instanceof ChainsConfigError, String(error));
-			for (const name of names) assert.match(error.message, new RegExp(name));
-			return true;
-		},
-	);
+	refusesWith(() => resolveChains(env, devnet), ...names);
+}
+
+function refusesWith(resolve, ...names) {
+	assert.throws(resolve, (error) => {
+		assert.ok(error instanceof ChainsConfigError, String(error));
+		for (const name of names) assert.match(error.message, new RegExp(name));
+		return true;
+	});
 }
 
 describe("CHAINS", () => {
@@ -248,23 +250,63 @@ describe("the CHAIN_ID / CHAIN_B_ID pair", () => {
 
 describe("devnet checkout", () => {
 	it("defaults to every local chain with no chain variable", () => {
-		assert.deepEqual(resolveChains({}, DEVNET), [
+		assert.deepEqual(resolveChains({}, DEVNET, LOCAL_CHAINS), [
 			{ chainId: 31337, name: "Devnet A" },
 			{ chainId: 31338, name: "Devnet B" },
 			{ chainId: 31339, name: "Devnet SD (Silent Data)" },
 		]);
 	});
 
-	it("defaults to every local chain when CHAINS is empty", () => {
-		assert.equal(resolveChains({ CHAINS: "" }, DEVNET).length, 3);
+	it("takes the local chains from e2e/origins.mjs", () => {
+		assert.deepEqual(
+			resolveChains({}, DEVNET, LOCAL_CHAINS),
+			Object.values(LOCAL_CHAINS).map(({ chainId, name }) => ({
+				chainId,
+				name,
+			})),
+		);
 	});
 
-	it("uses the pair, not the default, when any pair variable is set", () => {
-		assert.deepEqual(resolveChains({ CHAIN_ID: "31337" }, DEVNET), [
+	it("checks the local chains like any other list", () => {
+		refusesWith(
+			() =>
+				resolveChains({}, DEVNET, {
+					a: { chainId: 31337, name: "Devnet A" },
+					b: { chainId: 31337, name: "Devnet B" },
+				}),
+			"appears twice",
+			"CHAINS\\.b\\.chainId",
+		);
+		refusesWith(
+			() => resolveChains({}, DEVNET, { a: { chainId: 0, name: "Devnet A" } }),
+			"CHAINS\\.a\\.chainId must be a positive integer",
+		);
+		refusesWith(
+			() => resolveChains({}, DEVNET, { a: { chainId: 31337, name: " " } }),
+			"CHAINS\\.a\\.name is empty",
+		);
+	});
+
+	it("uses the pair without the local chains, as outside a checkout", () => {
+		assert.deepEqual(resolveChains({}, DEVNET, null), [
 			{ chainId: 31337, name: "Devnet A" },
 			{ chainId: 31338, name: "Devnet B" },
 		]);
-		assert.deepEqual(resolveChains({ CHAIN_NAME: "A" }, DEVNET), [
+	});
+
+	it("defaults to every local chain when CHAINS is empty", () => {
+		assert.equal(resolveChains({ CHAINS: "" }, DEVNET, LOCAL_CHAINS).length, 3);
+	});
+
+	it("uses the pair, not the default, when any pair variable is set", () => {
+		assert.deepEqual(
+			resolveChains({ CHAIN_ID: "31337" }, DEVNET, LOCAL_CHAINS),
+			[
+				{ chainId: 31337, name: "Devnet A" },
+				{ chainId: 31338, name: "Devnet B" },
+			],
+		);
+		assert.deepEqual(resolveChains({ CHAIN_NAME: "A" }, DEVNET, LOCAL_CHAINS), [
 			{ chainId: 31337, name: "A" },
 			{ chainId: 31338, name: "Devnet B" },
 		]);
@@ -272,7 +314,7 @@ describe("devnet checkout", () => {
 
 	it("keeps the devnet names when only the ids are overridden, as before", () => {
 		assert.deepEqual(
-			resolveChains({ CHAIN_ID: "1", CHAIN_B_ID: "2" }, DEVNET),
+			resolveChains({ CHAIN_ID: "1", CHAIN_B_ID: "2" }, DEVNET, LOCAL_CHAINS),
 			[
 				{ chainId: 1, name: "Devnet A" },
 				{ chainId: 2, name: "Devnet B" },
@@ -281,7 +323,7 @@ describe("devnet checkout", () => {
 	});
 
 	it("drops Devnet B when CHAIN_B_ID is empty", () => {
-		assert.deepEqual(resolveChains({ CHAIN_B_ID: "" }, DEVNET), [
+		assert.deepEqual(resolveChains({ CHAIN_B_ID: "" }, DEVNET, LOCAL_CHAINS), [
 			{ chainId: 31337, name: "Devnet A" },
 		]);
 	});
