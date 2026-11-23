@@ -1,6 +1,6 @@
 # silent-data-gateway
 
-Silent Data's RPC gateway in front of the local Silent Data chain, 31339 "Devnet SD (Silent Data)". It is the published package [`@appliedblockchain/silentdatarollup-custom-rpc`](https://www.npmjs.com/package/@appliedblockchain/silentdatarollup-custom-rpc), run with no change to its code. This package holds only its pin, the `Dockerfile` and this file.
+Silent Data's RPC gateway in front of the local Silent Data chain, 31339 "Devnet SD (Silent Data)". It is the published package [`@appliedblockchain/silentdatarollup-custom-rpc`](https://www.npmjs.com/package/@appliedblockchain/silentdatarollup-custom-rpc), run with no change to its code. This package holds its pin, the `Dockerfile`, this file and `start.mjs`, the image's entry point. `start.mjs` refuses to start without `CUSTOM_RPC_PROXY_URL`, exits on SIGTERM and SIGINT, and then loads the gateway.
 
 The gateway sits between clients and an anvil node. It allows a fixed list of methods, checks the signer of private reads, and refuses everything else, including `eth_getStorageAt` and every `anvil_*`, `evm_*` and `debug_*` method. So the local chain enforces privacy the way iron-kestrel does on the AWS dev environment.
 
@@ -26,7 +26,7 @@ docker run --rm -p 8548:8545 -e CUSTOM_RPC_PROXY_URL=http://host.docker.internal
 | Variable | Image value | What it does |
 |---|---|---|
 | `CUSTOM_RPC_PORT` | `8545` | The port the gateway listens on. The package's own default is 54321. |
-| `CUSTOM_RPC_PROXY_URL` | none (the package default is `http://localhost:8545`) | The node behind the gateway. The stacks set it, for example `http://anvil-sd:8545`. |
+| `CUSTOM_RPC_PROXY_URL` | none, required | The node behind the gateway. The stacks set it, for example `http://anvil-sd:8545`. `start.mjs` refuses to start without it: the package default, `http://localhost:8545`, is the gateway's own port in this image, so every request would hang. |
 | `CUSTOM_RPC_LOGS_LIMIT_RANGE` | package default, 10,000 | The widest block range `eth_getLogs` accepts. |
 | `CUSTOM_RPC_PER_PAGE` | package default, 10 | The page size of `sd_getTransactionsByAddress`. |
 | `CUSTOM_RPC_BYPASS_METHOD_PREFIXES` | unset | Method prefixes the gateway forwards without its checks. Leave it unset, so the local chain behaves as iron-kestrel does. |

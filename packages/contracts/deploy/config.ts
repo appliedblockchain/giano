@@ -181,8 +181,11 @@ export function upgradeLabel(base: string, release: string): string {
 	return `${base}@${release}`;
 }
 
-/** Chains the deploy CLI treats as local: impersonation and installing CreateX are allowed. */
-export const LOCAL_CHAIN_IDS = [31337, 31338, 31339] as const;
+/**
+ * Chains the deploy CLI treats as local: impersonation and installing CreateX are allowed. The list
+ * lives in chains.ts, with the other local-chain facts.
+ */
+export { LOCAL_CHAIN_IDS } from "../chains";
 
 /** Chains that hold real money: the paymaster timelock is mandatory there (G9 R4). */
 export const MAINNET_CHAIN_IDS = [1, 8453] as const;

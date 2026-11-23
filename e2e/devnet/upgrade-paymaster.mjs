@@ -39,6 +39,7 @@ const PINNED_ANVIL_VERSION = "1.7.1";
 const version = await rpc("web3_clientVersion");
 if (!version.includes("anvil") || !version.includes(PINNED_ANVIL_VERSION))
 	throw new Error(`requires the pinned local Anvil ${PINNED_ANVIL_VERSION}`);
+// A copy of LOCAL_CHAIN_IDS (packages/contracts/chains.ts): this script does not depend on that package.
 if (![31337, 31338, 31339].includes(CHAIN_ID))
 	throw new Error(`CHAIN_ID ${CHAIN_ID} is not a local devnet chain`);
 if (Number(BigInt(await rpc("eth_chainId"))) !== CHAIN_ID)

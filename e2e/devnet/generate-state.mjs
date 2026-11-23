@@ -267,7 +267,8 @@ run("pnpm", [
 // The whole multi-chain design rests on the factory (and everything downstream) sitting at
 // identical addresses on every chain (MC-16, MC-19). Every chain's state comes from this one
 // generator, and a divergent state is REFUSED rather than committed: the check runs before the
-// state file is written.
+// state file is written. A field that addresses.json lacks is refused too: the file is older than
+// this generator, so chain 31337 must be generated again first.
 if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, "addresses.json"))) {
 	const canonical = JSON.parse(
 		fs.readFileSync(path.join(dir, "addresses.json"), "utf8"),
@@ -281,10 +282,13 @@ if (CHAIN_ID !== 31337 && fs.existsSync(path.join(dir, "addresses.json"))) {
 		["privateTestErc20", deployed.privateTestErc20],
 	];
 	for (const [field, address] of pairs) {
-		if (
-			canonical[field] &&
-			canonical[field].toLowerCase() !== String(address).toLowerCase()
-		) {
+		if (!canonical[field]) {
+			throw new Error(
+				`addresses.json has no ${field}, so chain ${CHAIN_ID}'s ${field} at ${address} cannot be checked against chain 31337 — ` +
+					"generate chain 31337 first (devnet:generate), then this chain",
+			);
+		}
+		if (canonical[field].toLowerCase() !== String(address).toLowerCase()) {
 			throw new Error(
 				`chain ${CHAIN_ID} deployed ${field} at ${address}, but chain 31337's state has ${canonical[field]} — ` +
 					"every local chain MUST carry identical addresses (MC-116); refusing to write a divergent state",

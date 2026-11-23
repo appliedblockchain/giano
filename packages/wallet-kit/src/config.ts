@@ -1,4 +1,7 @@
-import { gianoAddresses } from "@appliedblockchain/giano-contracts";
+import {
+	defaultChainName,
+	gianoAddresses,
+} from "@appliedblockchain/giano-contracts";
 import {
 	type PasskeyDevicePreference,
 	resolvePasskeyDevicePreference,
@@ -86,17 +89,6 @@ export type ResolveWalletConfigOptions = {
 	production?: boolean;
 	/** Default rpId when the raw config names none; defaults to the current hostname. */
 	defaultRpId?: string;
-};
-
-const KNOWN_CHAIN_NAMES: Record<number, string> = {
-	1: "Ethereum",
-	10: "OP Mainnet",
-	8453: "Base",
-	84532: "Base Sepolia",
-	11155111: "Sepolia",
-	31337: "Local devnet A",
-	31338: "Local devnet B",
-	31339: "Local devnet SD",
 };
 
 /**
@@ -191,10 +183,8 @@ function resolveChain(
 
 	return {
 		chainId: entry.chainId,
-		name:
-			entry.name ||
-			KNOWN_CHAIN_NAMES[entry.chainId] ||
-			`chain ${entry.chainId}`,
+		// A configuration with no name takes giano-contracts' known name, else "chain <id>".
+		name: entry.name || defaultChainName(entry.chainId),
 		rpcUrl: entry.rpcUrl || `${walletApiUrl}/v1/rpc/${entry.chainId}`,
 		bundlerUrl:
 			entry.bundlerUrl || `${walletApiUrl}/v1/bundler/${entry.chainId}`,

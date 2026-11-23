@@ -41,11 +41,13 @@ import {
 	isAddress,
 	JsonRpcProvider,
 	Network,
+	NonceManager,
 	parseEther,
 	toUtf8String,
 	Wallet,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
+import { LOCAL_CHAIN_IDS } from "../chains";
 import {
 	mainnetRoleProblems,
 	provisioningIsMainnet,
@@ -54,7 +56,10 @@ import {
 import { signatureHeaders } from "../deploy/signed-rpc";
 import { gianoPaymasterAbi, iEntryPointAbi } from "../generated";
 
-/** Anvil's first account. Deterministic, funded, and never used anywhere real. */
+/**
+ * Anvil's first account. Deterministic, funded on every local chain (LOCAL_CHAIN_IDS), and never
+ * used anywhere real.
+ */
 const ANVIL_KEY =
 	"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
@@ -139,10 +144,10 @@ function signedProvider(
 }
 
 /**
- * ethers caches the result of an identical request for 250 ms by default. This script sends one
- * transaction after another from the same key, and on a fast node two grants can finish inside
- * that window: the second then reads the nonce the first already used ("nonce has already been
- * used"). So every request goes to the node.
+ * ethers caches the result of an identical request for 250 ms by default. This script reads a
+ * role or a balance, changes it, and reads it again, and on a fast node the second read can fall
+ * inside that window and return the old value. So every request goes to the node. The nonces do
+ * not depend on this: NonceManager counts them (see main).
  */
 const NO_REQUEST_CACHE = -1;
 
@@ -223,9 +228,11 @@ async function main(): Promise<void> {
 	const key =
 		flags["private-key"] ||
 		process.env.DEPLOYER_PRIVATE_KEY ||
-		(chainId === 31337 ? ANVIL_KEY : undefined);
+		((LOCAL_CHAIN_IDS as readonly number[]).includes(chainId)
+			? ANVIL_KEY
+			: undefined);
 	// Checked after the chain id read, the only request sent so far. The signature covers the chain
-	// id, so that read goes unsigned in deploy:cli too. On 31337 the anvil key signs.
+	// id, so that read goes unsigned in deploy:cli too. On a local chain the anvil key signs.
 	if (!key)
 		throw new Error(
 			flags["signed-rpc"]
@@ -234,11 +241,15 @@ async function main(): Promise<void> {
 		);
 	if (flags["signed-rpc"]) provider = signedProvider(rpcUrl, chainId, key);
 	const wallet = new Wallet(key, provider);
+	// Reads the pending nonce once, then counts each transaction it sends. A load-balanced RPC can
+	// answer the next nonce read from a node that has not yet seen the last receipt, and that read
+	// would return a nonce already used. Every transaction this script sends goes through `signer`.
+	const signer = new NonceManager(wallet);
 
 	const paymaster = new Contract(
 		getAddress(paymasterAddress),
 		gianoPaymasterAbi,
-		wallet,
+		signer,
 	);
 	const entryPointAddress: string = await paymaster.entryPoint();
 	const entryPoint = new Contract(entryPointAddress, iEntryPointAbi, provider);
@@ -452,6 +463,9 @@ async function main(): Promise<void> {
 			log(
 				"    Rerun with the same arguments to resume: completed steps are skipped.",
 			);
+			// NonceManager counts a transaction before sending it. One that failed before it was sent,
+			// for example on gas estimation, leaves the count one ahead, so read it again from the node.
+			signer.reset();
 			await releaseRunRoles().catch((releaseError: unknown) =>
 				console.error(
 					`  ✗ could not give up the run's roles either (${(releaseError as Error).message}). This key may still hold ${RUN_ROLES.map((f) => ROLE_FLAGS[f]).join(", ")}: a rerun gives them up.`,
