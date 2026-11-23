@@ -6,17 +6,23 @@
 //   CHAINS                        a JSON array of { chainId, name }, e.g.
 //                                 [{"chainId":84532,"name":"Base Sepolia"}]
 //   CHAIN_ID, CHAIN_NAME,         the older pair, kept because infra/iac still sets it. It
-//   CHAIN_B_ID, CHAIN_B_NAME      builds the list exactly as serve.mjs did before CHAINS existed:
+//   CHAIN_B_ID, CHAIN_B_NAME      keeps the defaults serve.mjs had before CHAINS existed:
 //                                 CHAIN_ID is required; the second chain falls away when
 //                                 CHAIN_B_ID is unset, empty or 0; a missing name is
-//                                 "chain <id>".
+//                                 "chain <id>". Spaces and newlines around an id are ignored.
+//
+// The pair's ids are checked more strictly than before. serve.mjs passed them to Number(), so it
+// took any value Number() reads, such as hex. An id must now be a decimal positive integer. A
+// CHAIN_B_ID such as "00" or "-1" used to drop the second chain without a word. Now it stops the
+// service at start-up.
 //
 // In a devnet checkout (../devnet/addresses.json present) and with no chain variable set, the
 // list is Devnet A (the devnet's chainId, 31337) and Devnet B (31338).
 //
 // Every list, from either form, is checked: it is not empty, every id is a positive integer,
-// no id repeats, and no name is empty. Setting CHAINS together with CHAIN_ID or CHAIN_B_ID is
-// refused, because one of the two would be ignored without a word.
+// no id repeats, and no name is empty. CHAINS replaces all four variables of the pair. Setting
+// CHAINS together with any of them is refused, even CHAIN_B_ID=0, because that value would be
+// ignored without a word.
 
 /** A refusal. serve.mjs prints the message and exits non-zero before it serves anything. */
 export class ChainsConfigError extends Error {
@@ -24,6 +30,9 @@ export class ChainsConfigError extends Error {
 }
 
 const isSet = (value) => value !== undefined && value !== "";
+
+/** The pair's variables. CHAINS replaces all four. */
+const PAIR_VARIABLES = ["CHAIN_ID", "CHAIN_NAME", "CHAIN_B_ID", "CHAIN_B_NAME"];
 
 /** The id as a number, or NaN when it is not a positive integer. Env values are strings. */
 function parseId(value) {
@@ -76,8 +85,11 @@ function fromChainsVariable(raw) {
 	});
 }
 
+/** An env value without the spaces or newline around it, which an env file or a secret can add. */
+const trimmed = (value) => (typeof value === "string" ? value.trim() : value);
+
 function fromPair(env, devnet) {
-	const rawId = env.CHAIN_ID ?? devnet?.chainId;
+	const rawId = trimmed(env.CHAIN_ID) ?? devnet?.chainId;
 	if (rawId === undefined || rawId === null || rawId === "") {
 		throw new ChainsConfigError(
 			"CHAIN_ID is required — the chain this wallet origin serves, e.g. 84532 " +
@@ -85,7 +97,7 @@ function fromPair(env, devnet) {
 				"       (it defaults only in an e2e checkout, from ../devnet/addresses.json)",
 		);
 	}
-	const rawBId = env.CHAIN_B_ID ?? (devnet ? "31338" : "");
+	const rawBId = trimmed(env.CHAIN_B_ID) ?? (devnet ? "31338" : "");
 	const chains = [
 		{
 			chainId: parseId(rawId),
@@ -119,10 +131,10 @@ function fromPair(env, devnet) {
 export function resolveChains(env, devnet = null) {
 	let chains;
 	if (isSet(env.CHAINS)) {
-		const pair = ["CHAIN_ID", "CHAIN_B_ID"].filter((name) => isSet(env[name]));
+		const pair = PAIR_VARIABLES.filter((name) => isSet(env[name]));
 		if (pair.length > 0) {
 			throw new ChainsConfigError(
-				`CHAINS and ${pair.join(" and ")} are both set. Set CHAINS alone, or unset it and use CHAIN_ID / CHAIN_B_ID.`,
+				`CHAINS is set together with ${pair.join(", ")}. CHAINS replaces ${PAIR_VARIABLES.join(", ")}. Unset them, or unset CHAINS.`,
 			);
 		}
 		chains = fromChainsVariable(env.CHAINS);

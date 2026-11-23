@@ -16,8 +16,8 @@
 // Chains (chains.mjs): set CHAINS, a JSON array of { chainId, name }, e.g.
 // [{"chainId":84532,"name":"Base Sepolia"}]. Without it, the older pair applies: CHAIN_ID
 // (required outside a devnet checkout), CHAIN_NAME, and an optional second chain CHAIN_B_ID /
-// CHAIN_B_NAME. A missing name is "chain <id>". Setting CHAINS together with CHAIN_ID or
-// CHAIN_B_ID is refused at start-up, as are an empty list, an id that is not a positive
+// CHAIN_B_NAME. A missing name is "chain <id>". Setting CHAINS together with any of these four
+// variables is refused at start-up, as are an empty list, an id that is not a positive
 // integer, a repeated id and an empty name. In a devnet checkout with no chain variable, the
 // list is Devnet A (31337) and Devnet B (31338).
 //

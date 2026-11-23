@@ -616,9 +616,11 @@ services:
   #
   # Chains: the fixture takes CHAINS, a JSON array of { chainId, name }, and serves every chain
   # in it. Without CHAINS it falls back to the CHAIN_ID / CHAIN_NAME / CHAIN_B_ID / CHAIN_B_NAME
-  # pair, which is what this file and infra/iac still set. Setting CHAINS together with CHAIN_ID
-  # or CHAIN_B_ID makes serve.mjs refuse to start, so a move to CHAINS removes the pair in the
-  # same change.
+  # pair. This file sets only CHAIN_ID, and infra/iac sets CHAIN_ID and CHAIN_B_ID. Neither sets
+  # a name, so the consent screens show "chain <id>", such as "chain 84532". The byoui follow-up
+  # of the local-silent-data-chain OpenSpec change moves infra/iac to CHAINS, with a name for
+  # each chain. Setting CHAINS together with any of the pair's four variables makes serve.mjs
+  # refuse to start, so a move to CHAINS removes the pair in the same change.
   #
   # R11 IS CLOSED, and not by a flag. The /bundler proxy is gone from serve.mjs altogether,
   # along with `BYO_BUNDLER_PROXY_ENABLED` and `BUNDLER_UPSTREAM`. What replaced it is the

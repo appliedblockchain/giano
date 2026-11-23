@@ -128,6 +128,25 @@ describe("CHAINS", () => {
 			"CHAIN_B_ID",
 		);
 	});
+
+	it("refuses CHAINS set together with a leftover name", () => {
+		for (const name of ["CHAIN_NAME", "CHAIN_B_NAME"]) {
+			refuses(
+				{ CHAINS: '[{"chainId":1,"name":"a"}]', [name]: "Base Sepolia" },
+				null,
+				"CHAINS is set together with",
+				name,
+			);
+		}
+	});
+
+	it("refuses CHAINS set together with CHAIN_B_ID=0, which CHAINS would ignore", () => {
+		refuses(
+			{ CHAINS: '[{"chainId":1,"name":"a"}]', CHAIN_B_ID: "0" },
+			null,
+			"CHAINS is set together with CHAIN_B_ID",
+		);
+	});
 });
 
 describe("the CHAIN_ID / CHAIN_B_ID pair", () => {
@@ -160,11 +179,21 @@ describe("the CHAIN_ID / CHAIN_B_ID pair", () => {
 	});
 
 	it("serves one chain when CHAIN_B_ID is unset, empty or 0", () => {
-		for (const CHAIN_B_ID of [undefined, "", "0"]) {
+		for (const CHAIN_B_ID of [undefined, "", "0", " ", "0\n"]) {
 			assert.deepEqual(resolveChains({ CHAIN_ID: "84532", CHAIN_B_ID }, null), [
 				{ chainId: 84532, name: "chain 84532" },
 			]);
 		}
+	});
+
+	it("ignores spaces and a newline around an id (an env file or a secret)", () => {
+		assert.deepEqual(
+			resolveChains({ CHAIN_ID: " 84532\n", CHAIN_B_ID: "11155111 " }, null),
+			[
+				{ chainId: 84532, name: "chain 84532" },
+				{ chainId: 11155111, name: "chain 11155111" },
+			],
+		);
 	});
 
 	it("requires CHAIN_ID outside a devnet checkout, and names CHAINS as the other form", () => {
@@ -182,6 +211,20 @@ describe("the CHAIN_ID / CHAIN_B_ID pair", () => {
 			"CHAIN_B_ID",
 			"positive integer",
 		);
+	});
+
+	it("refuses ids that serve.mjs used to pass to Number() without a word", () => {
+		// Hex: Number() read it as 84532.
+		refuses({ CHAIN_ID: "0x14a34" }, null, "CHAIN_ID", "positive integer");
+		// These used to drop the second chain. Now they stop the service.
+		for (const CHAIN_B_ID of ["00", "-1"]) {
+			refuses(
+				{ CHAIN_ID: "84532", CHAIN_B_ID },
+				null,
+				"CHAIN_B_ID",
+				"positive integer",
+			);
+		}
 	});
 
 	it("refuses the same id twice", () => {
