@@ -1,8 +1,10 @@
 -- dev cut-over to release v3: clear user data (decision D1, finding F8).
 --
--- Step 7 of the "Cut-over runbook" in TESTNET-ROLLOUT.md. Run it ONCE, with wallet-api scaled to 0
--- (runbook step 6), on the schema dev runs before the roll: every table below exists from release
--- 5ba71241 on. Run it with dev-db-run.sh, which executes it in a one-off wallet-api task.
+-- Step 8 of the "Cut-over runbook" in TESTNET-ROLLOUT.md. Run it ONCE, with wallet-api scaled to 0
+-- (runbook step 6) and after the deploy PR is merged (step 7), so the one-off task starts from the new
+-- task definition: the old image can have expired from ECR (tracker F19). The task's init container
+-- applies the migrations first; every table below exists from release 5ba71241 on. Run it with
+-- dev-db-run.sh, which executes it in a one-off wallet-api task.
 --
 -- Why: wallet-api stores each passkey's wallet address once, at registration
 -- (credentials.wallet_address), and never recomputes it. After the switch those addresses are
