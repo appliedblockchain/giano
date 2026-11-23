@@ -188,6 +188,17 @@ export const ORIGINS = {
 };
 
 /**
+ * The dApps each tenant allows to connect: its fixture dApp and its reference demo. wallet-api's
+ * TENANT_FIXTURES in deploy/docker-compose.e2e.yml carries the same lists, as allowedDappOrigins and
+ * corsOrigins, and tenant-fixtures.test.mjs keeps the two in step. The BYO wallet fixture takes
+ * byo's list from here.
+ */
+export const DAPP_ORIGINS = {
+	stock: [ORIGINS.dapp, ORIGINS.demo],
+	byo: [ORIGINS.dappByo, ORIGINS.demoByo],
+};
+
+/**
  * The chains the e2e stack runs (S10): distinct ids that cannot be confused. `sd` is the Silent Data
  * chain, and its `rpc` is the gateway, never the node.
  */

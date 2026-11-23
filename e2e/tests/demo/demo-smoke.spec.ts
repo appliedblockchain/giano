@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { CHAINS, ORIGINS } from "../../origins.mjs";
 import {
 	addVirtualAuthenticator,
+	connectDemoOnChain,
 	openActionPopup,
 	openWalletPopup,
 	TENANTS,
@@ -22,6 +23,8 @@ const tenant = TENANTS.stock;
 test("preflight, connect, sponsored send, identity across chains", async ({
 	page,
 }) => {
+	// Three popup connects and a sponsored send. operations.spec.ts gives similar flows 360 s.
+	test.setTimeout(360_000);
 	await page.goto(ORIGINS.demo);
 
 	// The landing tab is up; the preflight verdict is under the header on every tab.
@@ -69,15 +72,7 @@ test("preflight, connect, sponsored send, identity across chains", async ({
 	).toContainText("eth_sendTransaction");
 
 	// Connect on chain B: a second provider, its own handshake — and the SAME address (R11).
-	await page.getByTestId("tab-setup").click();
-	await page.getByTestId("chain-selector").getByText(CHAINS.b.name).click();
-	const connectB = await openActionPopup(
-		page,
-		"[data-testid=connect-chain]",
-		credentials,
-	);
-	await expect(connectB.getByTestId("consent-chain")).toHaveText(CHAINS.b.name);
-	await connectB.getByRole("button", { name: tenant.ui.connect }).click();
+	await connectDemoOnChain(page, tenant, CHAINS.b, credentials);
 	await page.getByTestId("tab-wallet").click();
 	await expect(page.getByTestId("identity-held")).toBeVisible({
 		timeout: 20_000,
@@ -85,17 +80,7 @@ test("preflight, connect, sponsored send, identity across chains", async ({
 	await expect(page.locator("[data-testid=violation]")).toHaveCount(0);
 
 	// Connect on Devnet SD: the gateway's chain grants the SAME address too (R11).
-	await page.getByTestId("tab-setup").click();
-	await page.getByTestId("chain-selector").getByText(CHAINS.sd.name).click();
-	const connectSd = await openActionPopup(
-		page,
-		"[data-testid=connect-chain]",
-		credentials,
-	);
-	await expect(connectSd.getByTestId("consent-chain")).toHaveText(
-		CHAINS.sd.name,
-	);
-	await connectSd.getByRole("button", { name: tenant.ui.connect }).click();
+	await connectDemoOnChain(page, tenant, CHAINS.sd, credentials);
 	await page.getByTestId("tab-wallet").click();
 	await expect(page.getByTestId(`identity-${CHAINS.sd.chainId}`)).toContainText(
 		"identical",

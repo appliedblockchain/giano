@@ -216,6 +216,7 @@ jobs:
           docker compose -f deploy/docker-compose.e2e.yml logs sponsorship-provisioner --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs tx-mapping-provisioner --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs sd-gateway --tail 100
+          docker compose -f deploy/docker-compose.e2e.yml logs anvil-sd --tail 100
           docker compose -f deploy/docker-compose.e2e.yml logs --tail 200
       # A sponsorship failure is usually an accounting failure, and the numbers are the diagnosis.
       # Collecting them here means a CI failure is explicable without reproducing it locally.
@@ -224,11 +225,14 @@ jobs:
         run: |
           echo '--- accounting metrics ---'
           curl -fsS http://api.localhost/metrics | grep -E '^giano_(sponsorship|paymaster|tenant)' || true
-          for key in e2e-admin-key-stock e2e-admin-key-byo00; do
-            echo "--- $key balance ---"
-            curl -fsS -H "Authorization: Bearer $key" http://api.localhost/v1/admin/sponsorship/balance || true
-            echo "--- $key recent decisions ---"
-            curl -fsS -H "Authorization: Bearer $key" 'http://api.localhost/v1/admin/sponsorship/decisions?limit=20' || true
+          # Every read names its chain: with more than one chain served, wallet-api refuses to guess.
+          for chain in 31337 31338 31339; do
+            for key in e2e-admin-key-stock e2e-admin-key-byo00; do
+              echo "--- $key balance on $chain ---"
+              curl -fsS -H "Authorization: Bearer $key" "http://api.localhost/v1/admin/sponsorship/balance?chainId=$chain" || true
+              echo "--- $key recent decisions on $chain ---"
+              curl -fsS -H "Authorization: Bearer $key" "http://api.localhost/v1/admin/sponsorship/decisions?limit=20&chainId=$chain" || true
+            done
           done
 
   # The single check that branch rules and reviewers look at, under the name the job had before it

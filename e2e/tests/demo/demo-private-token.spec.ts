@@ -1,17 +1,16 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
 import { type Address, encodeFunctionData, erc20Abi, toHex } from "viem";
 import { CHAINS, loopbackOf, ORIGINS } from "../../origins.mjs";
 import {
-	addVirtualAuthenticator,
+	connectDemo,
+	connectDemoOnChain,
+	getPosition,
+	getSpend,
 	openActionPopup,
-	openWalletPopup,
 	TENANTS,
-	type Tenant,
-	trackResidentCredentials,
-	type VirtualCredential,
 } from "../helpers";
 
 /**
@@ -42,7 +41,6 @@ const SYMBOL = "GTPT";
 
 const GATEWAY = ORIGINS.rpcSd;
 const NODE = loopbackOf("rpc-sd-node");
-const BACKEND = process.env.WALLET_API_URL ?? ORIGINS.api;
 
 /** `UCEFUnauthorizedBalanceAccess(address,address)`: the private token refuses a balance read. */
 const BALANCE_REFUSAL = "0xdb11736b";
@@ -107,11 +105,13 @@ test("Devnet SD: the gateway refuses what the node answers", async () => {
 		},
 		"latest",
 	];
+	// A call to an address with no code returns "0x" and no error, so check the result is a balance.
 	const atNode = await rpc(NODE, "eth_call", read);
+	expect(atNode.error, "the node refused the read").toBeUndefined();
 	expect(
-		atNode.error,
-		`the node refused the read: is the private test ERC-20 missing at ${PRIVATE_ERC20} on chain 31339?`,
-	).toBeUndefined();
+		atNode.result,
+		`the node returned no balance: is the private test ERC-20 missing at ${PRIVATE_ERC20} on chain 31339?`,
+	).toMatch(/^0x[0-9a-fA-F]{64}$/);
 	const atGateway = await rpc(GATEWAY, "eth_call", read);
 	expect(
 		atGateway.error,
@@ -135,26 +135,6 @@ test("Devnet SD: the gateway refuses what the node answers", async () => {
 
 // ── the flow ──────────────────────────────────────────────────────────────────
 
-type Position = { balanceWei: string };
-type Spend = {
-	settlements: Array<{
-		useropHash: string;
-		totalWei: string;
-		success: boolean;
-	}>;
-};
-
-async function admin<T>(tenant: Tenant, route: string): Promise<T> {
-	const response = await fetch(
-		`${BACKEND}/v1/admin/sponsorship/${route}?chainId=${CHAINS.sd.chainId}`,
-		{ headers: { authorization: `Bearer ${tenant.adminKey}` } },
-	);
-	expect(response.ok, `${route} for ${tenant.slug}: ${response.status}`).toBe(
-		true,
-	);
-	return (await response.json()) as T;
-}
-
 const USER_OPERATION = /user operation\s*(0x[0-9a-fA-F]{64})/;
 
 /**
@@ -162,39 +142,14 @@ const USER_OPERATION = /user operation\s*(0x[0-9a-fA-F]{64})/;
  * outcomes, so read the hash as soon as the row is confirmed.
  */
 async function userOpHashOf(row: Locator): Promise<string> {
-	await row.click();
+	// Click the row's trigger, not the row: the centre of an open row is in its details.
+	const trigger = row.locator(":scope > button");
+	await trigger.click();
 	await expect(row).toContainText(USER_OPERATION);
 	const hash = ((await row.textContent()) ?? "").match(USER_OPERATION)?.[1];
-	await row.click();
+	await trigger.click();
 	if (!hash) throw new Error("no user operation hash in the row");
 	return hash;
-}
-
-/** Connects on Devnet A through the header, then on Devnet SD with the same passkey. */
-async function connectOnSd(
-	page: Page,
-	tenant: Tenant,
-	demo: string,
-): Promise<VirtualCredential[]> {
-	await page.goto(demo);
-	const popup = await openWalletPopup(page, "[data-testid=connect]");
-	const { cdp } = await addVirtualAuthenticator(popup);
-	const credentials = trackResidentCredentials(cdp);
-	await popup.getByRole("button", { name: tenant.ui.connect }).click();
-	await expect(page.getByTestId("account")).toBeVisible({ timeout: 20_000 });
-
-	await page.getByTestId("tab-setup").click();
-	await page.getByTestId("chain-selector").getByText(CHAINS.sd.name).click();
-	const connectSd = await openActionPopup(
-		page,
-		"[data-testid=connect-chain]",
-		credentials,
-	);
-	await expect(connectSd.getByTestId("consent-chain")).toContainText(
-		CHAINS.sd.name,
-	);
-	await connectSd.getByRole("button", { name: tenant.ui.connect }).click();
-	return credentials;
 }
 
 const FLOWS = [
@@ -207,7 +162,9 @@ for (const { tenant, demo } of FLOWS) {
 		page,
 	}) => {
 		test.setTimeout(300_000);
-		const credentials = await connectOnSd(page, tenant, demo);
+		// Connect on Devnet A through the header, then on Devnet SD with the same passkey.
+		const credentials = await connectDemo(page, tenant, demo);
+		await connectDemoOnChain(page, tenant, CHAINS.sd, credentials);
 		await page.getByTestId("tab-tokens").click();
 		const section = page.locator("#private-token");
 		const balance = section
@@ -223,9 +180,10 @@ for (const { tenant, demo } of FLOWS) {
 			timeout: 20_000,
 		});
 		await expect(section.getByTestId("private-read")).toBeDisabled();
-		const before = await admin<Position>(tenant, "balance");
+		const before = await getPosition(tenant, CHAINS.sd.chainId);
 
 		// Mint 100: sponsored, confirmed from its receipt. The user operation deploys the wallet.
+		await section.getByLabel(`Amount (${SYMBOL})`).fill("100");
 		const mintPopup = await openActionPopup(
 			page,
 			"[data-testid=private-mint]",
@@ -287,35 +245,39 @@ for (const { tenant, demo } of FLOWS) {
 			outcomeOf("Your latest transfer's bundle transaction, unsigned"),
 		).toContainText("hidden");
 
-		// Both user operations settle on 31339, and the tenant pays for exactly those two.
-		let spend: Spend = { settlements: [] };
-		await expect
-			.poll(
-				async () => {
-					spend = await admin<Spend>(tenant, "spend");
-					return hashes.filter((hash) =>
-						spend.settlements.some(
-							(row) => row.useropHash.toLowerCase() === hash.toLowerCase(),
-						),
-					).length;
-				},
-				{
-					timeout: 30_000,
-					message: `wallet-api never settled ${hashes.join(", ")} on 31339`,
-				},
-			)
-			.toBe(hashes.length);
-		let total = 0n;
-		for (const hash of hashes) {
-			const row = spend.settlements.find(
+		// Both user operations settle on 31339. The tenant's balance then falls by exactly the
+		// settlements in the blocks between the two balance reads. Another user operation of this
+		// tenant can land in that range, such as one that a timed-out first attempt left with the
+		// bundler. It counts on both sides, so the check still holds.
+		await expect(async () => {
+			const after = await getPosition(tenant, CHAINS.sd.chainId);
+			const { settlements } = await getSpend(tenant, CHAINS.sd.chainId);
+			for (const hash of hashes) {
+				const row = settlements.find(
+					(settlement) =>
+						settlement.useropHash.toLowerCase() === hash.toLowerCase(),
+				);
+				expect(
+					row,
+					`wallet-api has not settled ${hash} on 31339`,
+				).toBeDefined();
+				expect(row?.success, `the settlement of ${hash}`).toBe(true);
+				expect(BigInt(row?.totalWei ?? 0)).toBeGreaterThan(0n);
+			}
+			const between = settlements.filter(
 				(settlement) =>
-					settlement.useropHash.toLowerCase() === hash.toLowerCase(),
+					BigInt(settlement.blockNumber) > BigInt(before.blockNumber) &&
+					BigInt(settlement.blockNumber) <= BigInt(after.blockNumber),
 			);
-			expect(row?.success, `the settlement of ${hash}`).toBe(true);
-			expect(BigInt(row?.totalWei ?? 0)).toBeGreaterThan(0n);
-			total += BigInt(row?.totalWei ?? 0);
-		}
-		const after = await admin<Position>(tenant, "balance");
-		expect(BigInt(after.balanceWei)).toBe(BigInt(before.balanceWei) - total);
+			expect(
+				BigInt(before.balanceWei) - BigInt(after.balanceWei),
+				`the debit between blocks ${before.blockNumber} and ${after.blockNumber}, against its ${between.length} settlements`,
+			).toBe(
+				between.reduce(
+					(sum, settlement) => sum + BigInt(settlement.totalWei),
+					0n,
+				),
+			);
+		}).toPass({ timeout: 30_000 });
 	});
 }

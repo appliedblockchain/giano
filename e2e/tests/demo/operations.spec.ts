@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { CHAINS, ORIGINS } from "../../origins.mjs";
 import {
-	addVirtualAuthenticator,
+	connectDemo,
+	connectDemoOnChain,
 	openActionPopup,
 	openWalletPopup,
 	TENANTS,
-	trackResidentCredentials,
 	type VirtualCredential,
 } from "../helpers";
 
@@ -13,16 +13,6 @@ test.use({ actionTimeout: 15_000 });
 const tenant = TENANTS.stock;
 const latest = (page: Page, section: string) =>
 	page.locator(`#${section} [data-testid=outcome-row]`).first();
-
-async function connect(page: Page): Promise<VirtualCredential[]> {
-	await page.goto(ORIGINS.demo);
-	const popup = await openWalletPopup(page, "[data-testid=connect]");
-	const { cdp } = await addVirtualAuthenticator(popup);
-	const credentials = trackResidentCredentials(cdp);
-	await popup.getByRole("button", { name: tenant.ui.connect }).click();
-	await expect(page.getByTestId("account")).toBeVisible({ timeout: 20_000 });
-	return credentials;
-}
 
 async function approve(
 	page: Page,
@@ -40,16 +30,9 @@ for (const chain of [CHAINS.a, CHAINS.b]) {
 		page,
 	}) => {
 		test.setTimeout(360_000);
-		const credentials = await connect(page);
+		const credentials = await connectDemo(page, tenant, ORIGINS.demo);
 		if (chain.chainId === CHAINS.b.chainId) {
-			await page.getByTestId("tab-setup").click();
-			await page.getByTestId("chain-selector").getByText(chain.name).click();
-			await approve(
-				page,
-				"[data-testid=connect-chain]",
-				credentials,
-				tenant.ui.connect,
-			);
+			await connectDemoOnChain(page, tenant, chain, credentials);
 			await page.getByTestId("tab-wallet").click();
 			await expect(page.getByTestId("identity-held")).toBeVisible({
 				timeout: 20_000,
@@ -250,7 +233,7 @@ for (const chain of [CHAINS.a, CHAINS.b]) {
 
 test("chain controls, failure lab, revoke and reconnect", async ({ page }) => {
 	test.setTimeout(240_000);
-	const credentials = await connect(page);
+	const credentials = await connectDemo(page, tenant, ORIGINS.demo);
 	await page.getByTestId("tab-setup").click();
 	await page
 		.getByRole("button", { name: "Developer controls", exact: true })
@@ -343,7 +326,7 @@ test("wagmi and RainbowKit adapters connect, send, refuse chain switching and di
 	page,
 }) => {
 	test.setTimeout(180_000);
-	const credentials = await connect(page);
+	const credentials = await connectDemo(page, tenant, ORIGINS.demo);
 	await page.getByTestId("tab-advanced").click();
 	await approve(
 		page,

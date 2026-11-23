@@ -1,4 +1,4 @@
-import type { CDPSession, Page } from "@playwright/test";
+import { type CDPSession, expect, type Page } from "@playwright/test";
 import {
 	type Address,
 	createPublicClient,
@@ -282,3 +282,104 @@ export async function openManagePopup(
 	await seedCredentials(cdp, authenticatorId, credentials);
 	return popup;
 }
+
+// ── the reference demo (services/custom-example) ─────────────────────────────
+
+/**
+ * Connects a new wallet on the reference demo through its header, on the demo's first chain.
+ * Returns the passkey, so later popups can sign with it.
+ */
+export async function connectDemo(
+	page: Page,
+	tenant: Tenant,
+	demo: string,
+): Promise<VirtualCredential[]> {
+	await page.goto(demo);
+	const popup = await openWalletPopup(page, "[data-testid=connect]");
+	const { cdp } = await addVirtualAuthenticator(popup);
+	const credentials = trackResidentCredentials(cdp);
+	await popup.getByRole("button", { name: tenant.ui.connect }).click();
+	await expect(page.getByTestId("account")).toBeVisible({ timeout: 20_000 });
+	return credentials;
+}
+
+/** Connects the demo's wallet on another chain, from the Setup tab, with the same passkey. */
+export async function connectDemoOnChain(
+	page: Page,
+	tenant: Tenant,
+	chain: { name: string },
+	credentials: VirtualCredential[],
+): Promise<void> {
+	await page.getByTestId("tab-setup").click();
+	await page.getByTestId("chain-selector").getByText(chain.name).click();
+	const popup = await openActionPopup(
+		page,
+		"[data-testid=connect-chain]",
+		credentials,
+	);
+	// wallet-web shows the name alone, the BYO wallet "Network: <name>".
+	await expect(popup.getByTestId("consent-chain")).toContainText(chain.name);
+	await popup.getByRole("button", { name: tenant.ui.connect }).click();
+}
+
+// ── the sponsorship admin API ────────────────────────────────────────────────
+
+const WALLET_API = process.env.WALLET_API_URL ?? ORIGINS.api;
+
+/** A tenant's sponsorship position on one chain, read live from the paymaster. */
+export type Position = {
+	balanceWei: string;
+	reservedWei: string;
+	availableWei: string;
+	deficitWei: string;
+	feeWei: string;
+	/** The block the balance was read at. */
+	blockNumber: string;
+};
+
+/** A tenant's settlements on one chain, latest first, and the totals over its whole history. */
+export type Spend = {
+	settlements: Array<{
+		useropHash: string;
+		gasCostWei: string;
+		feeWei: string;
+		overheadWei: string;
+		totalWei: string;
+		success: boolean;
+		blockNumber: string;
+	}>;
+	totals: {
+		gasCostWei: string;
+		feeWei: string;
+		overheadWei: string;
+		totalWei: string;
+		count: number;
+	};
+};
+
+/**
+ * A read of the admin sponsorship API. Every read names its chain: rules, balances and history
+ * are per (tenant, chain) (MC-66), and with more than one chain served the API refuses to guess
+ * (MC-53).
+ */
+async function adminRead<T>(
+	tenant: Tenant,
+	route: string,
+	chainId: number,
+): Promise<T> {
+	const response = await fetch(
+		`${WALLET_API}/v1/admin/sponsorship/${route}?chainId=${chainId}`,
+		{ headers: { authorization: `Bearer ${tenant.adminKey}` } },
+	);
+	expect(
+		response.ok,
+		`${route} on chain ${chainId} for ${tenant.slug}: HTTP ${response.status}`,
+	).toBe(true);
+	return (await response.json()) as T;
+}
+
+export const getPosition = (tenant: Tenant, chainId: number) =>
+	adminRead<Position>(tenant, "balance", chainId);
+
+export const getSpend = (tenant: Tenant, chainId: number) =>
+	adminRead<Spend>(tenant, "spend", chainId);
