@@ -1,5 +1,17 @@
 # @appliedblockchain/giano-wallet-kit
 
+## 7.2.1
+
+### Patch Changes
+
+- 63aedfe: The wallet kit names the local Silent Data chain 31339 "Local devnet SD" when a configuration gives no name. It now takes every such name from giano-contracts' `defaultChainName`, instead of keeping its own copy of the list (H6).
+- Updated dependencies [63aedfe]
+- Updated dependencies [63aedfe]
+  - @appliedblockchain/giano-contracts@7.2.1
+  - @appliedblockchain/giano-wallet-core@7.2.1
+  - @appliedblockchain/giano-wallet-transport@7.2.1
+  - @appliedblockchain/giano-tx-describe@7.2.1
+
 ## 7.2.0
 
 ### Patch Changes

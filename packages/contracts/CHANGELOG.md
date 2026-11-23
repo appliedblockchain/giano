@@ -1,5 +1,12 @@
 # @appliedblockchain/giano-contracts
 
+## 7.2.1
+
+### Patch Changes
+
+- 63aedfe: The local Silent Data chain 31339 is a local chain: `LOCAL_CHAIN_IDS` lists it, so the deploy CLI impersonates the local deployer and installs CreateX there, and the deployer image deploys the private test token there with `DEPLOY_TESTING=true`. Its deployment record is not committed. Its known name is "Local devnet SD". The package now exports `LOCAL_CHAIN_IDS` (31337, 31338 and 31339), the one list of the repository's local chains (H6).
+- 63aedfe: `provision:paymaster` no longer fails with "nonce has already been used". It now counts its own nonces with ethers' `NonceManager`, so a fast node or a load-balanced RPC that lags behind the last receipt cannot hand it a nonce already used. Its providers also send every request to the node, so a read that follows a change sees the new value. Without `DEPLOYER_PRIVATE_KEY`, it now signs with the Anvil key on every local chain (31337, 31338 and 31339), not only on 31337 (H6).
+
 ## 7.2.0
 
 ### Minor Changes

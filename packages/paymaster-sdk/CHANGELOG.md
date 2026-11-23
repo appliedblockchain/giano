@@ -1,5 +1,13 @@
 # @appliedblockchain/giano-paymaster-sdk
 
+## 7.2.1
+
+### Patch Changes
+
+- Updated dependencies [63aedfe]
+- Updated dependencies [63aedfe]
+  - @appliedblockchain/giano-contracts@7.2.1
+
 ## 7.2.0
 
 ### Minor Changes
