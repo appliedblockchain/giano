@@ -122,7 +122,11 @@ export function ledgerReducer(
 
 export const emptyLedger: LedgerState = { entries: [], events: [], evicted: 0 };
 
-/** Namespaced per wallet origin: one dApp origin may legitimately address two tenants. */
+/**
+ * Namespaced per wallet origin: one dApp origin may legitimately address two tenants.
+ * e2e/smoke/smoke.spec.ts reads this key, and the in-flight note in saveLedger below, from a deployed
+ * dApp: change them there too.
+ */
 export const ledgerStorageKey = (walletOrigin: string) =>
 	`giano-demo:ledger:${walletOrigin}`;
 

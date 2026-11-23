@@ -205,6 +205,45 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
 | `portless:down` | removes the routes and stops the proxy |
 | `test:demo` | reference dApp operations on Devnet A and B, signing, raw user operations, failure cases, adapters and ledger export on `http://demo.localhost`, and the private token on Devnet SD for both tenants (`http://demo.localhost` and `http://demo-byo.localhost`); `DEMO=1` adds the project and starts the demo's two dev servers, `dev:stock` and `dev:byo` (`tests/demo/`) |
 | `portless:list` | shows the active routes |
+| `smoke` | smoke test of a **deployed** environment through its reference dApp; see below |
+
+## Smoke test of a deployed environment
+
+`smoke` checks a running deployment from the outside, the way a user meets it. It needs no stack on
+this machine and no secret: the target is the URL of a deployed reference dApp, and everything else
+comes from that dApp's `/config.js` (its wallet origin, its chains, their RPC and default token).
+
+```sh
+pnpm -F @appliedblockchain/giano-e2e smoke --target https://example.dev.giano.appliedblockchain.dev
+pnpm -F @appliedblockchain/giano-e2e smoke --target <dApp URL> --target <dApp URL> [--chain <chainId>]… [--headed]
+```
+
+For each target, on each chain (or only the `--chain` ones), with a Chromium virtual authenticator:
+
+1. Creates a passkey account (the first chain connects from the header, later chains through the
+   chain card, with the same passkey).
+2. Sends one sponsored transaction: a mint of the chain's default token, or a 0 ETH send to self
+   where the dApp has no default token (stg and prd carry no test token).
+3. Waits for the dApp's ledger entry to confirm, then checks on chain, through the dApp's RPC,
+   that the account has code and the transaction succeeded with a non-zero paymaster.
+4. Checks the account address is the same on every chain.
+
+It prints one line per chain with the account, the user-operation and transaction hashes, the
+paymaster and an explorer link. Both wallet UIs work: the stock wallet and the BYO fixture.
+
+Each run creates a user on the target tenant, which needs open registration, and spends a little of
+its sponsorship balance. It refuses a chain that is not a known testnet unless `--allow-production`
+is given: every viem entry for that chain ID must be a testnet. A target on `localhost` or
+`*.localhost` counts as a local stack, whose devnets viem does not list as testnets, so it runs there
+without the flag. A chain viem does not list at all, such as Silent Data's iron-kestrel (19874), is
+refused too: pick the others with `--chain`, or pass the flag. On a chain the watcher is still
+catching up on, run it after the lag is down: settlement waits for the watcher.
+
+What a pass shows depends on the path it took. With a default token, the mint goes through the
+tenant's allowlist, so a pass also shows the sponsorship rules allow that token. Without one (stg,
+prd), the 0 ETH send to self is sponsored as wallet management, under platform policy, so a pass
+says nothing about the tenant's allowlist. That path has not yet run against a deployment: dev has a
+default token on both chains.
 
 ## Where the names live
 
