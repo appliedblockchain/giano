@@ -112,8 +112,9 @@ services:
   # tests use those methods there.
   #
   # Every service reaches 31339 through the gateway (sd-gateway:8545, and rpc-sd.localhost from a
-  # browser). The node publishes 8547 (rpc-sd-node.localhost) only for the state generator, `cast`
-  # and the e2e check that the gateway, not the node, refuses unsigned reads.
+  # browser). The node publishes 8547 (rpc-sd-node.localhost) only for `cast` and the e2e check that
+  # the gateway, not the node, refuses unsigned reads. The state tools never use it: each runs on
+  # its own pinned anvil (e2e/devnet/with-pinned-anvil.mjs).
   anvil-sd:
     image: ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd # v1.7.1 — state.json format must match
     entrypoint:
