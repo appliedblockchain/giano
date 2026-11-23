@@ -1030,3 +1030,5 @@ Dated, newest last. One entry per session or per meaningful event: what ran, the
 - **2026-11-23:** Notion ticket **G46** created (Backlog) for F15, F17, F22, F23 and the deferred Phases 12 and 13; #310's items are
   already G44.
 - **2026-11-23:** Tracker and decisions committed in #331 (`docs/testnet-rollout-tracker`). In the DevOps request thread: thanked DevOps, reported dev working as expected, and asked him to drop `cutover_v3_backup`.
+- **2026-11-23:** #326 and #328 merged. Fresh deployment guide in #333 (`docs/FRESH-DEPLOYMENT.md`), review requested.
+  Closing message posted in the team channel. Left: the backup-schema drop (asked of DevOps) and the reviews of this PR and #333.
