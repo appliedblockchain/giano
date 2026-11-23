@@ -6,3 +6,4 @@ lcov.info
 # Local chains are recreated from scratch; every other chain's record is committed.
 deployments/31337.json
 deployments/31338.json
+deployments/31339.json

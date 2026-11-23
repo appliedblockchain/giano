@@ -348,6 +348,17 @@ export function validateChainList<T extends ChainDescriptor>(
 	return { errors, warnings };
 }
 
+/**
+ * The repository's local anvil chains: Devnet A (31337), Devnet B (31338) and Devnet SD (31339),
+ * the node behind Silent Data's gateway. This is the one list of them. The deploy CLI treats them as
+ * local (deploy/config.ts), and provision:paymaster signs with the Anvil key on them. Code that
+ * cannot import this package keeps a copy that names this constant: the deployer image's entry
+ * point (scripts/deployer-entrypoint.mjs, kept in step by a test), e2e/devnet/upgrade-paymaster.mjs
+ * and services/paymaster-admin (LOCAL_DEVNET_CHAIN_IDS). Add a local chain here, in those copies,
+ * and in KNOWN_CHAIN_NAMES below.
+ */
+export const LOCAL_CHAIN_IDS = [31337, 31338, 31339] as const;
+
 /** Well-known chain names, used when a single-chain shorthand supplies no name. */
 const KNOWN_CHAIN_NAMES: Record<number, string> = {
 	1: "Ethereum",
@@ -357,6 +368,7 @@ const KNOWN_CHAIN_NAMES: Record<number, string> = {
 	11155111: "Sepolia",
 	31337: "Local devnet A",
 	31338: "Local devnet B",
+	31339: "Local devnet SD",
 };
 
 /** A display name for a chain: registry/known name, else "chain <id>" (never a bare number). */

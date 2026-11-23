@@ -1,7 +1,8 @@
 /** Upgrade the baked local paymaster through UUPS, preserving its proxy and funded tenants.
  * Run on a fresh pinned anvil via `pnpm devnet:upgrade:paymaster:all` (or `devnet:upgrade:paymaster`
- * for chain 31337 alone, `:b` for chain 31338). Each chain has its own state file, so both must be
- * upgraded or chain B keeps the old paymaster while addresses.json names the new implementation.
+ * for chain 31337 alone, `:b` for chain 31338, `:sd` for chain 31339). Each chain has its own state
+ * file, so all three must be upgraded, or a chain keeps the old paymaster while addresses.json names
+ * the new implementation.
  * This script loads and writes local fixture state only; it refuses non-Anvil nodes.
  *
  * The new implementation is the working tree's (`--release dev`), deployed by the deploy CLI under
@@ -38,7 +39,8 @@ const PINNED_ANVIL_VERSION = "1.7.1";
 const version = await rpc("web3_clientVersion");
 if (!version.includes("anvil") || !version.includes(PINNED_ANVIL_VERSION))
 	throw new Error(`requires the pinned local Anvil ${PINNED_ANVIL_VERSION}`);
-if (![31337, 31338].includes(CHAIN_ID))
+// A copy of LOCAL_CHAIN_IDS (packages/contracts/chains.ts): this script does not depend on that package.
+if (![31337, 31338, 31339].includes(CHAIN_ID))
 	throw new Error(`CHAIN_ID ${CHAIN_ID} is not a local devnet chain`);
 if (Number(BigInt(await rpc("eth_chainId"))) !== CHAIN_ID)
 	throw new Error(

@@ -15,7 +15,7 @@ const IMAGE =
 	"ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd"; // v1.7.1
 const NAME = "giano-devnet-generator";
 const PORT = Number(process.env.ANVIL_PORT ?? 8545);
-/** The chain id the anvil announces — 31337 for chain A, 31338 for chain B (MC-116). */
+/** The chain id the anvil announces — 31337 for chain A, 31338 for chain B, 31339 for Devnet SD (MC-116). */
 const CHAIN_ID = process.env.ANVIL_CHAIN_ID ?? "31337";
 
 const [command, ...args] = process.argv.slice(2);

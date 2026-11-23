@@ -1,0 +1,10 @@
+{
+	"name": "@appliedblockchain/giano-silent-data-gateway",
+	"private": true,
+	"version": "0.0.0",
+	"description": "Silent Data's RPC gateway in front of the local Devnet SD chain (31339), local stacks only. The gateway comes from npmjs, not GitHub Packages: the root .npmrc routes the @appliedblockchain scope to npmjs. See README.md.",
+	"license": "MIT",
+	"dependencies": {
+		"@appliedblockchain/silentdatarollup-custom-rpc": "1.2.0"
+	}
+}

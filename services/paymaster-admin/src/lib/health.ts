@@ -363,11 +363,14 @@ function formatHeld(seconds: number): string {
 }
 
 /**
- * The repository's local anvil devnets (`packages/contracts/chains.ts` names them). They mine only
- * when there is a transaction, so an idle one's head is hours old and says nothing about the node:
- * its age is shown, not judged.
+ * The repository's local anvil devnets: Devnet A, Devnet B and Devnet SD, the anvil node behind
+ * Silent Data's gateway. They mine only when there is a transaction, so an idle one's head is hours
+ * old and says nothing about the node: its age is shown, not judged.
+ *
+ * A copy of LOCAL_CHAIN_IDS in `packages/contracts/chains.ts`: this package does not depend on
+ * giano-contracts.
  */
-export const LOCAL_DEVNET_CHAIN_IDS: readonly number[] = [31337, 31338];
+export const LOCAL_DEVNET_CHAIN_IDS: readonly number[] = [31337, 31338, 31339];
 
 /** The checks for one chain wallet-api serves, worst first within each part. */
 export function chainChecks(
