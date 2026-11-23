@@ -47,6 +47,9 @@ jobs:
       - name: BYO wallet fixture chain list (CHAINS and the CHAIN_ID / CHAIN_B_ID pair)
         # Needs no build, so it runs before the builds and fails early.
         run: node --test e2e/wallet-byo/chains.test.mjs
+      - name: E2E tenant allowlists (DAPP_ORIGINS and TENANT_FIXTURES)
+        # Needs no build either.
+        run: node --test e2e/tenant-fixtures.test.mjs
       - name: Test profile-driven deployment gates
         run: pnpm --filter @appliedblockchain/giano-contracts test:deploy
       - name: Build contracts TS surface (committed artifacts only)

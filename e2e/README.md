@@ -34,7 +34,7 @@ chain). One wallet-api, one wallet origin, one Postgres, three chains.
 One giano-bundler serves every chain, reading the same chain document as wallet-api. Run
 `pnpm test:demo` to exercise
 the reference demo's transactions, token calls, signatures, raw user operations, authenticated
-reads and refusal paths on this stack.
+reads and refusal paths on this stack, and the private token on Devnet SD.
 
 To update the baked paymaster implementation while keeping its proxy and funded tenants,
 run `pnpm devnet:upgrade:paymaster:all` in this package. For each chain (`state.json` for
@@ -94,6 +94,25 @@ Only the state generator, `cast` and checks that the gateway enforces privacy us
 directly. The sponsorship rules of both tenants on 31339 allow-list the private test token, and
 the demo dApp lists 31339 with that token as its `privateToken`, so the private token section
 shows only on this chain.
+
+`tests/demo/demo-private-token.spec.ts` tests this chain. It runs only with `DEMO=1`
+(`pnpm test:demo`), like every spec under `tests/demo/`.
+
+- **The gateway check** runs first, with no browser. It sends the same unsigned `balanceOf` call,
+  with `from` set to the holder, to the gateway (`rpc-sd.localhost`) and to the node
+  (`rpc-sd-node`). The node answers. The gateway replaces `from`, so the private token refuses the
+  read (`UCEFUnauthorizedBalanceAccess`). The check also sends `eth_getStorageAt`: the node
+  answers and the gateway refuses the method. If `rpc-sd` reaches the node and not the gateway,
+  this test fails, and its message names the gateway. The flows below would then prove nothing
+  private, because the node answers every read.
+- **The flow** runs once for tenant `stock` (`http://demo.localhost`, wallet-web) and once for
+  tenant `byo` (`http://demo-byo.localhost`, the BYO wallet fixture). On Devnet SD, it checks the
+  undeployed-wallet message, mints, approves the read delegate, reads the balance with a
+  signature, transfers, and opens the outsider view: the unsigned read and the read of another
+  account are refused, and the transfer's bundle transaction is hidden. Then it checks that
+  wallet-api settled both user operations on 31339 and debited the tenant by their total.
+
+Each run uses a new passkey, so a new wallet: the spec does not need a fresh chain.
 
 Sponsorship is not the only thing provisioned at bring-up. `tx-mapping-provisioner`
 (`devnet/provision-tx-mappings.mjs`) publishes the demo ERC-20's **ERC-7730 transaction-display
@@ -184,7 +203,7 @@ and starts the fixtures — but the compose stack and the port-80 relay must alr
 | `portless:port80` | brings up the `portless-port80` relay on its own |
 | `portless:proxy` | runs the proxy on port 80 directly; needs `sudo`, and then the relay is unnecessary |
 | `portless:down` | removes the routes and stops the proxy |
-| `test:demo` | reference dApp operations on Devnet A and B, signing, raw user operations, failure cases, adapters and ledger export on `http://demo.localhost`; `DEMO=1` adds the project and starts the demo's dev server (`tests/demo/`) |
+| `test:demo` | reference dApp operations on Devnet A and B, signing, raw user operations, failure cases, adapters and ledger export on `http://demo.localhost`, and the private token on Devnet SD for both tenants (`http://demo.localhost` and `http://demo-byo.localhost`); `DEMO=1` adds the project and starts the demo's two dev servers, `dev:stock` and `dev:byo` (`tests/demo/`) |
 | `portless:list` | shows the active routes |
 
 ## Where the names live

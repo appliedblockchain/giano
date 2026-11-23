@@ -96,6 +96,14 @@ export default defineConfig({
 						reuseExistingServer: true,
 						timeout: 120_000,
 					},
+					{
+						// the reference dApp, tenant byo, on its own name (http://demo-byo.localhost)
+						command: "pnpm -C services/custom-example dev:byo",
+						cwd: "..",
+						url: loopbackOf("demo-byo"),
+						reuseExistingServer: true,
+						timeout: 120_000,
+					},
 				]
 			: []),
 	],

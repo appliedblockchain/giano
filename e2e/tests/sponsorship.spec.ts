@@ -8,8 +8,11 @@ import { ORIGINS } from "../origins.mjs";
 import {
 	connectWallet,
 	expectOutContains,
+	getPosition,
+	getSpend,
 	openActionPopup,
 	openManagePopup,
+	type Position,
 	readOnChainOwners,
 	TENANTS,
 	type Tenant,
@@ -49,52 +52,6 @@ const WALLET_API = process.env.WALLET_API_URL ?? ORIGINS.api;
 const CHAIN_A = Number(process.env.CHAIN_ID ?? 31337);
 
 // ── admin API helpers ─────────────────────────────────────────────────────────
-
-type Position = {
-	balanceWei: string;
-	reservedWei: string;
-	availableWei: string;
-	deficitWei: string;
-	feeWei: string;
-};
-
-async function getPosition(tenant: Tenant): Promise<Position> {
-	const response = await fetch(
-		`${WALLET_API}/v1/admin/sponsorship/balance?chainId=${CHAIN_A}`,
-		{
-			headers: { authorization: `Bearer ${tenant.adminKey}` },
-		},
-	);
-	expect(response.ok, `balance read failed: ${response.status}`).toBe(true);
-	return (await response.json()) as Position;
-}
-
-async function getSpend(tenant: Tenant) {
-	const response = await fetch(
-		`${WALLET_API}/v1/admin/sponsorship/spend?chainId=${CHAIN_A}`,
-		{
-			headers: { authorization: `Bearer ${tenant.adminKey}` },
-		},
-	);
-	expect(response.ok).toBe(true);
-	return (await response.json()) as {
-		settlements: Array<{
-			useropHash: string;
-			gasCostWei: string;
-			feeWei: string;
-			overheadWei: string;
-			totalWei: string;
-			success: boolean;
-		}>;
-		totals: {
-			gasCostWei: string;
-			feeWei: string;
-			overheadWei: string;
-			totalWei: string;
-			count: number;
-		};
-	};
-}
 
 async function getConfig(tenant: Tenant): Promise<Record<string, unknown>> {
 	const response = await fetch(
@@ -261,11 +218,11 @@ async function waitForSettlements(
 	hashes: string[],
 	timeoutMs = 30_000,
 ): Promise<Awaited<ReturnType<typeof getSpend>>> {
-	let spend = await getSpend(tenant);
+	let spend = await getSpend(tenant, CHAIN_A);
 	await expect
 		.poll(
 			async () => {
-				spend = await getSpend(tenant);
+				spend = await getSpend(tenant, CHAIN_A);
 				return hashes.every((hash) =>
 					spend.settlements.some(
 						(settlement) =>
@@ -315,7 +272,7 @@ for (const slug of ["stock", "byo"] as const) {
 			const { credentials, address } = await connectWallet(page, tenant);
 			await waitForDeploymentSettlement(tenant, address);
 
-			const before = await getPosition(tenant);
+			const before = await getPosition(tenant, CHAIN_A);
 			const treasuryBefore = await treasuryWei();
 
 			const popup = await openActionPopup(page, "#send-erc20", credentials);
@@ -349,7 +306,7 @@ for (const slug of ["stock", "byo"] as const) {
 			);
 			expect(settlement.success).toBe(true);
 
-			const after = await getPosition(tenant);
+			const after = await getPosition(tenant, CHAIN_A);
 			expect(BigInt(after.balanceWei)).toBe(
 				BigInt(before.balanceWei) - BigInt(settlement.totalWei),
 			);
@@ -435,7 +392,7 @@ for (const slug of ["stock", "byo"] as const) {
 			// inside the window this test is measuring.
 			const { credentials, address } = await connectWallet(page, tenant);
 			await waitForDeploymentSettlement(tenant, address);
-			const before = await getPosition(tenant);
+			const before = await getPosition(tenant, CHAIN_A);
 
 			await expectRefusedBeforeApproval(
 				page,
@@ -448,7 +405,7 @@ for (const slug of ["stock", "byo"] as const) {
 			// Compared against `before` rather than against zero — an unrelated authorisation may
 			// legitimately be in flight, and asserting an absolute zero would make this test depend on
 			// what every other test happened to leave behind.
-			const after = await getPosition(tenant);
+			const after = await getPosition(tenant, CHAIN_A);
 			expect(after.balanceWei).toBe(before.balanceWei);
 			expect(BigInt(after.reservedWei)).toBeLessThanOrEqual(
 				BigInt(before.reservedWei),
@@ -636,7 +593,7 @@ test.describe("accounting", () => {
 	});
 
 	test("a tenant can reconcile every charge against the chain", async () => {
-		const spend = await getSpend(TENANTS.stock);
+		const spend = await getSpend(TENANTS.stock, CHAIN_A);
 		if (spend.settlements.length === 0) test.skip();
 
 		// Each row is a `Sponsored` event, so its components must sum to its total, and the totals
@@ -717,8 +674,8 @@ test.describe("tenant isolation", () => {
 	});
 
 	test("one tenant's admin key cannot read another's position", async () => {
-		const stock = await getPosition(TENANTS.stock);
-		const byo = await getPosition(TENANTS.byo);
+		const stock = await getPosition(TENANTS.stock, CHAIN_A);
+		const byo = await getPosition(TENANTS.byo, CHAIN_A);
 		// Different tenants, different on-chain tenant ids, therefore different balances after use.
 		expect(stock).not.toEqual(byo);
 	});

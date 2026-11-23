@@ -110,9 +110,11 @@ const factoryAddress = required(
 	"the account factory this wallet derives addresses from, e.g. 0x26dC…",
 );
 
+// In a devnet checkout, tenant byo's dApps: DAPP_ORIGINS.byo in ../origins.mjs, the fixture dApp and
+// the reference demo (`pnpm demo:byo`). A test keeps it in step with wallet-api's TENANT_FIXTURES.
 const allowedDappOrigins = required(
 	process.env.BYO_ALLOWED_DAPP_ORIGINS ??
-		(origins ? JSON.stringify([origins.ORIGINS.dappByo]) : undefined),
+		(origins ? JSON.stringify(origins.DAPP_ORIGINS.byo) : undefined),
 	"BYO_ALLOWED_DAPP_ORIGINS",
 	'a JSON array of the dApp origins allowed to connect, e.g. ["https://app.example"] — this tenant\'s own allowlist (R9)',
 );
