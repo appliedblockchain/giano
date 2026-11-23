@@ -645,9 +645,9 @@ Summarise the run log and findings for the team, update the Notion ticket, and c
 > 🔄 **2026-11-23.** Left:
 > - **Reviews:** #326 (runbook, F19 and F21) and #328 (smoke test), both green, review requested from Rui (GitHub, and #giano-dev
 >   ts `1795452097.175809`).
-> - **Backup schema:** `DROP SCHEMA cutover_v3_backup CASCADE` through `dev-db-run.sh` (DevOps; the user's go-ahead first, it deletes the
->   pre-cut-over user data for good).
-> - **This tracker and the decisions file:** commit them (addresses and hashes only).
+> - **Backup schema:** `DROP SCHEMA cutover_v3_backup CASCADE` through `dev-db-run.sh`: go-ahead given 2026-11-23, asked of Bruno in the
+>   #devops-requests thread (ts `1795453521.842449`), with thanks for the cut-over. The 19 Nov RDS snapshot stays as the last resort.
+> - ✅ **This tracker and the decisions file:** committed in #331 (2026-11-23).
 > - ✅ **Follow-up ticket G46** (Backlog, https://app.notion.com/p/421b61bd7d5281b6a288fa7e3d5c8fa6): R1 F15, R2 F17, R3 F22, R4 F23,
 >   R5 Phase 12 (legacy funds), R6 Phase 13 (upgrade); links G44 (#310's deferred items), G35 (R27/F19), G33, #326, #328.
 > - **Small items:** Rui's #296 questions (the deployer item's restricted access, the ticket code); keep or revoke the Phase 9 tenant
@@ -1021,3 +1021,5 @@ Dated, newest last. One entry per session or per meaningful event: what ran, the
 - **2026-11-23:** Review of #326 and #328 requested from Rui on GitHub and in #giano-dev (ts `1795452097.175809`). Phase 14 list recorded.
 - **2026-11-23:** Notion ticket **G46** created (Backlog) for F15, F17, F22, F23 and the deferred Phases 12 and 13; #310's items are
   already G44.
+- **2026-11-23:** Tracker and decisions committed in #331 (`docs/testnet-rollout-tracker`). In the #devops-requests thread
+  (ts `1795453521.842449`): thanked Bruno, reported dev working as expected, and asked him to drop `cutover_v3_backup`.
