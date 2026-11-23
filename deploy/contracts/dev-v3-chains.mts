@@ -1,5 +1,5 @@
 /**
- * Step 4 of the Cut-over runbook (TESTNET-ROLLOUT.md): points dev's `chains` secret at release v3.
+ * Step 5 of the Cut-over runbook (TESTNET-ROLLOUT.md): points dev's `chains` secret at release v3.
  *
  * The secret's source of truth is the 1Password note `secrets-dev` (vault "Giano dev/stg"). Its
  * `notesPlain` is the whole secret bundle, `{ "<name>": { "value": "<string>", "version": n }, … }`,

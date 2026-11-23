@@ -80,10 +80,20 @@ Why this order:
 - ECS tasks read the `chains` secret when they start, and wallet-api refuses a chain whose configured factory
   does not run release code. A new image with the legacy secret, or the legacy image with the new secret,
   does not serve. So the secret changes in Secrets Manager first, without a restart.
-- The user data is reset with wallet-api stopped, before the new release starts. A running v3 watcher would
-  otherwise reconcile against the legacy paymaster's stored slack and raise the drawdown-divergence alert, the
-  signal for a leaked signing key; a running legacy watcher would rewrite its cache straight after the reset.
-  Every table the reset touches already exists in the release `dev` runs (`5ba71241`).
+- The user data is reset with wallet-api stopped, before wallet-api starts on the new release. A running v3
+  watcher would otherwise reconcile against the legacy paymaster's stored slack and raise the
+  drawdown-divergence alert, the signal for a leaked signing key; a running legacy watcher would rewrite its
+  cache straight after the reset.
+- The reset runs after the deploy PR is merged, not before. The reset task starts from the current wallet-api
+  task definition, and the image that definition pins can be gone: ECR keeps about 20 `main` commits of
+  images per repository (`specs/INFRASTRUCTURE.md` R27), and on 2026-11-19 `wallet-api:5ba71241` had expired
+  (tracker F19). Merging the deploy PR first registers task definitions on the new image. The reset task
+  then runs the new image's `init` container, which applies the migrations, before the reset itself; every
+  table the reset touches exists in both schemas.
+- Terraform reads each service's image tag from `infra/versions.json` (`infra/iac/_locals.tf`), not from what
+  `deploy.yml` rolled. So the full `terraform apply` runs from a checkout that includes the merged deploy
+  PR. On 2026-11-19 an apply from an older checkout asked for the expired `5ba71241` image, every new task
+  failed to start, and the deployment circuit breaker rolled each service back (tracker F21).
 - wallet-api's image has no shell and no `psql` (a DHI runtime image), and only the tasks security group
   reaches the database. [`dev-db-run.sh`](dev-db-run.sh) runs a SQL file in a one-off task of the wallet-api
   task definition, through node and the `pg` driver, on the `RUN_TASK_NETWORK` subnets. It works with the
@@ -95,7 +105,8 @@ Why this order:
    19:00 and back at 07:00 (`infra/iac/scheduler.tf`).
 2. **Rollback inputs**: note the `infra/versions.json` `dev` SHA (`5ba71241`) and take a manual RDS snapshot
    of `dev`'s database (a last resort only: the reset keeps its own backup, see "If it fails"). 1Password
-   keeps the previous `secrets-dev` note in the item's history.
+   keeps the previous `secrets-dev` note in the item's history. Check that the noted SHA's images are still
+   in ECR: if they have expired, rolling back to that SHA is not possible without rebuilding them.
 3. **Merge the infrastructure PR**: `paymaster_address` and `factory_address` default to the v3 proxy and
    factory, and `test_erc20_address` gives `dev`'s reference dApps their `defaultToken` (blank in stg and
    prd). Merging applies nothing.
@@ -126,25 +137,31 @@ Why this order:
 6. **Stop wallet-api**:
    `aws ecs update-service --cluster giano-dev-ecs --service giano-dev-wallet-api --desired-count 0`, then
    `aws ecs wait services-stable --cluster giano-dev-ecs --services giano-dev-wallet-api`.
-7. **Reset the user data** (D1, F8), once:
+7. **Roll**: merge the deploy PR. `deploy.yml` rolls every service to the new image and registers new task
+   definitions; wallet-api stays at 0.
+8. **Reset the user data** (D1, F8), once, on the new task definition:
    `deploy/contracts/dev-db-run.sh deploy/contracts/dev-v3-reset.sql` (infra/iac's `dev` workspace selected;
-   it needs `aws`, `jq` and `terraform`). One transaction: it copies every row it clears into the schema
-   `cutover_v3_backup`, then clears users, passkeys, challenges, sessions and their logs, the legacy
-   paymaster's ledger and the watcher's cache. Tenants, their configuration and the platform admins stay. It
-   prints the counts before and after; a second run fails and changes nothing.
-8. **Roll**: merge the deploy PR. `deploy.yml` rolls every service to the new image; wallet-api stays at 0.
-   Then start it: `aws ecs update-service --cluster giano-dev-ecs --service giano-dev-wallet-api
-   --desired-count 1`. Its `init` container applies the migrations, and the API starts with an empty watcher
-   cache: the watcher cold-starts and its first reconcile reads every balance from the v3 paymaster. Finally
-   run the full `terraform apply` for the new variables (the reference dApps' `defaultToken`, wallet-byo's
-   `FACTORY_ADDRESS`, the provisioning task's paymaster). It ignores `desired_count`, so it does not fight the
-   scaling.
+   it needs `aws`, `jq` and `terraform`). Its `init` container applies the migrations first. One transaction:
+   it copies every row it clears into the schema `cutover_v3_backup`, then clears users, passkeys,
+   challenges, sessions and their logs, the legacy paymaster's ledger and the watcher's cache. Tenants, their
+   configuration and the platform admins stay. It prints the counts before and after; a second run fails and
+   changes nothing.
+9. **Start wallet-api and apply Terraform.**
+   `aws ecs update-service --cluster giano-dev-ecs --service giano-dev-wallet-api --desired-count 1`. It
+   starts with an empty watcher cache: the watcher cold-starts and its first reconcile reads every balance
+   from the v3 paymaster. Then run the full `terraform apply` for the new variables (the reference dApps'
+   `defaultToken`, wallet-byo's `FACTORY_ADDRESS`, the provisioning task's paymaster), **from a checkout that
+   includes the merged deploy PR**: `git pull` on `main` first, and check that `infra/versions.json` shows the
+   new `dev` SHA. It ignores `desired_count`, so it does not fight the scaling. The plan registers new task
+   definitions; if it shows only services moving to an existing revision, a previous apply was rolled back,
+   so find out why before applying again. Check that it took: both reference dApps' `/config.js` carry the
+   `defaultToken`, and wallet-byo's `/main.js` contains the v3 factory.
 
 **Readiness** (step 10's "done when"):
 
-9. `GET /v1/version` lists both chains ready; wallet-api's log shows both chains admitted with the v3 factory.
-10. `giano_paymaster_watcher_lag_blocks` on wallet-api's `/metrics` is within a few blocks on both chains.
-11. The operator console shows both tenants with 0.02 ETH on both chains, and the timelock
+10. `GET /v1/version` lists both chains ready; wallet-api's log shows both chains admitted with the v3 factory.
+11. `giano_paymaster_watcher_lag_blocks` on wallet-api's `/metrics` is within a few blocks on both chains.
+12. The operator console shows both tenants with 0.02 ETH on both chains, and the timelock
     `0x7Da25D415f9b68422F905C015137Af8D915F8A78` in its Timelock and Roles tabs.
 
 Then step 8's sponsorship rules (each tenant on each chain, the test ERC-20 allow-listed) and step 11's smoke
@@ -154,9 +171,11 @@ test. When the cut-over is final, drop the backup: `DROP SCHEMA cutover_v3_backu
 - **Before step 7:** do not merge the deploy PR. Restore the previous `chains` value from the 1Password
   item's history with a higher `version` than the current one, apply it with the same `-target`, and scale
   wallet-api back to 1.
-- **After step 7:** scale wallet-api to 0, run `deploy/contracts/dev-db-run.sh
+- **After step 7, before step 8:** the user data is untouched. Put back the previous `versions.json` SHA (a
+  new deploy PR) and `chains` value, then scale wallet-api to 1. This needs that SHA's images in ECR (step 2).
+- **After step 8:** scale wallet-api to 0, run `deploy/contracts/dev-db-run.sh
   deploy/contracts/dev-v3-restore.sql`, put back the previous `versions.json` SHA and `chains` value, then
-  scale wallet-api to 1. The restore clears what v3 wrote in the same tables (new users, and the v3
+  scale wallet-api to 1 (again only if that SHA's images are still in ECR). The restore clears what v3 wrote in the same tables (new users, and the v3
   watcher's cache, which would make the legacy watcher skip events and report a false drawdown), then
   re-inserts the backed-up rows; columns are matched by name, so it works after the v3 migrations too. The
   RDS snapshot is the last resort: restoring it creates a new instance and loses everything written since.
