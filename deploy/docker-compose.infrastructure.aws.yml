@@ -614,6 +614,14 @@ services:
   # becomes a required variable that fails loudly), the second chain falls away unless
   # CHAIN_B_ID is set, and chain names come from the environment.
   #
+  # Chains: the fixture takes CHAINS, a JSON array of { chainId, name }, and serves every chain
+  # in it. Without CHAINS it falls back to the CHAIN_ID / CHAIN_NAME / CHAIN_B_ID / CHAIN_B_NAME
+  # pair. This file sets only CHAIN_ID, and infra/iac sets CHAIN_ID and CHAIN_B_ID. Neither sets
+  # a name, so the consent screens show "chain <id>", such as "chain 84532". The byoui follow-up
+  # of the local-silent-data-chain OpenSpec change moves infra/iac to CHAINS, with a name for
+  # each chain. Setting CHAINS together with any of the pair's four variables makes serve.mjs
+  # refuse to start, so a move to CHAINS removes the pair in the same change.
+  #
   # R11 IS CLOSED, and not by a flag. The /bundler proxy is gone from serve.mjs altogether,
   # along with `BYO_BUNDLER_PROXY_ENABLED` and `BUNDLER_UPSTREAM`. What replaced it is the
   # thing the previous note said was missing: wallet-api's JSON-RPC bundler relay,
@@ -662,7 +670,8 @@ services:
       # without it outside an e2e checkout. `infra/iac` does not set it yet.
       FACTORY_ADDRESS: ${FACTORY_ADDRESS:?set FACTORY_ADDRESS}
       # CHAIN_B_ID unset: single-chain, and the second chain now falls away rather than being
-      # advertised as a fiction pointing at /rpc-b.
+      # advertised as a fiction pointing at /rpc-b. To list several chains, replace CHAIN_ID with
+      # CHAINS='[{"chainId":…,"name":"…"},…]'. Never set both: serve.mjs refuses to start.
     healthcheck:
       # The server has no health endpoint of its own; ECS uses `health_check_path = "/"`.
       # CI probes the tenant origin instead, which is the more meaningful check:

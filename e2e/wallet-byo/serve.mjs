@@ -13,6 +13,14 @@
 //                                 business in an image — so every value comes from the
 //                                 environment and anything missing is a loud failure.
 //
+// Chains (chains.mjs): set CHAINS, a JSON array of { chainId, name }, e.g.
+// [{"chainId":84532,"name":"Base Sepolia"}]. Without it, the older pair applies: CHAIN_ID
+// (required outside a devnet checkout), CHAIN_NAME, and an optional second chain CHAIN_B_ID /
+// CHAIN_B_NAME. A missing name is "chain <id>". Setting CHAINS together with any of these four
+// variables is refused at start-up, as are an empty list, an id that is not a positive
+// integer, a repeated id and an empty name. In a devnet checkout with no chain variable, the
+// list is Devnet A (31337) and Devnet B (31338).
+//
 // The start-up esbuild bundle is deliberately kept: it is why this image is
 // environment-independent without any of wallet-web's /config.json machinery, and it is the
 // cheapest correct answer for a small SPA.
@@ -22,6 +30,7 @@ import * as http from "node:http";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { ChainsConfigError, resolveChains } from "./chains.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -78,19 +87,18 @@ const walletApiUpstream = required(
 );
 
 // --- chain configuration ------------------------------------------------------------------
-// Only ids and names: every endpoint is wallet-api's. The second chain falls away unless asked
-// for — implicitly in a devnet checkout, which keeps the two-chain e2e suite (MC-129) passing
-// with no environment at all.
-const chainId = required(
-	process.env.CHAIN_ID ?? devnet?.chainId,
-	"CHAIN_ID",
-	"the chain this wallet origin serves, e.g. 84532",
-);
-const chainBId = process.env.CHAIN_B_ID ?? (devnet ? "31338" : ""); // second chain id, or unset for single-chain
-const chainName =
-	process.env.CHAIN_NAME ?? (devnet ? "Devnet A" : `chain ${chainId}`);
-const chainBName =
-	process.env.CHAIN_B_NAME ?? (devnet ? "Devnet B" : `chain ${chainBId}`);
+// Only ids and names: every endpoint is wallet-api's. chains.mjs reads CHAINS, or the older
+// CHAIN_ID / CHAIN_B_ID pair, and refuses a bad list (see its header). In a devnet checkout with
+// no chain variable, the list is Devnet A and Devnet B, which keeps the two-chain e2e suite
+// (MC-129) passing with no environment at all.
+let chains;
+try {
+	chains = resolveChains(process.env, devnet);
+} catch (error) {
+	if (!(error instanceof ChainsConfigError)) throw error;
+	console.error(`FATAL: ${error.message}`);
+	process.exit(1);
+}
 
 // The SPA passes this straight to createGianoProvider. §14.5 says it defaults from the
 // contracts registry, but this bundle has no registry dependency — so outside a devnet
@@ -116,10 +124,8 @@ const bundle = await esbuild.build({
 	// Every `process.env.X` the SPA reads must appear here: esbuild substitutes only what it is
 	// given, and anything left behind becomes a `process is not defined` crash in the browser.
 	define: {
-		"process.env.CHAIN_ID": JSON.stringify(String(chainId)),
-		"process.env.CHAIN_NAME": JSON.stringify(chainName),
-		"process.env.CHAIN_B_ID": JSON.stringify(String(chainBId)),
-		"process.env.CHAIN_B_NAME": JSON.stringify(chainBName),
+		// a JSON array of { chainId, name }, already checked by chains.mjs
+		"process.env.CHAINS": JSON.stringify(JSON.stringify(chains)),
 		"process.env.FACTORY_ADDRESS": JSON.stringify(factoryAddress),
 		// service | test-paymaster | off. Defaults to the production paymaster path when the devnet
 		// baked one, so the BYO reference demonstrates the path real tenants use.
@@ -215,9 +221,9 @@ const server = http
 		res.end(html);
 	})
 	.listen(port, () => {
-		const chains = chainBId ? `${chainId},${chainBId}` : String(chainId);
+		const ids = chains.map((chain) => chain.chainId).join(",");
 		console.log(
-			`BYO wallet on :${port} (chains ${chains}, api→${walletApiUpstream}; rpc and bundler via wallet-api /api/v1/{rpc,bundler})`,
+			`BYO wallet on :${port} (chains ${ids}, api→${walletApiUpstream}; rpc and bundler via wallet-api /api/v1/{rpc,bundler})`,
 		);
 	});
 

@@ -44,6 +44,9 @@ jobs:
         # Read-only: fails on any formatting difference, lint error or lint warning. `pnpm format` fixes formatting
         # locally. services/custom-example has its own config and is checked by its own build.
         run: pnpm exec biome ci --error-on-warnings .
+      - name: BYO wallet fixture chain list (CHAINS and the CHAIN_ID / CHAIN_B_ID pair)
+        # Needs no build, so it runs before the builds and fails early.
+        run: node --test e2e/wallet-byo/chains.test.mjs
       - name: Test profile-driven deployment gates
         run: pnpm --filter @appliedblockchain/giano-contracts test:deploy
       - name: Build contracts TS surface (committed artifacts only)
