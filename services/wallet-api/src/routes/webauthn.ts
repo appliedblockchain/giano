@@ -11,7 +11,7 @@ import {
 	decodeClientDataJSON,
 	decodeCredentialPublicKey,
 } from "@simplewebauthn/server/helpers";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import type { Hex } from "viem";
@@ -232,6 +232,9 @@ export default async function webauthnRoutes(
 								isNull(credentials.removedAt),
 							),
 						)
+						// A fixed order, oldest first. Without it, Postgres returns rows in storage
+						// order, which changes as rows are updated.
+						.orderBy(asc(credentials.createdAt), asc(credentials.id))
 				: [];
 			const resolvedKind =
 				kind === "auto"
