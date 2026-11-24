@@ -822,6 +822,22 @@ describe("createWalletApiInjection", () => {
 			}
 		});
 
+		it("logout ends a session wallet-api already revoked as a logout, not as a refused session (WM-30)", async () => {
+			// Removing the passkey in use revokes its session before the wallet logs out.
+			const fetchImpl = respond(401);
+			const { injection, ended } = make(fetchImpl);
+			await injection.logout();
+			expect(fetchImpl).toHaveBeenCalledWith(
+				"https://wallet.test/api/v1/sessions/logout",
+				expect.objectContaining({
+					method: "POST",
+					headers: expect.objectContaining({ authorization: "Bearer tok" }),
+				}),
+			);
+			expect(injection.getSessionToken()).toBeNull();
+			expect(ended).toHaveBeenCalledExactlyOnceWith("logout");
+		});
+
 		it("logoutAll still ends the session here when wallet-api cannot be reached", async () => {
 			const fetchImpl = vi.fn(async () => {
 				throw new TypeError("Failed to fetch");

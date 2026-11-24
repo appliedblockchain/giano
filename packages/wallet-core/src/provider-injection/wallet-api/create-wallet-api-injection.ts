@@ -307,12 +307,16 @@ export function createWalletApiInjection(
 		},
 
 		logout: async () => {
-			if (sessionToken) {
-				await api("/v1/sessions/logout", { method: "POST", auth: true }).catch(
-					() => undefined,
-				);
-			}
+			const token = sessionToken;
+			if (!token) return;
+			// The session ends here first, as a logout. Then wallet-api is told, best effort. A 401
+			// from it means the session had already ended there (removing the passkey in use revokes
+			// it, WM-30), which is no reason to report the logout as a session wallet-api refused.
 			endSession("logout");
+			await fetchImpl(`${base}/v1/sessions/logout`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${token}` },
+			}).catch(() => undefined);
 		},
 
 		logoutAll: async () => {
