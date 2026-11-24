@@ -314,7 +314,8 @@ module "svc-wallet-byo" {
     # /api/v1/bundler relays for every chain. R11 closed.
 
     # The chains wallet-web serves, each with its name (e2e/wallet-byo/chains.mjs). The fixture
-    # refuses CHAINS set together with CHAIN_ID or CHAIN_B_ID, so neither is set here.
+    # refuses CHAINS set together with CHAIN_ID, CHAIN_NAME, CHAIN_B_ID or CHAIN_B_NAME, so none
+    # is set here.
     CHAINS = jsonencode(concat([
       { chainId = tonumber(var.chain_id), name = var.chain_name },
       { chainId = tonumber(var.chain_b_id), name = var.chain_b_name },
