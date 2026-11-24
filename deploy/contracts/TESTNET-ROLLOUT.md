@@ -237,9 +237,9 @@ What changes:
 - **The `chains` secret** gets a 19874 entry: the v3 addresses and timelock from the committed record,
   `rpcUrl` set to the public URL, `bundler.rpcUrl` set to the write URL with Silent Data's token, and
   `bundler.stateOverride: false`. wallet-api, the bundler and the console read it.
-- **Terraform** (`var.silent_data_chains`, dev only) adds 19874 to wallet-web's chain list and to the
-  `example` dApp's list, with `privateToken`, so the dApp shows its private token card. The `byoui` dApp keeps
-  the two testnets, because the BYO wallet fixture serves at most two chains.
+- **Terraform** (`var.silent_data_chains`, dev only) adds 19874 to the chain lists of wallet-web, the BYO
+  wallet (`wallet-byo`) and both dApps. The dApps' entries carry `privateToken`, so each dApp shows its
+  private token card.
 
 Why this order: the image `dev` runs before 7.2.0 has no 19874 in its registry. So the new image rolls
 first, with the secret unchanged, and the secret changes after it.
@@ -261,16 +261,17 @@ first, with the secret unchanged, and the secret changes after it.
 
    Paste the clipboard back into the note as-is, then mirror only that secret:
    `terraform apply -target='module.asm-app.aws_secretsmanager_secret_version.secret["chains"]'`.
-3. **Run the full `terraform apply`.** It changes the chain lists in the task definitions of wallet-web and
-   the `example` dApp, so those two services restart. The `byoui` dApp's list does not change.
+3. **Run the full `terraform apply`.** It changes the chain lists in the task definitions of wallet-web,
+   wallet-byo and both dApps, so those four services restart.
 4. **Restart the services that read the secret.** A new secret value does not change their task
    definitions, so they keep the old value until they restart:
    `aws ecs update-service --cluster giano-dev-ecs --service <service> --force-new-deployment` for
    `giano-dev-wallet-api`, `giano-dev-bundler` and `giano-dev-paymaster-admin`.
-5. **Install the `example` tenant's sponsorship rules on 19874.** The command calls `dev`'s wallet-api admin
-   API, so it works only after step 4: `pnpm contracts:sponsorship --chain iron-kestrel --env-file <file>
+5. **Install the sponsorship rules on 19874 for each tenant, `example` and `byoui`.** The command calls
+   `dev`'s wallet-api admin API, so it works only after step 4. Run it once per tenant, each with its own
+   operator file: `pnpm contracts:sponsorship --chain iron-kestrel --env-file <file>
    --accept-unverified-implementation`. The operator file sets `WALLET_API_URL` to `dev`'s wallet-api, the
-   `example` tenant's `TENANT_SLUG` and `ADMIN_API_KEY`, and `SPONSOR_ALLOWLIST` to the private test token
+   tenant's `TENANT_SLUG` and `ADMIN_API_KEY`, and `SPONSOR_ALLOWLIST` to the private test token
    `0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b`. Anyone may mint that token, so the warning of step 8 in
    "Steps" applies: allow-list it only for a demo tenant.
 
@@ -278,8 +279,9 @@ first, with the secret unchanged, and the secret changes after it.
 
 6. `GET /v1/version` lists 19874 ready, and the two testnets are still ready.
 7. `giano_paymaster_watcher_lag_blocks` on wallet-api's `/metrics` is within a few blocks on 19874.
-8. The `example` dApp shows Iron Kestrel in its chain list and the private token card on that chain. Then
-   run the end-to-end check (task 9.2).
+8. Both dApps, `example` and `byoui`, show Iron Kestrel in their chain lists and the private token card on
+   that chain. Then run the end-to-end check (task 9.2) on `example`, and one sponsored transaction on
+   `byoui`, through the BYO wallet.
 
 **Rollback**: restore the previous `secrets-dev` note from the 1Password item's history, apply it with the
 same `-target`, and restart the three services of step 4. Then revert the infrastructure PR and run the full

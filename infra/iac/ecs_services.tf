@@ -187,7 +187,7 @@ module "svc-custom-example" {
     # same-origin `/rpc/<chainId>` path nginx proxies to the keyed upstream in secret_arns below,
     # so the provider API key never reaches the browser (R17). Each entry's `defaultToken` is
     # Giano's test ERC-20 in dev (var.test_erc20_address).
-    GIANO_CHAINS           = local.example_dapp_chains
+    GIANO_CHAINS           = local.dapp_chains
     GIANO_WALLET_URL       = "https://${local.tenant_hosts.example.wallet}"
     GIANO_OTHER_WALLET_URL = var.byo_wallet_enabled[terraform.workspace] ? "https://${local.tenant_hosts.byoui.wallet}" : ""
     GIANO_APP_LABEL        = var.example_brand_name
@@ -244,7 +244,7 @@ module "svc-custom-example-byoui" {
   security_group_ids = [aws_security_group.tasks-sg.id]
 
   environment = {
-    GIANO_CHAINS           = local.byoui_dapp_chains # the two testnets only, see _locals.tf
+    GIANO_CHAINS           = local.dapp_chains # the same chains as custom-example, see _locals.tf
     GIANO_WALLET_URL       = "https://${local.tenant_hosts.byoui.wallet}"
     GIANO_OTHER_WALLET_URL = "https://${local.tenant_hosts.example.wallet}"
     GIANO_APP_LABEL        = var.byoui_brand_name
@@ -305,8 +305,6 @@ module "svc-wallet-byo" {
   environment = {
     BYO_WALLET_PORT          = "8080"
     WALLET_API_UPSTREAM      = "http://wallet-api.${local.name_prefix}.local:8080"
-    CHAIN_ID                 = var.chain_id
-    CHAIN_B_ID               = var.chain_b_id # the fixture emits two chains only when this is set — §16.5
     SPONSORSHIP_MODE         = "service"
     BYO_ALLOWED_DAPP_ORIGINS = jsonencode(["https://${local.tenant_hosts.byoui.dapp}"])
     FACTORY_ADDRESS          = var.factory_address # required here, unlike everywhere else — §14.5
@@ -314,6 +312,13 @@ module "svc-wallet-byo" {
     # No BYO_BUNDLER_PROXY_ENABLED, no RPC_UPSTREAM/RPC_B_UPSTREAM: serve.mjs no longer proxies
     # /bundler or /rpc at all — reads and the bundler go through wallet-api's /api/v1/rpc and
     # /api/v1/bundler relays for every chain. R11 closed.
+
+    # The chains wallet-web serves, each with its name (e2e/wallet-byo/chains.mjs). The fixture
+    # refuses CHAINS set together with CHAIN_ID or CHAIN_B_ID, so neither is set here.
+    CHAINS = jsonencode(concat([
+      { chainId = tonumber(var.chain_id), name = var.chain_name },
+      { chainId = tonumber(var.chain_b_id), name = var.chain_b_name },
+    ], [for c in local.silent_data_chains : { chainId = c.chain_id, name = c.name }]))
   }
   secret_arns     = {}
   asm_kms_key_arn = aws_kms_key.asm-kms-key.arn
