@@ -81,7 +81,8 @@ chain's entry of the `chains` secret.
 3. **Chain profile.** For each chain, `deploy/chains/<chain>.json` sets: `chainId`, `network`, `name`,
    `rpcUrl` (a public fallback), `rpcUrlEnv` (the variable that holds the keyed URL), `release`, `roleAdmin`,
    `minDeployerBalanceEth`, the `paymaster` parameters, and `timelock.proposers`, `timelock.executors` (empty
-   means anyone may execute) and `timelock.delays`. Leave `timelock.address` out until step 9. Merge the profile
+   means anyone may execute) and `timelock.delays`. Leave `timelock.address` out: `contracts:timelock` writes
+   it in step 9. Merge the profile
    changes in a PR.
 4. **Operator file.** For each chain, copy `deploy/contracts/operator.env.example` to
    `deploy/contracts/<chain>.local.env` (gitignored) and fill in:
@@ -98,8 +99,10 @@ chain's entry of the `chains` secret.
    | `PAYMASTER_TENANTS` | `slug:uuid` pairs, filled in at step 8 |
    | `SPONSOR_ALLOWLIST` | the contracts tenants sponsor, comma-separated |
 
-   Pass this file with an **absolute** path (`--env-file "$PWD/deploy/contracts/<chain>.local.env"`): the
-   commands run inside `packages/contracts`, so a relative path is not found.
+   Pass this file with an **absolute** path (`--env-file "$PWD/deploy/contracts/<chain>.local.env"`). The
+   commands run `node` inside `packages/contracts`, and Node 26 reads an `--env-file` flag itself, even after the
+   script name, relative to that folder: a repository-relative path stops it with
+   `node: deploy/contracts/<chain>.local.env: not found` before the script can resolve it.
 
 ## 3. Rehearse on a fork
 
@@ -146,9 +149,8 @@ a finished deployment.
 file loaded:
 
 ```sh
-cd packages/contracts
-DEPLOYER_PRIVATE_KEY="$CANONICAL_DEPLOYER_PRIVATE_KEY" node --import tsx deploy/cli.ts test-token \
-  --rpc "<keyed RPC URL>" --chain <chain> --holder <admin address>
+(cd packages/contracts && DEPLOYER_PRIVATE_KEY="$CANONICAL_DEPLOYER_PRIVATE_KEY" node --import tsx deploy/cli.ts \
+  test-token --rpc "<keyed RPC URL>" --chain <chain> --holder <admin address>)
 ```
 
 It lands at the same address on every testnet and is written to the chain's record. It is refused on a
@@ -195,12 +197,16 @@ contract-specific inputs are below.
    Raise `chains.version` with every change: Terraform only rewrites a secret whose version changed. Then mirror
    it: `terraform apply -target='module.asm-app.aws_secretsmanager_secret_version.secret["chains"]'` (the dev
    and stg workspaces read the note from the `Giano dev/stg` vault; prd from its own). Running tasks keep the old
-   value until they restart. For Base Sepolia and Ethereum Sepolia,
-   [`deploy/contracts/dev-v3-chains.mts`](../deploy/contracts/dev-v3-chains.mts) fills these fields from the
-   records and validates the result; it needs entries that already have `chainId`, `name` and `rpcUrl`.
+   value until they restart. Fill the addresses from each chain's record
+   (`packages/contracts/deployments/<chainId>.json`), never by hand from memory.
 2. **Terraform variables** (`infra/iac/ecs_services.vars.tf`): `paymaster_address` (the provisioning task),
-   `factory_address` (the BYO wallet's bundle), and `test_erc20_address` for the workspace (testnets only,
-   blank elsewhere), and the chain lists if a chain is added.
+   `factory_address` (the BYO wallet's bundle), `test_erc20_address` (the reference dApps' default token) and
+   the two chains (`chain_id`, `chain_name`, `chain_b_id`, `chain_b_name`).
+   **Only `test_erc20_address` (and `silent_data_chains`) are per-workspace maps today.** The addresses and the
+   two chains are single values shared by dev, stg and prd, so changing them for one workspace changes them for
+   all. A workspace with other addresses (a mainnet environment, whose canonical deployer gives different
+   CREATE3 addresses) or other chains first needs those variables turned into per-workspace maps, in their own
+   PR. A third chain that is not a Silent Data chain has no variable yet either.
 3. **The deployed version.** A PR that sets the workspace in `infra/versions.json` to a tested `main` SHA whose
    images exist; merging it makes `deploy.yml` roll every service. Check the images first:
 
@@ -217,8 +223,9 @@ contract-specific inputs are below.
    if it only moves services to an existing revision, a previous apply was rolled back: find out why (the
    service events and a stopped task's `stoppedReason`) before applying again.
 
-**Done when:** `GET https://<api host>/v1/version` lists every chain `ready`, both reference dApps' `/config.js`
-carry the chains (and `defaultToken` on testnets), and the BYO wallet's `/main.js` contains the new factory.
+**Done when:** `GET https://<api host>/v1/version` lists every chain `ready`, and, where the workspace runs
+them, the reference dApps' `/config.js` carry the chains (and `defaultToken` on testnets) and the BYO wallet's
+`/main.js` contains the new factory (`byo_wallet_enabled` is on only in dev).
 
 ## 8. Create the tenants
 
@@ -240,8 +247,7 @@ Run these in order, for each chain, from a terminal (each signing command asks f
 ```sh
 ENV_FILE="$PWD/deploy/contracts/<chain>.local.env"
 pnpm contracts:provision --chain <chain> --env-file "$ENV_FILE"   # roles, signer, stake, deposit, tenants
-pnpm contracts:timelock  --chain <chain> --env-file "$ENV_FILE"   # deploys the GianoTimelock
-#   set timelock.address in deploy/chains/<chain>.json to the printed address (PR), then:
+pnpm contracts:timelock  --chain <chain> --env-file "$ENV_FILE"   # deploys the GianoTimelock, saves its address
 pnpm contracts:handoff   --chain <chain> --env-file "$ENV_FILE"   # moves the timelocked roles to the timelock
 pnpm contracts:doctor    --chain <chain> --env-file "$ENV_FILE"   # must report "all critical checks passed"
 ```
@@ -255,12 +261,31 @@ pnpm contracts:doctor    --chain <chain> --env-file "$ENV_FILE"   # must report 
   timelock. It cannot be undone. If a transaction reverts (a stale gas estimate on a lagging RPC), run it again:
   it continues from where it stopped. From then on those changes are timelock proposals
   ([timelock runbook](PAYMASTER-TIMELOCK-RUNBOOK.md)).
+- **The timelock command** writes the timelock's address into `deploy/chains/<chain>.json` and the chain's
+  record. The hand-off reads the local profile, so it does not wait for a PR: commit both files in a PR after
+  the hand-off.
 - **Doctor** warnings that are expected on a testnet: the signer reported but not asserted, and a proposer that
   "is a key, not a Safe".
 
 Then add the timelock to the console's view of each chain: in the `chains` secret, set
 `paymasterAdmin.timelockAddress` and `paymasterAdmin.timelockDelays` (the profile's delays), raise the version
 and mirror it as in step 7.
+
+For **Base Sepolia and Ethereum Sepolia on release v3**,
+[`deploy/contracts/dev-v3-chains.mts`](../deploy/contracts/dev-v3-chains.mts) does this in one run, now that
+the records hold the timelock: it reads the secret bundle on stdin, fills the step 7 fields and the timelock
+fields of both chains from the records and profiles, validates the result against the services' schemas, raises
+`chains.version`, and prints the bundle to paste back into the note:
+
+```sh
+op item get secrets-<env> --vault '<vault>' --format json \
+  | jq -r '.fields[] | select(.id == "notesPlain") | .value' \
+  | (cd packages/contracts && node --import tsx ../../deploy/contracts/dev-v3-chains.mts) | pbcopy
+```
+
+Its limits: it handles exactly those two chains (the bundle needs an entry with `chainId`, `name` and `rpcUrl`
+for both), only release v3, and refuses a record without a timelock or a profile whose timelock address does
+not match the record. For other chains or releases, edit the entries by hand from the records.
 
 ## 10. Install the sponsorship rules
 
@@ -339,5 +364,5 @@ Then check in the console that each tenant's balance went down by the sponsored 
 - **Rolling a new version later** is an `infra/versions.json` PR (step 7.3), followed by a full apply from a
   checkout that includes it (step 7.4) when Terraform inputs changed, and the smoke test (step 12).
 - **Upgrading the paymaster** goes through the timelock:
-  `deploy:cli upgrade --contract paymaster --timelock <address>` builds the proposal
+  `deploy:cli upgrade --rpc <keyed RPC URL> --contract paymaster --timelock <address>` builds the proposal
   ([timelock runbook](PAYMASTER-TIMELOCK-RUNBOOK.md) §3).
