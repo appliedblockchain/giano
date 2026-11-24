@@ -54,12 +54,11 @@ locals {
   # origin to the CSP. privateToken shows the dApp's private token card for the chain.
   silent_data_chains = lookup(var.silent_data_chains, terraform.workspace, [])
 
-  # custom-example (the stock wallet) serves every chain. custom-example-byoui keeps the two
-  # testnets: the BYO wallet fixture (e2e/wallet-byo) serves at most two chains.
-  example_dapp_chains = jsonencode(concat(local.testnet_dapp_chains, [
+  # Both dApps, custom-example (the stock wallet) and custom-example-byoui (the BYO wallet), list
+  # every chain.
+  dapp_chains = jsonencode(concat(local.testnet_dapp_chains, [
     for c in local.silent_data_chains : { chainId = c.chain_id, name = c.name, rpcUrl = c.rpc_url, privateToken = c.private_token }
   ]))
-  byoui_dapp_chains = jsonencode(local.testnet_dapp_chains)
 
   # The application database name — matches the compose reference's POSTGRES_DB default (§8, §7.4).
   app_db_name = "giano"
