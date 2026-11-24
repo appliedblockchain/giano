@@ -37,14 +37,6 @@ const tenant = TENANTS.stock;
  * bug is fixed; remove the mark in the change that fixes it.
  */
 const KNOWN_BUG = {
-	/**
-	 * The wallet-api injection's `getCredentialInfo` uses the user's FIRST credential from
-	 * `/v1/webauthn/options` and never the wallet address. On device B it asks the authenticator
-	 * for device A's passkey ("Invalid credential"); when device B's row comes first, device A
-	 * derives device B's own address and sponsorship refuses it ("not-your-wallet").
-	 */
-	firstCredential:
-		"getCredentialInfo signs with the user's first credential, not this device's",
 	/** ClaimFlow maps `pending-declined` to the "connection problem" copy (WM-23). */
 	declinedCopy: "a declined claim code reads as a network failure",
 };
@@ -82,6 +74,19 @@ async function startDeviceB(browser: Browser) {
 	await wallet.goto(tenant.walletUrl);
 	const { cdp } = await addVirtualAuthenticator(wallet);
 	const credentials = trackResidentCredentials(cdp);
+	// Device B signs here and then in dApp popups, each with its own virtual authenticator. A real
+	// device has one authenticator, so carry the signature counter forward from this page too, or
+	// wallet-api refuses the popup's first signature as a counter regression.
+	cdp.on(
+		"WebAuthn.credentialAsserted" as never,
+		((event: { credential: VirtualCredential }) => {
+			const index = credentials.findIndex(
+				(credential) =>
+					credential.credentialId === event.credential.credentialId,
+			);
+			if (index !== -1) credentials[index] = event.credential;
+		}) as never,
+	);
 	await expect(wallet.getByTestId("manage-claim-entry")).toBeVisible();
 	return { context, wallet, credentials };
 }
@@ -208,7 +213,6 @@ test.describe("one wallet, two devices", () => {
 		page,
 		browser,
 	}) => {
-		test.fail(true, KNOWN_BUG.firstCredential);
 		const a = await startDeviceA(page);
 		const b = await pairDeviceB(a, browser);
 		deviceB = b.context;
@@ -243,8 +247,6 @@ test.describe("one wallet, two devices", () => {
 		page,
 		browser,
 	}) => {
-		// Fails only when Postgres stores device B's credential row first, so it is flaky until the fix.
-		test.fixme(true, KNOWN_BUG.firstCredential);
 		const a = await startDeviceA(page);
 		const b = await pairDeviceB(a, browser);
 		deviceB = b.context;
@@ -327,7 +329,6 @@ test.describe("one wallet, two devices", () => {
 		page,
 		browser,
 	}) => {
-		test.fail(true, KNOWN_BUG.firstCredential);
 		const a = await startDeviceA(page);
 		const b = await pairDeviceB(a, browser);
 		deviceB = b.context;
