@@ -3248,25 +3248,12 @@ Blocked on [§16.5](#165-a-deployable-byo-wallet-reference).
 | `WALLET_API_UPSTREAM` | `http://wallet-api.giano-dev.local:8080` |
 | `RPC_UPSTREAM` | **does not exist** — chain reads for both chains go through wallet-api's `/api/v1/rpc/<chainId>` relay over the `/api` proxy |
 | `BUNDLER_UPSTREAM` | **does not exist** — there is no bundler proxy for either chain; the SPA uses `/api/v1/bundler/<chainId>` ([R11](#19-risks-and-open-items), closed) |
-| `CHAIN_ID` | `84532` |
-| `CHAIN_NAME` | `Base Sepolia` (tfvar `var.chain_name` — the same one `custom-example`'s `GIANO_CHAIN_NAME` already reads, [§14.4](#144-custom-example)) — **not currently wired**, see below |
-| `CHAIN_B_ID` | `11155111` — the second chain, Ethereum Sepolia; the fixture emits two chains only when this is set (§16.5) |
-| `CHAIN_B_NAME` | `Ethereum Sepolia` (tfvar `var.chain_b_name`) — **not currently wired**, see below |
+| `CHAINS` | a JSON array of `{ chainId, name }`, the chains wallet-web serves: `84532` `Base Sepolia` (`var.chain_name`), `11155111` `Ethereum Sepolia` (`var.chain_b_name`), and on `dev` each Silent Data chain from `var.silent_data_chains` (iron-kestrel, `19874`) |
+| `CHAIN_ID`, `CHAIN_NAME`, `CHAIN_B_ID`, `CHAIN_B_NAME` | unset — the older two-chain form; the fixture refuses it set together with `CHAINS` (`e2e/wallet-byo/chains.mjs`) |
 | `FACTORY_ADDRESS` | the factory from the contracts registry, `getGianoDeployment(chainId).factory` ([§13](#13-chain-prerequisites), the same testnet address on both chains), **required** — unlike `wallet-api`/`wallet-web`, this SPA has no contracts-registry dependency and passes the value straight to `createGianoProvider`; `serve.mjs` refuses to start without it |
 | `SPONSORSHIP_MODE` | `service` — the real sponsorship path, through `/api/v1/paymaster` |
 | `PAYMASTER_ADDRESS` | unset; `service` mode does not use the permissive fixture |
 | `BYO_ALLOWED_DAPP_ORIGINS` | `["https://byoui.dev.giano.appliedblockchain.dev"]` — this tenant's own allowlist, which is why R9 does not reach it |
-
-**⚠ `CHAIN_NAME`/`CHAIN_B_NAME` are not set by `infra/iac/ecs_services.tf` today** — the
-`svc-wallet-byo` module's `environment` block carries `CHAIN_ID`/`CHAIN_B_ID` but not the two name
-variables, even though `var.chain_name`/`var.chain_b_name` already exist for exactly this purpose
-(`custom-example` already reads them, [§14.4](#144-custom-example)). `serve.mjs` does not crash
-without them — it falls back to `chain 84532`/`chain 11155111` rather than to the devnet's
-hardcoded `Devnet A`/`Devnet B`, because the code's own comment is explicit that "a deployment on a
-real chain calling it 'Devnet A' is worse than no name at all" — but that fallback is a worse label
-than the one this environment already has on hand for the other dApp. Adding
-`CHAIN_NAME = var.chain_name` and `CHAIN_B_NAME = var.chain_b_name` to that module block is a
-two-line fix, not a design question.
 
 Because the SPA is bundled at container start from these variables, the image is already
 environment-independent in the way [§16.1](#161-a-dockerfile-and-runtime-config-for-custom-example)

@@ -92,7 +92,7 @@ variable "test_erc20_address" {
 # chain's backend entry (wallet-api, bundler, console) is in the `chains` secret, with the tokened
 # write URL as bundler.rpcUrl (deploy/contracts/TESTNET-ROLLOUT.md, "Adding iron-kestrel to dev").
 variable "silent_data_chains" {
-  description = "Silent Data chains per workspace, added to wallet-web's and custom-example's chain lists (dev: iron-kestrel)"
+  description = "Silent Data chains per workspace, added to the chain lists of wallet-web, wallet-byo and both custom-example dApps (dev: iron-kestrel)"
   type = map(list(object({
     chain_id      = number
     name          = string
