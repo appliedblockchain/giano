@@ -1,4 +1,4 @@
-import { Button, HStack, Table, Text } from "@chakra-ui/react";
+import { Button, HStack, Table, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef } from "react";
 import { shortHex } from "../lib/format";
 import { useDemo } from "../state/store";
@@ -74,9 +74,9 @@ export function IdentityCard() {
 			<Table.Root size="sm" variant="line">
 				<Table.Header>
 					<Table.Row>
-						<Table.ColumnHeader w="48">Chain</Table.ColumnHeader>
+						<Table.ColumnHeader w="64">Chain</Table.ColumnHeader>
 						<Table.ColumnHeader>Granted address</Table.ColumnHeader>
-						<Table.ColumnHeader w="56">Status</Table.ColumnHeader>
+						<Table.ColumnHeader w="32">Status</Table.ColumnHeader>
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
@@ -96,10 +96,10 @@ export function IdentityCard() {
 								data-testid={`identity-${chain.config.chainId}`}
 							>
 								<Table.Cell>
-									<HStack gap="2">
+									<VStack align="start" gap="0">
 										<Text fontSize="sm">{chain.config.name}</Text>
 										<Mono muted>{chain.config.chainId}</Mono>
-									</HStack>
+									</VStack>
 								</Table.Cell>
 								<Table.Cell>
 									{account ? (
