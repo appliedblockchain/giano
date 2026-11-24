@@ -114,21 +114,25 @@ export async function applyOwnerChange(
 		}
 
 		try {
-			if (!(await ensureAccount(runtime))) {
-				update(chainId, {
-					state: "failed",
-					detail: "no signed-in account for this chain",
-				});
-				continue;
-			}
-
 			// WM-46/Q2: never attempted on a chain where the account is not deployed — stated,
-			// not hidden. The chain reconciles when the account first deploys there.
+			// not hidden. Nothing applies the change there later: an account deployed afterwards
+			// starts with the owners in its factory salt, and the owner list shows the difference.
+			// Checked before the account is restored: a passkey added as an owner cannot connect
+			// to an account that is not deployed, so restoring first would fail the chain instead
+			// of skipping it.
 			if (!(await runtime.isAccountDeployed(walletAddress))) {
 				update(chainId, {
 					state: "skipped",
 					detail:
 						"the account is not deployed on this chain yet — the change is not applied here",
+				});
+				continue;
+			}
+
+			if (!(await ensureAccount(runtime))) {
+				update(chainId, {
+					state: "failed",
+					detail: "no signed-in account for this chain",
 				});
 				continue;
 			}
