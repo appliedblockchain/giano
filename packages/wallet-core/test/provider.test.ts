@@ -522,6 +522,58 @@ describe("explicit smart account address (secondary owner)", () => {
 		expect(isOwner).not.toHaveBeenCalled();
 	});
 
+	it("connects to the account the sign-in names, when the credential info names none", async () => {
+		const { credentialId, ownerBytes } = await registerCredential();
+		const isOwner = ownsSharedAccount(ownerBytes);
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: createMockInjection(mock.authenticator, {
+				credentialId,
+				onCredentialSignedIn: async () => SHARED_ADDRESS,
+			}),
+			transportOptions: { isOwner },
+		});
+
+		expect(await provider.request({ method: "eth_requestAccounts" })).toEqual([
+			SHARED_ADDRESS,
+		]);
+		// The named account is still checked: the passkey must own it.
+		expect(isOwner).toHaveBeenCalledOnce();
+	});
+
+	it("signs in with whichever offered credential the authenticator holds", async () => {
+		// Another device's credential, which this authenticator does not hold, is offered first.
+		const otherDevice = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+		const { credentialId, ownerBytes } = await registerCredential();
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: createMockInjection(mock.authenticator, {
+				credentialId: [otherDevice, credentialId] as never,
+				onCredentialSignedIn: async () => SHARED_ADDRESS,
+			}),
+			transportOptions: { isOwner: ownsSharedAccount(ownerBytes) },
+		});
+
+		expect(await provider.request({ method: "eth_requestAccounts" })).toEqual([
+			SHARED_ADDRESS,
+		]);
+	});
+
+	it("does not restore silently from a list of credentials: it cannot know which one this device holds", async () => {
+		const first = await registerCredential();
+		const second = await registerCredential();
+		const getPublicKeyByCredentialId = vi.fn();
+		const { provider } = buildProvider(mock.authenticator, {
+			injection: createMockInjection(mock.authenticator, {
+				credentialId: [first.credentialId, second.credentialId] as never,
+				getPublicKeyByCredentialId,
+			}),
+		});
+
+		expect(
+			await provider.request({ method: "giano_restoreAccount", params: [] }),
+		).toEqual([]);
+		expect(getPublicKeyByCredentialId).not.toHaveBeenCalled();
+	});
+
 	it("refuses an address for a credential that is being created, before the passkey prompt", async () => {
 		const create = vi.spyOn(mock.authenticator, "create");
 		const onCredentialCreated = vi.fn(async () => null);
