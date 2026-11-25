@@ -727,7 +727,10 @@ describe("createWalletApiInjection", () => {
 
 		it("a 401 to a call that carried no session does not end it", async () => {
 			const { injection, ended } = make(respond(401));
-			await expect(injection.getCredentialInfo()).rejects.toThrow(/failed: x/);
+			// The ceremony options call carries no session.
+			await expect(injection.signInWithExistingPasskey()).rejects.toThrow(
+				/failed: x/,
+			);
 			expect(injection.getSessionToken()).toBe("tok");
 			expect(ended).not.toHaveBeenCalled();
 		});
@@ -884,9 +887,15 @@ describe("createWalletApiInjection with several credentials per user", () => {
 	/** A wallet-api double whose routes may answer with any status. Records each path asked for. */
 	function walletApi(routes: Record<string, Route>) {
 		const paths: string[] = [];
-		const fetchImpl = vi.fn(async (url: string) => {
+		/** Each request's path and JSON body, in order. */
+		const requests: { path: string; body: Record<string, unknown> }[] = [];
+		const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
 			const path = url.split("?")[0];
 			paths.push(path.replace("https://wallet.test/api", ""));
+			requests.push({
+				path: path.replace("https://wallet.test/api", ""),
+				body: typeof init?.body === "string" ? JSON.parse(init.body) : {},
+			});
 			const key = Object.keys(routes).find((route) => path.endsWith(route));
 			const route = key === undefined ? undefined : routes[key];
 			const status = route ? (route.status ?? 200) : 404;
@@ -896,7 +905,7 @@ describe("createWalletApiInjection with several credentials per user", () => {
 				json: async () => route?.body ?? { message: "not found" },
 			} as Response;
 		});
-		return { fetchImpl, paths };
+		return { fetchImpl, paths, requests };
 	}
 
 	const options = (credentialIds: string[]) => ({
@@ -1064,5 +1073,169 @@ describe("createWalletApiInjection with several credentials per user", () => {
 		await expect(numeric.onCredentialSignedIn({} as never)).rejects.toThrow(
 			/must return a boolean or a wallet address/,
 		);
+	});
+
+	describe("the connect choice", () => {
+		const optionsBodies = (
+			requests: { path: string; body: Record<string, unknown> }[],
+		) =>
+			requests
+				.filter((request) => request.path === "/v1/webauthn/options")
+				.map((request) => request.body);
+
+		it("'existing' offers every passkey this device holds, with a challenge bound to no user", async () => {
+			const { fetchImpl, requests } = walletApi({
+				"/v1/webauthn/options": options([]),
+			});
+			const injection = createWalletApiInjection({
+				apiUrl: "https://wallet.test/api",
+				externalUserId: "stale",
+				fetch: fetchImpl as never,
+			});
+			injection.setConnectChoice("existing");
+
+			const info = await injection.getCredentialInfo();
+
+			expect(info.credentialId).toBe("user-pick");
+			expect(info.address).toBeUndefined();
+			expect(optionsBodies(requests)).toEqual([
+				{
+					externalUserId: "stale",
+					kind: "authentication",
+					discoverable: true,
+				},
+			]);
+		});
+
+		it("'new' creates under a fresh external user id when the stored one already has a wallet", async () => {
+			const { fetchImpl, requests } = walletApi({
+				"/v1/webauthn/options": {
+					body: {
+						kind: "authentication",
+						challenge: toBase64Url(new Uint8Array([9])),
+						userExists: true,
+						credentialIds: [DEVICE_A],
+					},
+				},
+			});
+			const onExternalUserIdChanged = vi.fn();
+			const injection = createWalletApiInjection({
+				apiUrl: "https://wallet.test/api",
+				externalUserId: "has-a-wallet",
+				onExternalUserIdChanged,
+				fetch: fetchImpl as never,
+			});
+			injection.setConnectChoice("new");
+
+			const info = await injection.getCredentialInfo();
+
+			expect(info.credentialId).toBeNull();
+			const fresh = injection.getExternalUserId();
+			expect(fresh).not.toBe("has-a-wallet");
+			expect(fresh).toMatch(/^[0-9a-f]{32}$/);
+			expect(onExternalUserIdChanged).toHaveBeenCalledWith(fresh);
+			expect(optionsBodies(requests)).toEqual([
+				{ externalUserId: "has-a-wallet" },
+				{ externalUserId: fresh, kind: "registration" },
+			]);
+		});
+
+		it("'new' keeps the stored external user id when it has no wallet yet", async () => {
+			const { fetchImpl } = walletApi({
+				"/v1/webauthn/options": {
+					body: {
+						kind: "registration",
+						challenge: toBase64Url(new Uint8Array([9])),
+						userExists: false,
+						credentialIds: [],
+					},
+				},
+			});
+			const injection = createWalletApiInjection({
+				apiUrl: "https://wallet.test/api",
+				externalUserId: "fresh-device",
+				fetch: fetchImpl as never,
+			});
+			injection.setConnectChoice("new");
+
+			expect((await injection.getCredentialInfo()).credentialId).toBeNull();
+			expect(injection.getExternalUserId()).toBe("fresh-device");
+		});
+
+		it("a session still decides over any choice, with a challenge bound to no user", async () => {
+			const { fetchImpl, requests } = walletApi({
+				"/v1/webauthn/options": options([]),
+				"/v1/me": {
+					body: {
+						externalUserId: "other",
+						walletAddress: WALLET,
+						credentialId: DEVICE_B,
+					},
+				},
+			});
+			const injection = createWalletApiInjection({
+				apiUrl: "https://wallet.test/api",
+				externalUserId: "stale",
+				sessionToken: "tok-b",
+				fetch: fetchImpl as never,
+			});
+			injection.setConnectChoice("new");
+
+			const info = await injection.getCredentialInfo();
+
+			expect([...(info.credentialId as Uint8Array)]).toEqual([0xb2, 0xb2]);
+			expect(info.address).toBe(WALLET);
+			expect(optionsBodies(requests)).toEqual([
+				{
+					externalUserId: "stale",
+					kind: "authentication",
+					discoverable: true,
+				},
+			]);
+		});
+
+		it("clearing the choice restores the default: the stored user's credentials", async () => {
+			const { fetchImpl } = walletApi({
+				"/v1/webauthn/options": options([DEVICE_A]),
+			});
+			const injection = createWalletApiInjection({
+				apiUrl: "https://wallet.test/api",
+				externalUserId: "u",
+				fetch: fetchImpl as never,
+			});
+			injection.setConnectChoice("existing");
+			injection.setConnectChoice(null);
+
+			const info = await injection.getCredentialInfo();
+
+			expect([...(info.credentialId as Uint8Array)]).toEqual([0xa1, 0xa1]);
+		});
+	});
+
+	it("signs in on the wallet origin with a challenge bound to no user", async () => {
+		const { fetchImpl, requests } = walletApi({
+			"/v1/webauthn/options": options([]),
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "stale",
+			fetch: fetchImpl as never,
+		});
+		// The passkey prompt itself is the browser's; stop at it.
+		const get = vi.spyOn(navigator.credentials, "get").mockResolvedValue(null);
+
+		await expect(injection.signInWithExistingPasskey()).rejects.toThrow(
+			/no passkey was selected/,
+		);
+
+		expect(requests[0].body).toEqual({
+			externalUserId: "stale",
+			kind: "authentication",
+			discoverable: true,
+		});
+		expect(
+			(get.mock.calls[0][0] as CredentialRequestOptions).publicKey
+				?.allowCredentials,
+		).toBeUndefined();
 	});
 });

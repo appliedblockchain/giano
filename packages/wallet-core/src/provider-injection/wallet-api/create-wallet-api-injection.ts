@@ -50,7 +50,22 @@ export type CreateWalletApiInjectionOptions = {
 	fetch?: typeof fetch;
 };
 
+/**
+ * How the next connect signs in when there is no session.
+ * - `existing`: with any passkey this device holds for the wallet origin (a discoverable sign-in).
+ *   The passkey names its own user and wallet, whatever user this device last knew.
+ * - `new`: create a passkey and a new wallet, under a fresh external user id if the one this
+ *   device holds already has a wallet.
+ */
+export type ConnectChoice = "existing" | "new";
+
 export type WalletApiInjection = GianoProviderInjection & {
+	/**
+	 * Sets how the next connect (`getCredentialInfo` without a session) signs in, or `null` for the
+	 * default: the stored user's credentials when it has some, else a new wallet. The wallet host
+	 * sets it from the user's choice on the connect screen, and clears it after.
+	 */
+	setConnectChoice(choice: ConnectChoice | null): void;
 	/** Current wallet-api session bearer token (null when signed out). */
 	getSessionToken(): string | null;
 	/** The external user id currently in force (may have been adopted at sign-in). */
@@ -255,22 +270,45 @@ export function createWalletApiInjection(
 		}
 	}
 
+	let connectChoice: ConnectChoice | null = null;
+
+	type Options = {
+		kind: string;
+		challenge: string;
+		userExists: boolean;
+		credentialIds: string[];
+	};
+	const ceremonyOptions = async (body: Record<string, unknown>) => {
+		const grantHeaders = getRegistrationGrant
+			? await getRegistrationGrant()
+			: {};
+		return api<Options>("/v1/webauthn/options", {
+			method: "POST",
+			headers: grantHeaders,
+			body: JSON.stringify({ externalUserId, ...body }),
+		});
+	};
+	/** A sign-in challenge bound to no user: whichever passkey answers names its own user. */
+	const discoverableChallenge = async () =>
+		fromBase64Url(
+			(await ceremonyOptions({ kind: "authentication", discoverable: true }))
+				.challenge,
+		);
+
 	return {
+		setConnectChoice: (choice) => {
+			connectChoice = choice;
+		},
 		getSessionToken: () => sessionToken,
 		getExternalUserId: () => externalUserId,
 
 		signInWithExistingPasskey: async () => {
-			const grantHeaders = getRegistrationGrant
-				? await getRegistrationGrant()
-				: {};
-			const options_ = await api<{ challenge: string }>(
-				"/v1/webauthn/options",
-				{
-					method: "POST",
-					headers: grantHeaders,
-					body: JSON.stringify({ externalUserId, kind: "authentication" }),
-				},
-			);
+			// Discoverable, and bound to no user: the passkey this device holds may belong to a user
+			// other than the one it last knew (a passkey added from another device, WM-18).
+			const options_ = await ceremonyOptions({
+				kind: "authentication",
+				discoverable: true,
+			});
 			// No allowCredentials: the authenticator surfaces its resident credentials for this
 			// RP, which is the only way a device can use a credential the local storage has
 			// never heard of. The single passkey prompt IS the ceremony.
@@ -349,36 +387,43 @@ export function createWalletApiInjection(
 		getNameForCredential: () => credentialName,
 
 		getCredentialInfo: async () => {
-			const grantHeaders = getRegistrationGrant
-				? await getRegistrationGrant()
-				: {};
-			const result = await api<{
-				kind: string;
-				challenge: string;
-				credentialIds: string[];
-			}>("/v1/webauthn/options", {
-				method: "POST",
-				headers: grantHeaders,
-				body: JSON.stringify({ externalUserId }),
-			});
-			const challenge = fromBase64Url(result.challenge);
-
 			// A user can hold several credentials, one per device (WM-35), and this device holds only
 			// some of them. With a session, the session names the credential this device signed in
-			// with and the wallet it acts for. It is used even when the list above does not name it
-			// (it was fetched for this device's external user id, which can differ): falling back to
-			// the list would connect to the address derived from someone else's key.
+			// with and the wallet it acts for, whatever external user id this device stores: falling
+			// back to that user's list would connect to the address derived from someone else's key.
+			// The challenge is discoverable for the same reason: one bound to the stored user would
+			// refuse the session's credential when the two differ.
 			const session = await sessionAccount();
 			if (session) {
 				return {
 					credentialId: fromBase64Url(session.credentialId),
-					challenge,
+					challenge: await discoverableChallenge(),
 					address: session.walletAddress,
 				};
 			}
 
-			// Without a session, offer every credential and let the authenticator present the ones
-			// it holds. The sign-in then names the wallet (onCredentialSignedIn).
+			if (connectChoice === "existing") {
+				// The authenticator offers every passkey it holds for the wallet origin, and the one
+				// the user picks names its own wallet at sign-in (onCredentialSignedIn).
+				return {
+					credentialId: "user-pick" as const,
+					challenge: await discoverableChallenge(),
+				};
+			}
+
+			let result = await ceremonyOptions({});
+			if (connectChoice === "new" && result.userExists) {
+				// A new wallet needs a user of its own: wallet-api refuses a passkey added to an
+				// existing user outside a pending addition.
+				adoptExternalUserId(globalThis.crypto.randomUUID().replace(/-/g, ""));
+				result = await ceremonyOptions({ kind: "registration" });
+			}
+			const challenge = fromBase64Url(result.challenge);
+			if (connectChoice === "new") return { credentialId: null, challenge };
+
+			// No choice made: the stored user's credentials when it has some, else a new wallet.
+			// Offer them all and let the authenticator present the ones it holds; the sign-in then
+			// names the wallet (onCredentialSignedIn).
 			const [only, ...others] = result.credentialIds;
 			if (!only) return { credentialId: null, challenge };
 			return {

@@ -109,6 +109,33 @@ describe("depositPasskeyIntoPendingAddition", () => {
 		);
 	});
 
+	it("names the passkey after the wallet being joined, and returns that wallet", async () => {
+		const wallet = "0x00000000000000000000000000000000000a11e7" as Hex;
+		const { api } = buildApi((key) => key);
+		vi.mocked(api.claimPendingAddition).mockResolvedValueOnce({
+			rpId: "localhost",
+			challenge: toBase64Url(new Uint8Array(32).fill(7)),
+			pendingAdditionId: "slot-1",
+			walletAddress: wallet,
+		});
+		const create = vi.spyOn(mock.authenticator, "create");
+		const userName = vi.fn((address: Hex | undefined) => `Giano · ${address}`);
+
+		const deposited = await depositPasskeyIntoPendingAddition({
+			api,
+			claimCode: "CLAIM-CODE",
+			userId: new Uint8Array(32).fill(1),
+			userName,
+		});
+
+		expect(userName).toHaveBeenCalledWith(wallet);
+		const user = (create.mock.calls[0][0] as CredentialCreationOptions)
+			.publicKey?.user;
+		expect(user?.name).toBe(`Giano · ${wallet}`);
+		expect(user?.displayName).toBe(`Giano · ${wallet}`);
+		expect(deposited.walletAddress).toBe(wallet);
+	});
+
 	it("rejects a malformed key before it is deposited", async () => {
 		created.tamper = true;
 		const { api, fillPendingAddition } = buildApi((key) => key);

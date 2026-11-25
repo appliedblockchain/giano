@@ -1,4 +1,5 @@
 import {
+	type DepositPasskeyParameters,
 	encodeRemoveOwnerAtIndex,
 	ownerFingerprint,
 	publicKeyOwnerBytes,
@@ -222,10 +223,16 @@ function harness({
 		}),
 	} as unknown as WalletManagementApi;
 
-	const depositPasskey = vi.fn(async () => {
-		events.push("ceremony:create-passkey");
-		return { publicKey: keyB, fingerprint: ownerFingerprint(bytesB) };
-	});
+	const depositPasskey = vi.fn(
+		async (_parameters: DepositPasskeyParameters) => {
+			events.push("ceremony:create-passkey");
+			return {
+				publicKey: keyB,
+				fingerprint: ownerFingerprint(bytesB),
+				walletAddress: WALLET,
+			};
+		},
+	);
 
 	const controller = createManagementController({
 		runtimes,
@@ -769,6 +776,35 @@ describe("the claim flow (WM-19, WM-23)", () => {
 				>
 			).fingerprint,
 		).toBe(ownerFingerprint(bytesB));
+	});
+
+	it("names the new passkey after the wallet it joins, shows that wallet, and marks the device as holding a passkey", async () => {
+		localStorage.removeItem("giano:passkey-on-device");
+		const h = harness({ session: null });
+		h.controller.startClaimOnThisDevice();
+		const input = h.controller.flow as Extract<
+			ManagementFlow,
+			{ type: "claim"; step: "input" }
+		>;
+		input.setCode("AB3D9KFM");
+		(h.controller.flow as typeof input).submit();
+		await settle(flowIs(h, "claim", "deposited"));
+
+		const { userName } = h.depositPasskey.mock.calls[0][0];
+		expect(typeof userName).toBe("function");
+		expect((userName as (wallet: Hex | undefined) => string)(WALLET)).toBe(
+			`Test Wallet · ${WALLET.slice(0, 6)}…${WALLET.slice(-4)}`,
+		);
+		expect(
+			(
+				h.controller.flow as Extract<
+					ManagementFlow,
+					{ type: "claim"; step: "deposited" }
+				>
+			).walletAddress,
+		).toBe(WALLET);
+		expect(localStorage.getItem("giano:passkey-on-device")).toBe("1");
+		localStorage.removeItem("giano:passkey-on-device");
 	});
 
 	it("keys the error on the machine-readable code, distinct from a network failure", async () => {

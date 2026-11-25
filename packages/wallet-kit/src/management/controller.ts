@@ -18,6 +18,7 @@ import {
 } from "@appliedblockchain/giano-wallet-core";
 import { type Address, getAddress, type Hex, isAddress } from "viem";
 import type { WalletConfig } from "../config";
+import { markPasskeyOnDevice, passkeyName } from "../passkey-on-device";
 import type { SponsorshipPreflight, WalletRuntimes } from "../runtimes";
 import { applyOwnerChange, type ChainProgress } from "./apply-owner-change";
 import { preflightManagement } from "./preflight";
@@ -202,7 +203,13 @@ export type ManagementFlow =
 			submit: () => void;
 	  }
 	| { type: "claim"; step: "depositing" }
-	| { type: "claim"; step: "deposited"; fingerprint: string } // now compare on device A
+	| {
+			type: "claim";
+			step: "deposited";
+			fingerprint: string;
+			/** The wallet being joined, when wallet-api reports it. */
+			walletAddress: Hex | null;
+	  } // now compare on device A
 	| {
 			type: "claim";
 			step: "error";
@@ -632,7 +639,8 @@ export function createManagementController({
 						api,
 						claimCode: slot.claimCode,
 						userId,
-						userName: config.branding.name,
+						// Named after the wallet it joins, so the picker tells it from the others.
+						userName: passkeyName(config.branding.name, wallet),
 					});
 					log("add(this-device): credential created and deposited", {
 						fingerprint: deposited.fingerprint,
@@ -1071,10 +1079,16 @@ export function createManagementController({
 				api,
 				claimCode: code,
 				userId,
-				userName: config.branding.name,
+				// Named after the wallet it joins, so the picker tells it from the others.
+				userName: (walletAddress) =>
+					passkeyName(config.branding.name, walletAddress),
 			});
+			// This device now holds a passkey: its next connect asks the browser for it, rather
+			// than for the passkeys of whichever user this device last knew.
+			markPasskeyOnDevice();
 			log("claim: passkey created and deposited", {
 				fingerprint: deposited.fingerprint,
+				walletAddress: deposited.walletAddress,
 			});
 			// The fingerprint this device displays is computed from the key IT created (WM-20);
 			// the user compares it on the authorising device's screen.
@@ -1082,6 +1096,7 @@ export function createManagementController({
 				type: "claim",
 				step: "deposited",
 				fingerprint: deposited.fingerprint,
+				walletAddress: deposited.walletAddress ?? null,
 			});
 		} catch (err) {
 			const apiCode = (err as { code?: string }).code ?? "network";

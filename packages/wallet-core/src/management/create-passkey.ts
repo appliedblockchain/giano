@@ -22,8 +22,12 @@ export type DepositPasskeyParameters = {
 	claimCode: string;
 	/** The WebAuthn user handle for the new credential (the caller packs it — see encodeUserId). */
 	userId: BufferSource;
-	/** Display name the authenticator shows for the passkey. */
-	userName: string;
+	/**
+	 * The name the authenticator shows for the passkey in its picker. A function gets the address
+	 * of the wallet being joined (undefined from a wallet-api that does not report it), so the
+	 * name can tell this wallet's passkey apart from others for the same site.
+	 */
+	userName: string | ((walletAddress: Hex | undefined) => string);
 };
 
 export type DepositedPasskey = {
@@ -34,6 +38,8 @@ export type DepositedPasskey = {
 	 * user to compare against the authorising device's screen (WM-20, WM-21).
 	 */
 	fingerprint: string;
+	/** The wallet being joined, as wallet-api reported it at claim. */
+	walletAddress: Hex | undefined;
 };
 
 /**
@@ -49,9 +55,11 @@ export async function depositPasskeyIntoPendingAddition(
 ): Promise<DepositedPasskey> {
 	const { api, claimCode, userId, userName } = parameters;
 	const claimed = await api.claimPendingAddition(claimCode);
+	const name =
+		typeof userName === "function" ? userName(claimed.walletAddress) : userName;
 	const credential = await createWebAuthnCredential({
 		challenge: fromBase64Url(claimed.challenge),
-		user: { id: userId, name: userName },
+		user: { id: userId, name, displayName: name },
 		authenticatorSelection: {
 			userVerification: DEFAULT_USER_VERIFICATION_REQUIREMENT,
 			residentKey: DEFAULT_RESIDENT_KEY_REQUIREMENT,
@@ -79,5 +87,6 @@ export async function depositPasskeyIntoPendingAddition(
 	return {
 		publicKey: local,
 		fingerprint: ownerFingerprint(publicKeyOwnerBytes(local.x, local.y)),
+		walletAddress: claimed.walletAddress,
 	};
 }

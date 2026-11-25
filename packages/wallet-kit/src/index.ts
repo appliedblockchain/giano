@@ -70,11 +70,18 @@ export {
 	type OwnerRow,
 	type SponsorshipRefusal,
 } from "./management/controller";
+export {
+	hasPasskeyOnDevice,
+	markPasskeyOnDevice,
+	passkeyName,
+} from "./passkey-on-device";
 // ── how a consent screen shows a personal_sign / eth_sign message ──
 export {
 	describePersonalMessage,
 	type PersonalMessageDisplay,
 } from "./personal-message";
+// ── how a connect signs in, and what the device remembers about its passkeys ──
+export type { ConnectOffer, ConsentDecision } from "./requests";
 export { type PendingRequest, type RequestStore, toRpcError } from "./requests";
 // ── runtimes (WK-01…WK-05) ──
 export {

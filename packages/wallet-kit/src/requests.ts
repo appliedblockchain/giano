@@ -17,7 +17,14 @@ export type PendingRequest = {
 	chainName: string;
 	/** The per-chain runtime serving this session (sponsorship pre-flight and all). */
 	runtime: WalletRuntime;
+	/**
+	 * For 'connect' only: what approving signs in with when there is no session, and the other
+	 * choice the screen may offer. See {@link ConnectOffer}.
+	 */
+	connect?: ConnectOffer;
 	approve: () => void;
+	/** For a 'connect' whose offer has an alternative: approves with that choice instead. */
+	approveAlternative?: () => void;
 	reject: () => void;
 	/**
 	 * Answers the dApp that the wallet session ended (EIP-1193 4100), not that the user refused
@@ -25,6 +32,22 @@ export type PendingRequest = {
 	 */
 	sessionEnded: () => void;
 };
+
+/**
+ * How a connect signs in, so the screen can label its buttons.
+ * - `session`: this device is signed in; approving continues with the session's passkey. No alternative.
+ * - `held-passkey`: this device is known to hold a passkey; approving signs in with whichever one the
+ *   browser offers (any user, any wallet it belongs to). The alternative creates a new wallet.
+ * - `default`: nothing is known; approving signs in with this device's stored user's passkeys, or
+ *   creates a wallet when it has none. The alternative signs in with a passkey the device holds.
+ */
+export type ConnectOffer =
+	| { primary: "session" }
+	| { primary: "held-passkey"; alternative: "new-wallet" }
+	| { primary: "default"; alternative: "held-passkey" };
+
+/** Which button the user pressed on a consent screen. */
+export type ConsentDecision = "primary" | "alternative";
 
 type Listener = (pending: PendingRequest | null) => void;
 
@@ -52,8 +75,11 @@ export function createRequestStore() {
 		},
 		/** Resolves with the user's decision; the caller performs the actual request. */
 		requestConsent(
-			input: Omit<PendingRequest, "approve" | "reject" | "sessionEnded">,
-		): Promise<void> {
+			input: Omit<
+				PendingRequest,
+				"approve" | "approveAlternative" | "reject" | "sessionEnded"
+			>,
+		): Promise<ConsentDecision> {
 			if (current) {
 				return Promise.reject(
 					new TransportRpcError(
@@ -62,14 +88,20 @@ export function createRequestStore() {
 					),
 				);
 			}
-			return new Promise<void>((resolve, reject) => {
+			return new Promise<ConsentDecision>((resolve, reject) => {
+				const decide = (decision: ConsentDecision) => {
+					current = null;
+					notify();
+					resolve(decision);
+				};
+				const hasAlternative =
+					input.connect !== undefined && input.connect.primary !== "session";
 				current = {
 					...input,
-					approve: () => {
-						current = null;
-						notify();
-						resolve();
-					},
+					approve: () => decide("primary"),
+					...(hasAlternative
+						? { approveAlternative: () => decide("alternative") }
+						: {}),
 					reject: () => {
 						current = null;
 						notify();
