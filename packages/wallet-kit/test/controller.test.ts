@@ -303,9 +303,14 @@ describe("loading the set (WK-17, WM-01…WM-06)", () => {
 			deviceType: "multiDevice" as const,
 			aaguid: "ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4",
 		};
-		const h = harness({ credentials: [{ ...credentialA, storage }] });
+		const addedFrom = { device: "Mac", browser: "Chrome" };
+		const h = harness({
+			credentials: [{ ...credentialA, storage, addedFrom }],
+		});
 		await h.controller.load();
 		expect(h.controller.state.owners[0].storage).toEqual(storage);
+		expect(h.controller.state.owners[0].addedFrom).toEqual(addedFrom);
+		expect(h.controller.state.owners[1].addedFrom).toBeNull();
 		// the on-chain owner with no registry row has nothing to say about storage
 		expect(h.controller.state.owners[1].storage).toBeNull();
 	});
@@ -508,6 +513,50 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 			ownerFingerprint(publicKeyOwnerBytes(keyB.x, keyB.y)),
 		);
 		expect(confirm.fingerprint).not.toBe("FAK-EEE");
+	});
+
+	it("shows device A which device and browser the new passkey came from (PS-1)", async () => {
+		const h = harness();
+		(h.api.getPendingAddition as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "slot-1",
+			status: "filled",
+			expiresAt: "2026-01-01T00:05:00Z",
+			publicKey: keyB,
+			addedFrom: { device: "iPhone", browser: "Safari" },
+		});
+		await h.controller.load();
+		h.controller.startAddSecondDevice();
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
+		expect(
+			(
+				h.controller.flow as Extract<
+					ManagementFlow,
+					{ step: "confirm-fingerprint" }
+				>
+			).addedFrom,
+		).toEqual({ device: "iPhone", browser: "Safari" });
+	});
+
+	it("reads the device a same-device passkey was created on from its slot", async () => {
+		const h = harness();
+		(h.api.getPendingAddition as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "slot-1",
+			status: "filled",
+			expiresAt: "2026-01-01T00:05:00Z",
+			publicKey: keyB,
+			addedFrom: { device: "Mac", browser: "Chrome" },
+		});
+		await h.controller.load();
+		h.controller.startAddThisDevice();
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
+		expect(
+			(
+				h.controller.flow as Extract<
+					ManagementFlow,
+					{ step: "confirm-fingerprint" }
+				>
+			).addedFrom,
+		).toEqual({ device: "Mac", browser: "Chrome" });
 	});
 
 	it("declines a mismatch: the slot is declined, counted, and nothing is added (WM-21, WM-52)", async () => {
@@ -978,6 +1027,25 @@ describe("the session ends (G5)", () => {
 		h.issueSession();
 		await h.controller.signIn();
 		expect(h.controller.state.notice).toBeNull();
+	});
+
+	it("signs in with whichever passkey the device holds, never the stored user's list", async () => {
+		const h = harness({ session: null });
+		const runtime = h.runtimeFor(31337);
+		h.issueSession();
+		await h.controller.signIn();
+		expect(runtime.injection.signInWithExistingPasskey).toHaveBeenCalledOnce();
+		expect(
+			(runtime.provider.request as ReturnType<typeof vi.fn>).mock.calls.some(
+				([request]) =>
+					(request as { method: string }).method === "eth_requestAccounts",
+			),
+		).toBe(false);
+		// The deprecated name does the same.
+		await h.controller.signInWithExistingPasskey();
+		expect(runtime.injection.signInWithExistingPasskey).toHaveBeenCalledTimes(
+			2,
+		);
 	});
 
 	it("destroy stops watching the session", () => {

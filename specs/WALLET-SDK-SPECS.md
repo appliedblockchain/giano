@@ -300,9 +300,9 @@ interface ManagementController {
   subscribe(listener: (state: ManagementState) => void): () => void
   load(): Promise<void>
 
-  // ── sign-in (WK offers both, WM-57) ──
-  signIn(): Promise<void>                       // create-or-use a passkey on this device
-  signInWithExistingPasskey(): Promise<void>    // discoverable: a device handed a credential via handoff
+  // ── sign-in (WM-57) ──
+  signIn(): Promise<void>                       // discoverable: any passkey this device holds
+  signInWithExistingPasskey(): Promise<void>    // deprecated: the same as signIn()
   logout(): Promise<void>
 
   // ── the set ──
@@ -402,7 +402,7 @@ function renderManagement(pending: PendingRequest) {
   void mgmt.load()
 
   function render(state: ManagementState) {
-    if (state.view === 'signed-out') return renderSignIn(mgmt)     // buttons → mgmt.signIn() / signInWithExistingPasskey()
+    if (state.view === 'signed-out') return renderSignIn(mgmt)     // button → mgmt.signIn()
     if (state.view === 'unreadable') return renderUnreadable(mgmt) // WM-05: say the chain could not be read
     if (mgmt.flow)                   return renderFlow(mgmt.flow)   // the step machine above
     return renderOwnerList(state, mgmt)                            // the set, with rename / add / remove buttons

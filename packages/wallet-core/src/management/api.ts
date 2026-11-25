@@ -16,11 +16,22 @@ export type PendingAdditionStatus =
 	| "declined"
 	| "expired";
 
+/**
+ * The device and browser a passkey was added from, from that request's User-Agent (PS-1).
+ * Self-reported by the browser, display only. Null fields when unknown.
+ */
+export type PasskeyAddedFrom = {
+	device: string | null;
+	browser: string | null;
+};
+
 export type PendingAddition = {
 	id: string;
 	status: PendingAdditionStatus;
 	expiresAt: string;
 	publicKey: { x: Hex; y: Hex } | null;
+	/** Where the deposited key came from, once deposited. Absent from an older wallet-api. */
+	addedFrom?: PasskeyAddedFrom | null;
 };
 
 /**
@@ -50,6 +61,8 @@ export type RegistryCredential = {
 	removedAt: string | null;
 	/** Absent from a wallet-api that predates it. */
 	storage?: PasskeyStorage;
+	/** The device and browser it was added from. Absent from a wallet-api that predates it. */
+	addedFrom?: PasskeyAddedFrom;
 };
 
 /**
