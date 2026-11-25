@@ -36,6 +36,8 @@ import {
 	resolveUserOpFees,
 	toPersonalMessageBytes,
 } from "../src/provider";
+import { createWalletApiInjection } from "../src/provider-injection";
+import { toBase64Url } from "../src/provider-injection/wallet-api/serialization";
 import {
 	createMockBundler,
 	createMockInjection,
@@ -588,6 +590,148 @@ describe("explicit smart account address (secondary owner)", () => {
 		).rejects.toThrow(/applies only to an existing credential/);
 		expect(create).not.toHaveBeenCalled();
 		expect(onCredentialCreated).not.toHaveBeenCalled();
+	});
+});
+
+describe("a secondary owner on the stock wallet-api injection", () => {
+	// The shared account. The passkey this device holds was added to it with addOwnerPublicKey, so
+	// the address derived from the passkey is a different, empty account.
+	const SHARED = "0x0000000000000000000000000000000000005a5a" as Address;
+	// Another device's credential for the same user, listed first. This authenticator does not hold it.
+	const OTHER_DEVICE = toBase64Url(new Uint8Array([0xde, 0xad, 0xbe, 0xef]));
+
+	/** Registers the passkey this device holds; returns its id (base64url) and owner bytes. */
+	async function registerSecondary() {
+		const created = await mock.authenticator.create({
+			publicKey: {
+				rp: { id: "localhost", name: "g" },
+				user: { id: new Uint8Array([2]), name: "b", displayName: "b" },
+				challenge: new Uint8Array([1]),
+				pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+			},
+		} as CredentialCreationOptions);
+		const { x, y } = mock.authenticator.getPublicKeyXY(created.rawId);
+		return {
+			id: toBase64Url(new Uint8Array(created.rawId)),
+			xy: { x, y },
+			ownerBytes: concatHex([x, y]),
+		};
+	}
+
+	/** wallet-api as the stock injection calls it: each path answers with a fixed body. */
+	function walletApiFetch(routes: Record<string, unknown>) {
+		return vi.fn(async (url: string) => {
+			const path = url.split("?")[0];
+			const key = Object.keys(routes).find((route) => path.endsWith(route));
+			return {
+				ok: key !== undefined,
+				status: key === undefined ? 404 : 200,
+				json: async () =>
+					key === undefined ? { message: "not found" } : routes[key],
+			} as Response;
+		});
+	}
+
+	const options = (credentialIds: string[]) => ({
+		kind: "authentication",
+		challenge: toBase64Url(new Uint8Array([9, 9, 9])),
+		credentialIds,
+	});
+
+	const ownsShared = (ownerBytes: Hex) =>
+		vi.fn(
+			(wallet: Address, bytes: Hex) =>
+				isAddressEqual(wallet, SHARED) &&
+				bytes.toLowerCase() === ownerBytes.toLowerCase(),
+		);
+
+	it("connects (eth_requestAccounts) to the account wallet-api bound the passkey to, after the owner check", async () => {
+		const secondary = await registerSecondary();
+		const isOwner = ownsShared(secondary.ownerBytes);
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			fetch: walletApiFetch({
+				"/v1/webauthn/options": options([OTHER_DEVICE, secondary.id]),
+				"/v1/webauthn/authentication/verify": {
+					verified: true,
+					walletAddress: SHARED,
+					externalUserId: "u",
+					credentialId: secondary.id,
+					session: { token: "tok-b" },
+				},
+				[`/v1/me/credentials/${encodeURIComponent(secondary.id)}/public-key`]:
+					secondary.xy,
+			}) as never,
+		});
+		const { provider } = buildProvider(mock.authenticator, {
+			injection,
+			transportOptions: { isOwner },
+		});
+
+		expect(await provider.request({ method: "eth_requestAccounts" })).toEqual([
+			SHARED,
+		]);
+		expect(isOwner).toHaveBeenCalledOnce();
+		expect(injection.getSessionToken()).toBe("tok-b");
+	});
+
+	it("restores (giano_restoreAccount) the session's own passkey onto its account, with no passkey prompt", async () => {
+		const secondary = await registerSecondary();
+		const get = vi.spyOn(mock.authenticator, "get");
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok-b",
+			fetch: walletApiFetch({
+				"/v1/webauthn/options": options([OTHER_DEVICE, secondary.id]),
+				"/v1/me": {
+					externalUserId: "u",
+					walletAddress: SHARED,
+					credentialId: secondary.id,
+				},
+				[`/v1/me/credentials/${encodeURIComponent(secondary.id)}/public-key`]:
+					secondary.xy,
+			}) as never,
+		});
+		const { provider } = buildProvider(mock.authenticator, {
+			injection,
+			transportOptions: { isOwner: ownsShared(secondary.ownerBytes) },
+		});
+
+		expect(
+			await provider.request({ method: "giano_restoreAccount", params: [] }),
+		).toEqual([SHARED]);
+		expect(get).not.toHaveBeenCalled();
+	});
+
+	it("refuses to connect when the passkey does not own the account wallet-api named, and never derives one", async () => {
+		const secondary = await registerSecondary();
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			fetch: walletApiFetch({
+				"/v1/webauthn/options": options([secondary.id]),
+				"/v1/webauthn/authentication/verify": {
+					verified: true,
+					walletAddress: SHARED,
+					externalUserId: "u",
+					credentialId: secondary.id,
+					session: { token: "tok-b" },
+				},
+				[`/v1/me/credentials/${encodeURIComponent(secondary.id)}/public-key`]:
+					secondary.xy,
+			}) as never,
+		});
+		const { provider } = buildProvider(mock.authenticator, {
+			injection,
+			transportOptions: { isOwner: () => false },
+		});
+
+		await expect(
+			provider.request({ method: "eth_requestAccounts" }),
+		).rejects.toThrow(GianoAccountOwnerError);
+		expect(await provider.request({ method: "eth_accounts" })).toEqual([]);
 	});
 });
 

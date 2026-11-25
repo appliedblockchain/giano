@@ -360,9 +360,11 @@ export function createWalletApiInjection(
 
 			// A user can hold several credentials, one per device (WM-35), and this device holds only
 			// some of them. With a session, the session names the credential this device signed in
-			// with and the wallet it acts for.
+			// with and the wallet it acts for. It is used even when the list above does not name it
+			// (it was fetched for this device's external user id, which can differ): falling back to
+			// the list would connect to the address derived from someone else's key.
 			const session = await sessionAccount();
-			if (session && result.credentialIds.includes(session.credentialId)) {
+			if (session) {
 				return {
 					credentialId: fromBase64Url(session.credentialId),
 					challenge,

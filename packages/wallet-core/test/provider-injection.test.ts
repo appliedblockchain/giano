@@ -915,6 +915,32 @@ describe("createWalletApiInjection with several credentials per user", () => {
 		expect(info.address).toBe(WALLET);
 	});
 
+	it("uses the session's credential and wallet even when the options list does not name it", async () => {
+		// The list is fetched for this device's external user id, which can differ from the
+		// session's user. The session still decides: the list's one id would derive another account.
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/options": options([DEVICE_A]),
+			"/v1/me": {
+				body: {
+					externalUserId: "other",
+					walletAddress: WALLET,
+					credentialId: DEVICE_B,
+				},
+			},
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok-b",
+			fetch: fetchImpl as never,
+		});
+
+		const info = await injection.getCredentialInfo();
+
+		expect([...(info.credentialId as Uint8Array)]).toEqual([0xb2, 0xb2]);
+		expect(info.address).toBe(WALLET);
+	});
+
 	it("offers every credential when there is no session, and names no wallet", async () => {
 		const { fetchImpl, paths } = walletApi({
 			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
