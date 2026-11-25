@@ -186,6 +186,13 @@ export default async function webauthnRoutes(
 					kind: z
 						.enum(["auto", "registration", "authentication"])
 						.default("auto"),
+					/**
+					 * A sign-in with whichever passkey the device holds for this RP. The challenge is
+					 * bound to no user, so any credential of the tenant can answer it, and the server
+					 * finds the user from the credential. Only with kind 'authentication'. The response
+					 * lists no credential ids and says nothing about externalUserId.
+					 */
+					discoverable: z.boolean().default(false),
 				}),
 				response: {
 					200: z.object({
@@ -213,7 +220,32 @@ export default async function webauthnRoutes(
 					});
 				}
 			}
-			const { externalUserId, kind } = request.body;
+			const { externalUserId, kind, discoverable } = request.body;
+			if (discoverable) {
+				if (kind !== "authentication") {
+					throw new ApiError(
+						400,
+						"discoverable-needs-authentication",
+						"a discoverable challenge is for sign-in only: send kind 'authentication'",
+					);
+				}
+				// A device can hold a passkey for a user other than the one it last knew: a passkey
+				// added from another device (WM-18), or a returning user on a fresh browser. A
+				// challenge bound to the device's user would refuse that passkey (C3). An unbound one
+				// lets the passkey identify its own user, which is all possession proves anyway.
+				const challenge = await challenges.issue(
+					"authentication",
+					null,
+					tenant.id,
+				);
+				return {
+					kind: "authentication" as const,
+					challenge,
+					rpId: tenant.rpId,
+					userExists: false,
+					credentialIds: [],
+				};
+			}
 			const user = await db.query.users.findFirst({
 				where: and(
 					eq(users.tenantId, tenant.id),
