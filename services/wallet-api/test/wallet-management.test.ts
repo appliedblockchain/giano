@@ -22,7 +22,10 @@ import {
 } from "./setup.js";
 import {
 	createAuthenticator,
+	FLAG_BE,
+	FLAG_BS,
 	FLAG_UP,
+	FLAG_UV,
 	makeAuthenticationResponse,
 	makeRegistrationResponse,
 	type TestAuthenticator,
@@ -71,6 +74,7 @@ const register = async (
 	externalUserId: string,
 	auth: TestAuthenticator,
 	credentialName?: string,
+	storage: { flags?: number; aaguid?: string } = {},
 ): Promise<Registered> => {
 	const options = await getOptions(externalUserId, "registration");
 	const res = await ctx.app.inject({
@@ -84,6 +88,7 @@ const register = async (
 				challenge: options.challenge,
 				origin: ORIGIN,
 				rpId: TENANT_A.rpId,
+				...storage,
 			}),
 		},
 	});
@@ -94,6 +99,7 @@ const register = async (
 const authenticate = async (
 	auth: TestAuthenticator,
 	externalUserId: string,
+	flags?: number,
 ) => {
 	const options = await getOptions(externalUserId, "authentication");
 	return ctx.app.inject({
@@ -105,6 +111,7 @@ const authenticate = async (
 				challenge: options.challenge,
 				origin: ORIGIN,
 				rpId: TENANT_A.rpId,
+				flags,
 			}),
 		},
 	});
@@ -131,6 +138,12 @@ const listCredentials = async (token: string) => {
 				publicKeyX: string;
 				publicKeyY: string;
 				removedAt: string | null;
+				storage: {
+					provider: string | null;
+					synced: boolean | null;
+					deviceType: "singleDevice" | "multiDevice" | null;
+					aaguid: string | null;
+				};
 			}[];
 		}
 	).credentials;
@@ -158,6 +171,7 @@ const fill = async (
 	claimCode: string,
 	auth: TestAuthenticator,
 	flags?: number,
+	aaguid?: string,
 ) => {
 	const claimed = await claim(claimCode);
 	expect(claimed.statusCode).toBe(200);
@@ -173,6 +187,7 @@ const fill = async (
 				origin: ORIGIN,
 				rpId: TENANT_A.rpId,
 				flags,
+				aaguid,
 			}),
 		},
 	});
@@ -212,6 +227,96 @@ describe("credential names (WM-07, WM-08)", () => {
 		const { session: freshSession } = second.json() as Registered;
 		const credentials = await listCredentials(freshSession.token);
 		expect(credentials[0].name).toBe("The phone I still have");
+	});
+});
+
+describe("where a passkey is stored (PS-1)", () => {
+	const GOOGLE = "ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4";
+	const ONE_PASSWORD = "bada5566-a7aa-401f-bd96-45619a55120d";
+
+	it("records the provider and the backup flags at registration, and lists them", async () => {
+		const { session } = await register(
+			"storage-synced",
+			createAuthenticator(),
+			undefined,
+			{ aaguid: GOOGLE, flags: FLAG_UP | FLAG_UV | FLAG_BE | FLAG_BS },
+		);
+		const [credential] = await listCredentials(session.token);
+		expect(credential.storage).toEqual({
+			provider: "Google Password Manager",
+			synced: true,
+			deviceType: "multiDevice",
+			aaguid: GOOGLE,
+		});
+	});
+
+	it("names no provider for an AAGUID it does not know, or the all-zero one", async () => {
+		const { session } = await register(
+			"storage-unknown",
+			createAuthenticator(),
+		);
+		const [credential] = await listCredentials(session.token);
+		expect(credential.storage).toEqual({
+			provider: null,
+			synced: false,
+			deviceType: "singleDevice",
+			aaguid: "00000000-0000-0000-0000-000000000000",
+		});
+	});
+
+	it("carries the storage of a passkey added from another device to its bound row", async () => {
+		const deviceB = createAuthenticator();
+		const a = await register("storage-handoff", createAuthenticator());
+		const slot = await openSlot(a.session.token);
+		const filled = await fill(
+			slot.claimCode,
+			deviceB,
+			FLAG_UP | FLAG_UV | FLAG_BE,
+			ONE_PASSWORD,
+		);
+		expect(filled.statusCode).toBe(200);
+		const { publicKey } = filled.json() as {
+			publicKey: { x: string; y: string };
+		};
+		ctx.chainState.contracts.add(a.walletAddress.toLowerCase());
+		ctx.chainState.ownerKeys.add(ownerKeyOf(publicKey.x, publicKey.y));
+		const completed = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/wallet/pending-additions/${slot.id}/complete`,
+			headers: authed(a.session.token),
+			payload: { chainIds: [31337] },
+		});
+		expect(completed.statusCode).toBe(200);
+		const { credentialId } = completed.json() as { credentialId: string };
+
+		const added = (await listCredentials(a.session.token)).find(
+			(credential) => credential.credentialId === credentialId,
+		);
+		expect(added?.storage).toEqual({
+			provider: "1Password",
+			synced: false,
+			deviceType: "multiDevice",
+			aaguid: ONE_PASSWORD,
+		});
+	});
+
+	it("refreshes whether the passkey is synced at each sign-in, and keeps the provider", async () => {
+		const auth = createAuthenticator();
+		await register("storage-refresh", auth, undefined, { aaguid: GOOGLE });
+		const signedIn = await authenticate(
+			auth,
+			"storage-refresh",
+			FLAG_UP | FLAG_UV | FLAG_BE | FLAG_BS,
+		);
+		expect(signedIn.statusCode).toBe(200);
+		const { session } = signedIn.json() as Registered;
+		const [credential] = await listCredentials(session.token);
+		expect(credential.storage).toEqual({
+			provider: "Google Password Manager",
+			synced: true,
+			deviceType: "multiDevice",
+			aaguid: GOOGLE,
+		});
 	});
 });
 

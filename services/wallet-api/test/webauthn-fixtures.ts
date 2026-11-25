@@ -98,17 +98,24 @@ function coseKey(auth: TestAuthenticator): Buffer {
 /** authenticatorData flag bits (WebAuthn §6.1). */
 export const FLAG_UP = 0x01;
 export const FLAG_UV = 0x04;
+/** Backup eligible: the passkey can be synced (a multi-device credential). */
+export const FLAG_BE = 0x08;
+/** Backup state: the passkey is backed up (synced) now. */
+export const FLAG_BS = 0x10;
 const FLAG_AT = 0x40;
 
 function authDataForRegistration(
 	rpId: string,
 	auth: TestAuthenticator,
 	flagBits: number,
+	aaguidText?: string,
 ): Buffer {
 	const rpIdHash = sha256(rpId);
 	const flags = Buffer.from([flagBits | FLAG_AT]);
 	const counter = Buffer.alloc(4);
-	const aaguid = Buffer.alloc(16);
+	const aaguid = aaguidText
+		? Buffer.from(aaguidText.replace(/-/g, ""), "hex")
+		: Buffer.alloc(16);
 	const credIdLen = Buffer.alloc(2);
 	credIdLen.writeUInt16BE(auth.credentialId.length);
 	return Buffer.concat([
@@ -130,6 +137,8 @@ export function makeRegistrationResponse(
 		rpId: string;
 		/** UP/UV bits; defaults to a user-verified response. */
 		flags?: number;
+		/** The authenticator's AAGUID; defaults to all zeros, as many authenticators report. */
+		aaguid?: string;
 	},
 ) {
 	const clientDataJSON = Buffer.from(
@@ -147,6 +156,7 @@ export function makeRegistrationResponse(
 			opts.rpId,
 			auth,
 			opts.flags ?? FLAG_UP | FLAG_UV,
+			opts.aaguid,
 		),
 	});
 	return {

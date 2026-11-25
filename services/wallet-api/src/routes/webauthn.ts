@@ -455,6 +455,10 @@ export default async function webauthnRoutes(
 						counter: BigInt(info.credential.counter),
 						transports:
 							info.credential.transports ?? response.response.transports ?? [],
+						// Where the passkey is stored (PS-1). Display only, never authority.
+						aaguid: info.aaguid,
+						deviceType: info.credentialDeviceType,
+						backedUp: info.credentialBackedUp,
 						walletAddress,
 						// WM-08: persisted as the credential's initial name rather than dropped. A name is
 						// a local label only — never an input to any decision (WM-11).
@@ -642,10 +646,22 @@ export default async function webauthnRoutes(
 					"authenticator counter regressed — possible cloned credential",
 				);
 			}
-			if (newCounter > credential.counter) {
+			// The counter moves forward, and the backup flags follow the authenticator: a passkey can
+			// start or stop syncing after it was registered (PS-1, display only).
+			const { credentialDeviceType, credentialBackedUp } =
+				verification.authenticationInfo;
+			if (
+				newCounter > credential.counter ||
+				credential.deviceType !== credentialDeviceType ||
+				credential.backedUp !== credentialBackedUp
+			) {
 				await db
 					.update(credentials)
-					.set({ counter: newCounter })
+					.set({
+						...(newCounter > credential.counter ? { counter: newCounter } : {}),
+						deviceType: credentialDeviceType,
+						backedUp: credentialBackedUp,
+					})
 					.where(eq(credentials.id, credential.id));
 			}
 
