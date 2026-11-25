@@ -9,7 +9,7 @@ import { AddFlow, type AddVariant } from "./manage/AddFlow";
 import { AddressFlow } from "./manage/AddressFlow";
 import { ClaimFlow } from "./manage/ClaimFlow";
 import { RemoveFlow } from "./manage/RemoveFlow";
-import { RefusalNotice } from "./manage/shared";
+import { addedFromLabel, RefusalNotice } from "./manage/shared";
 import { PasskeyDeviceGuidance } from "./PasskeyDeviceGuidance";
 
 /**
@@ -89,14 +89,6 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 						data-testid="manage-sign-in"
 					>
 						{state.busy ? "Waiting for passkey…" : "Sign in with passkey"}
-					</button>
-					<button
-						type="button"
-						onClick={() => void actions.signInWithExistingPasskey()}
-						disabled={state.busy}
-						data-testid="manage-sign-in-existing"
-					>
-						Use a passkey created on another device
 					</button>
 					<button
 						type="button"
@@ -361,8 +353,8 @@ function OwnerRowView({
 		row.kind === "address"
 			? row.address
 			: row.credentialId
-				? `passkey · added ${row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "unknown"}${row.transports?.length ? ` · ${row.transports.join("/")}` : ""}`
-				: "passkey · added outside this deployment"; // WM-04: never silently omitted
+				? `Passkey added ${row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "on an unknown date"}${addedFromLabel(row) ? ` on ${addedFromLabel(row)}` : ""}`
+				: "Passkey added outside this deployment"; // WM-04: never silently omitted
 	const storage = row.kind === "passkey" ? storageLabel(row) : null;
 
 	return (

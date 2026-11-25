@@ -94,9 +94,9 @@ export function ClaimFlow({
 					</div>
 				) : null}
 				<p data-testid="manage-claim-next">
-					Once it is approved and confirmed on-chain, go back to the app and
-					choose <b>Continue with passkey</b>, or sign in here with{" "}
-					<b>“Use a passkey created on another device”</b>.
+					Once it is approved and confirmed on-chain, this passkey can sign in
+					to that wallet: choose <b>Continue with passkey</b> in the app, or{" "}
+					<b>Sign in with passkey</b> here.
 				</p>
 				<div className="actions">
 					<button

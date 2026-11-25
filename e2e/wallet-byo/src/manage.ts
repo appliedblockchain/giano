@@ -425,6 +425,18 @@ export function renderManage(
 									: "Passkey (added elsewhere)"),
 						),
 						` · ${owner.fingerprint}`,
+						owner.addedFrom?.device || owner.addedFrom?.browser
+							? el(
+									"span",
+									{ dataset: { testid: "byo-manage-owner-added-from" } },
+									` · added on ${[
+										owner.addedFrom.device,
+										owner.addedFrom.browser,
+									]
+										.filter(Boolean)
+										.join(" · ")}`,
+								)
+							: "",
 						owner.storage
 							? el(
 									"span",
