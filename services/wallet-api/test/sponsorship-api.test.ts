@@ -6,7 +6,15 @@ import {
 import { eq } from "drizzle-orm";
 import type { Address, Hex } from "viem";
 import { encodeFunctionData } from "viem";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterAll,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	onTestFinished,
+} from "vitest";
 import {
 	paymasterTenants,
 	sponsorshipDecisions,
@@ -452,6 +460,30 @@ describe("request validation", () => {
 			expect(await ctx.db.select().from(sponsorshipReservations)).toEqual([]);
 		});
 
+		it("is refused on a chain that charges gas without asking the chain type", async () => {
+			ctx.chainState.baseFeePerGas = null;
+			ctx.chainState.gasPrice = 1_000_000_000n;
+			// A failed chain-type read would answer temporarily-unavailable. The wallet must get the
+			// refusal that tells it to estimate fees instead.
+			const chain = ctx.app.chains.get(31337);
+			const decided = chain.chainType;
+			chain.chainType = async () => {
+				throw new Error("the chain type must not be asked");
+			};
+			onTestFinished(() => {
+				chain.chainType = decided;
+			});
+			const session = await newSession(`fee0-no-type-${Math.random()}`);
+			const body = await rpc(
+				session.token,
+				"pm_getPaymasterData",
+				feeZero(session.walletAddress),
+			);
+			expect(body.error?.message).toBe(
+				"maxFeePerGas is required to authorise sponsorship",
+			);
+		});
+
 		it("is sponsored on a chain with no base fee whose gas price is 0", async () => {
 			ctx.chainState.baseFeePerGas = null;
 			ctx.chainState.gasPrice = 0n;
@@ -468,6 +500,15 @@ describe("request validation", () => {
 			ctx.chainState.baseFeePerGas = 0n;
 			ctx.chainState.gasPrice = 0n;
 			ctx.chainState.l1Fee = 1_000n;
+			// The chain type is decided once per chain and kept, and an earlier test may already have
+			// decided this stack's chain is not OP Stack. A real chain does not change type, so this
+			// test declares the chain OP Stack instead of switching it.
+			const chain = ctx.app.chains.get(31337);
+			const decided = chain.chainType;
+			chain.chainType = async () => "op-stack";
+			onTestFinished(() => {
+				chain.chainType = decided;
+			});
 			const session = await newSession(`fee0-l1-${Math.random()}`);
 			const body = await rpc(
 				session.token,

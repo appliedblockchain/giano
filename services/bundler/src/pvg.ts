@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { GAS_PRICE_ORACLE } from "@appliedblockchain/giano-contracts";
+import {
+	GAS_PRICE_ORACLE,
+	gasPriceOracleAbi,
+} from "@appliedblockchain/giano-contracts";
 import {
 	type Address,
 	bytesToHex,
@@ -9,7 +12,6 @@ import {
 	hexToBytes,
 	maxUint256,
 	type PublicClient,
-	parseAbi,
 	serializeTransaction,
 	size,
 } from "viem";
@@ -90,13 +92,6 @@ export function staticPreVerificationGas(
 		OVERHEAD.perUserOpWord * words
 	);
 }
-
-/** The OP-stack GasPriceOracle predeploy: its presence is what makes a chain OP-stack here. */
-export { GAS_PRICE_ORACLE };
-
-const gasPriceOracleAbi = parseAbi([
-	"function getL1Fee(bytes _data) view returns (uint256)",
-]);
 
 /**
  * The L1 data fee of this operation's handleOps transaction, expressed in L2 gas at the

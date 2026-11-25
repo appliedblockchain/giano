@@ -1,3 +1,7 @@
+import {
+	type ChainType,
+	resolveChainType,
+} from "@appliedblockchain/giano-contracts";
 import { createPublicClient, http, type PublicClient } from "viem";
 import type { AppConfig, ResolvedChain } from "../config.js";
 import type { Db } from "../db/index.js";
@@ -32,6 +36,12 @@ export type ChainServices = {
 	descriptor: ResolvedChain;
 	chainId: number;
 	publicClient: PublicClient;
+	/**
+	 * Whether the chain is OP Stack, decided once (`resolveChainType`, from the configured
+	 * `chainType`) and kept: a chain does not change type at run time. A failed read is not kept, so
+	 * the next call tries again.
+	 */
+	chainType: () => Promise<ChainType>;
 	bundler: BundlerService;
 	/** Verbatim JSON-RPC to the node, for the wallet read relay (`/v1/rpc/:chainId`). */
 	nodeRpc: NodeRpcService;
@@ -50,6 +60,24 @@ export type ChainServices = {
 	/** The prober's last reachability probe; unset until one has run (B3). */
 	lastProbe?: ChainProbeRecord;
 };
+
+/**
+ * The chain's type, decided on the first call and kept for every later one. A failed read is not
+ * kept, so the next call tries again rather than repeating the failure.
+ */
+export function chainTypeOnce(
+	client: Parameters<typeof resolveChainType>[0],
+	configured: ChainType | "auto" | undefined,
+): () => Promise<ChainType> {
+	let decided: Promise<ChainType> | undefined;
+	return () => {
+		decided ??= resolveChainType(client, configured).catch((err: unknown) => {
+			decided = undefined;
+			throw err;
+		});
+		return decided;
+	};
+}
 
 export class UnknownChainError extends Error {
 	constructor(
@@ -168,6 +196,7 @@ export function buildChainRegistry(
 			descriptor,
 			chainId: descriptor.chainId,
 			publicClient,
+			chainType: chainTypeOnce(publicClient, descriptor.chainType),
 			bundler,
 			nodeRpc,
 			entryPoint: descriptor.entryPoint,

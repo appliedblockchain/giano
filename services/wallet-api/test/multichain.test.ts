@@ -22,7 +22,11 @@ import {
 	recoveryVerified,
 	verifyChain,
 } from "../src/services/chain-verify.js";
-import type { ChainRegistry, ChainServices } from "../src/services/chains.js";
+import {
+	type ChainRegistry,
+	type ChainServices,
+	chainTypeOnce,
+} from "../src/services/chains.js";
 import {
 	startTestStack,
 	stopTestStack,
@@ -313,6 +317,33 @@ describe("config: the chain list", () => {
 					]),
 				}),
 			).toThrow(/factroy/);
+		});
+
+		it("reads the bundler's chainType, so both services decide OP Stack the same way", () => {
+			const env = { ...BASE_ENV, BUNDLER_BASE_URL: "http://bundler:4337" };
+			const chainTypeOf = (extra: Record<string, unknown>) =>
+				loadConfig({ ...env, GIANO_CHAINS: JSON.stringify([chain(extra)]) })
+					.CHAINS[0].chainType;
+			expect(chainTypeOf({ bundler: { chainType: "op-stack" } })).toBe(
+				"op-stack",
+			);
+			expect(chainTypeOf({ bundler: { chainType: "default" } })).toBe(
+				"default",
+			);
+			expect(chainTypeOf({ bundler: {} })).toBe("auto");
+			expect(chainTypeOf({})).toBe("auto");
+			// The bundler refuses to boot on this; wallet-api detects rather than refuses.
+			expect(chainTypeOf({ bundler: { chainType: "arbitrum" } })).toBe("auto");
+			// A disabled bundler never checks its section, so wallet-api detects instead.
+			expect(
+				chainTypeOf({
+					bundler: { enabled: false, chainType: "default" },
+					walletApi: {
+						factory: FACTORY,
+						bundlerUrl: "https://bundler.example/1",
+					},
+				}),
+			).toBe("auto");
 		});
 
 		it("refuses the pre-sections flat shape rather than guessing at it", () => {
@@ -1300,5 +1331,50 @@ describe("two-chain relay", () => {
 		expect((res.json() as { version: string }).version).toBe(
 			connectorPackage.version,
 		);
+	});
+});
+
+// ── chain type: decided once per chain (G44) ─────────────────────────────────────
+
+describe("chainTypeOnce", () => {
+	const ORACLE_CODE = "0x6080";
+
+	function oracle(code: string | Error) {
+		let reads = 0;
+		return {
+			client: {
+				async getCode() {
+					reads++;
+					if (code instanceof Error) throw code;
+					return code as `0x${string}`;
+				},
+			},
+			reads: () => reads,
+		};
+	}
+
+	it("reads the GasPriceOracle once, however many times it is asked", async () => {
+		const { client, reads } = oracle(ORACLE_CODE);
+		const chainType = chainTypeOnce(client, "auto");
+		expect(await chainType()).toBe("op-stack");
+		expect(await Promise.all([chainType(), chainType()])).toEqual([
+			"op-stack",
+			"op-stack",
+		]);
+		expect(reads()).toBe(1);
+	});
+
+	it("reads nothing when the chain type is configured", async () => {
+		const { client, reads } = oracle(ORACLE_CODE);
+		expect(await chainTypeOnce(client, "default")()).toBe("default");
+		expect(reads()).toBe(0);
+	});
+
+	it("does not keep a failed read", async () => {
+		const failing = oracle(new Error("rpc down"));
+		const chainType = chainTypeOnce(failing.client, undefined);
+		await expect(chainType()).rejects.toThrow("rpc down");
+		await expect(chainType()).rejects.toThrow("rpc down");
+		expect(failing.reads()).toBe(2);
 	});
 });

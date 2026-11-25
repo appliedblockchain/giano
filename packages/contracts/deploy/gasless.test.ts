@@ -5,6 +5,7 @@ import {
 	chargesNoGas,
 	GAS_PRICE_ORACLE,
 	type GasPriceReader,
+	resolveChainType,
 } from "../gasless";
 
 type Chain = {
@@ -101,6 +102,41 @@ test("a block and the chain type the caller already has are not read again", asy
 	const declared = reader({ baseFee: 0n, l1Fee: 1_000n });
 	assert.equal(await chargesNoGas(declared.client, { opStack: false }), true);
 	assert.deepEqual(declared.reads, ["getBlock", "getGasPrice"]);
+});
+
+test("a chain type given as a function is asked only once the gas price is 0", async () => {
+	let asked = 0;
+	const opStack = async () => {
+		asked++;
+		return true;
+	};
+	const charging = reader({ baseFee: 0n, gasPrice: 1n, l1Fee: 0n });
+	assert.equal(await chargesNoGas(charging.client, { opStack }), false);
+	assert.equal(asked, 0);
+	assert.deepEqual(charging.reads, ["getBlock", "getGasPrice"]);
+
+	const free = reader({ baseFee: 0n, l1Fee: 0n });
+	assert.equal(await chargesNoGas(free.client, { opStack }), true);
+	assert.equal(asked, 1);
+	assert.deepEqual(free.reads, ["getBlock", "getGasPrice", "getL1Fee"]);
+});
+
+test("a configured chain type is the answer, and nothing is read", async () => {
+	for (const configured of ["op-stack", "default"] as const) {
+		const { client, reads } = reader({ baseFee: 0n, l1Fee: 1n });
+		assert.equal(await resolveChainType(client, configured), configured);
+		assert.deepEqual(reads, []);
+	}
+});
+
+test("auto, or no chain type, is OP Stack exactly when the GasPriceOracle has code", async () => {
+	const opStack = reader({ baseFee: 0n, l1Fee: 0n });
+	assert.equal(await resolveChainType(opStack.client, "auto"), "op-stack");
+	assert.deepEqual(opStack.reads, ["getCode"]);
+
+	const plain = reader({ baseFee: 0n });
+	assert.equal(await resolveChainType(plain.client), "default");
+	assert.deepEqual(plain.reads, ["getCode"]);
 });
 
 test("a failed read is thrown, never taken as gasless", async () => {

@@ -1,5 +1,6 @@
 import {
 	bundlerChainSchema,
+	type ChainType,
 	ENTRY_POINT_ADDRESS,
 	gianoAddresses,
 	validateChainList,
@@ -35,7 +36,8 @@ export const DEFAULT_ENTRYPOINT: Address = ENTRY_POINT_ADDRESS;
 
 export class ConfigError extends Error {}
 
-export type ChainType = "default" | "op-stack";
+/** Decided in giano-contracts, the one place wallet-api decides it too. */
+export type { ChainType };
 
 /** One chain this process serves, resolved from its GIANO_CHAINS entry. */
 export type ChainConfig = {

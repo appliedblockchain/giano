@@ -21,7 +21,8 @@ import {
 export const GAS_PRICE_ORACLE: Address =
 	"0x420000000000000000000000000000000000000F";
 
-const getL1FeeAbi = [
+/** The GasPriceOracle's `getL1Fee`: the L1 data fee, in wei, of a serialised transaction. */
+export const gasPriceOracleAbi = [
 	{
 		type: "function",
 		name: "getL1Fee",
@@ -30,6 +31,27 @@ const getL1FeeAbi = [
 		outputs: [{ name: "", type: "uint256" }],
 	},
 ] as const;
+
+/** How a chain prices gas: `op-stack` adds an L1 data fee, read from the GasPriceOracle. */
+export type ChainType = "default" | "op-stack";
+
+/**
+ * The chain's type. A `configured` type other than `auto` is the answer, and nothing is read; `auto`
+ * (or none) looks up the GasPriceOracle predeploy. giano-bundler and wallet-api both decide it here,
+ * from the bundler's `chainType` in the chain document. wallet-api reads that value only while the
+ * chain's giano-bundler is enabled, and detects through the chain's shared `rpcUrl`, not the
+ * bundler's own. A chain does not change type at run time: callers decide it once per chain. A
+ * failed read is thrown.
+ */
+export async function resolveChainType(
+	client: Pick<GasPriceReader, "getCode">,
+	configured: ChainType | "auto" = "auto",
+): Promise<ChainType> {
+	if (configured !== "auto") return configured;
+	return hasCode(await client.getCode({ address: GAS_PRICE_ORACLE }))
+		? "op-stack"
+		: "default";
+}
 
 /** Stands in for a transaction: any data has an L1 fee above 0 on a chain whose L1 fee is not 0. */
 const SAMPLE_TRANSACTION: Hex = `0x${"ff".repeat(200)}`;
@@ -49,13 +71,14 @@ export type GasPriceReader = {
  *
  * @param options.block - the latest block, when the caller has already read it.
  * @param options.opStack - whether the chain is OP Stack, when the caller knows it; otherwise the
- *   GasPriceOracle predeploy is looked up.
+ *   GasPriceOracle predeploy is looked up. A function is called only once the gas price is 0, so a
+ *   chain that charges gas never needs the answer.
  */
 export async function chargesNoGas(
 	client: GasPriceReader,
 	options: {
 		block?: { baseFeePerGas?: bigint | null };
-		opStack?: boolean;
+		opStack?: boolean | (() => Promise<boolean>);
 	} = {},
 ): Promise<boolean> {
 	const block = options.block ?? (await client.getBlock());
@@ -63,14 +86,15 @@ export async function chargesNoGas(
 	if ((await client.getGasPrice()) > 0n) return false;
 
 	const opStack =
-		options.opStack ??
-		hasCode(await client.getCode({ address: GAS_PRICE_ORACLE }));
+		typeof options.opStack === "function"
+			? await options.opStack()
+			: (options.opStack ?? (await resolveChainType(client)) === "op-stack");
 	if (!opStack) return true;
 
 	const { data } = await client.call({
 		to: GAS_PRICE_ORACLE,
 		data: encodeFunctionData({
-			abi: getL1FeeAbi,
+			abi: gasPriceOracleAbi,
 			functionName: "getL1Fee",
 			args: [SAMPLE_TRANSACTION],
 		}),
@@ -81,7 +105,7 @@ export async function chargesNoGas(
 		);
 	return (
 		decodeFunctionResult({
-			abi: getL1FeeAbi,
+			abi: gasPriceOracleAbi,
 			functionName: "getL1Fee",
 			data,
 		}) === 0n

@@ -1,6 +1,8 @@
 import { isIP } from "node:net";
 import {
+	bundlerChainSectionSchema,
 	type ChainPolicy,
+	type ChainType,
 	defaultChainName,
 	type GianoDeployment,
 	gianoAddresses,
@@ -60,6 +62,12 @@ export type ResolvedChain = {
 	 * walk through the proxy's `Upgraded` logs starts here instead of at block 0.
 	 */
 	sponsorshipPaymasterDeployBlock?: bigint;
+	/**
+	 * The chain's type as giano-bundler is configured for it: the entry's `bundler.chainType`, read
+	 * from the same GIANO_CHAINS document, so both services decide OP Stack the same way. Unset (the
+	 * single-chain shorthand, or a chain with no `bundler` section) means `auto`.
+	 */
+	chainType?: ChainType | "auto";
 	/**
 	 * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
 	 * address denotes different contracts on different chains, so a chain-agnostic address
@@ -860,6 +868,7 @@ const envSchema = z
 							descriptor.sponsorshipPaymaster,
 							registry,
 						),
+						chainType: bundlerChainType(descriptor.bundler),
 						policy: resolvePolicy(walletApi.policy),
 					};
 				})
@@ -892,6 +901,23 @@ function registryDeployBlock(
 	)
 		return undefined;
 	return BigInt(registry.sponsorshipPaymasterDeployBlock);
+}
+
+/**
+ * The entry's `bundler.chainType`, for wallet-api's gasless check. wallet-api holds the bundler's
+ * section as-is, unvalidated: giano-bundler validates it strictly and refuses to boot on a bad value,
+ * so a value wallet-api cannot read is left to `auto` rather than refused here. With
+ * `bundler.enabled: false`, giano-bundler does not serve the chain and never checks the value, so it
+ * is not trusted either: wallet-api detects the type.
+ */
+function bundlerChainType(
+	section: Record<string, unknown> | undefined,
+): ChainType | "auto" {
+	if (section?.enabled === false) return "auto";
+	const parsed = bundlerChainSectionSchema.shape.chainType.safeParse(
+		section?.chainType,
+	);
+	return parsed.success ? parsed.data : "auto";
 }
 
 export type AppConfig = z.infer<typeof envSchema>;
