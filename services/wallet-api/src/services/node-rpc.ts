@@ -26,7 +26,7 @@ export function createNodeRpcService(
 					upstream: "node",
 					limits,
 					fetchImpl,
-					passErrorBody: (error) => error.code === GATEWAY_REFUSAL_CODE,
+					passErrorBody: (error) => GATEWAY_REFUSAL_CODES.has(error.code),
 				},
 			)) as {
 				result?: unknown;
@@ -45,11 +45,17 @@ export function createNodeRpcService(
 }
 
 /**
- * The Silent Data gateway's refusal of a parameter value, sent with HTTP 403. The relay passes only
- * this non-2xx error through, so `wait()` in the SDK can fall back. Any other non-2xx answer (a rate
- * limit, a revoked key, an outage) stays "node unreachable": logged, and `-32023` to the caller.
+ * The Silent Data gateway's refusals, each sent with HTTP 403. The relay passes only these non-2xx
+ * errors through, so the SDK can fall back: `wait()` on a refused parameter, and the paymaster
+ * implementation read (`Upgraded` logs) on a refused method. Any other non-2xx answer (a rate limit,
+ * a revoked key, an outage) stays "node unreachable": logged, and `-32023` to the caller.
  */
-const GATEWAY_REFUSAL_CODE = -107486;
+const GATEWAY_REFUSAL_CODES: ReadonlySet<number> = new Set([
+	/** A parameter value it does not allow: "param values not whitelisted for JSON RPC method". */
+	-107486,
+	/** A method it does not allow, such as `eth_getStorageAt`: "JSON RPC method not whitelisted". */
+	-87926,
+]);
 
 export class NodeRpcError extends Error {
 	constructor(

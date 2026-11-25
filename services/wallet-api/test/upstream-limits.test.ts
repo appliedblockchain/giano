@@ -37,7 +37,9 @@ type Behaviour =
 	| "streamed-large"
 	| "rpc-error"
 	| "refused-403"
+	| "refused-403-method"
 	| "refused-403-large"
+	| "forbidden-403"
 	| "rate-limited-429"
 	| "unavailable-503";
 
@@ -102,6 +104,30 @@ function startUpstream() {
 								message: "param values not whitelisted for JSON RPC method",
 								data: "Custom RPC: eth_getBlockByNumber",
 							},
+						}),
+					);
+				case "refused-403-method":
+					// The Silent Data gateway's refusal of a method.
+					res.writeHead(403);
+					return res.end(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: {
+								code: -87926,
+								message: "JSON RPC method not whitelisted",
+								data: "Custom RPC: eth_getStorageAt",
+							},
+						}),
+					);
+				case "forbidden-403":
+					// A 403 that is not a gateway refusal: a revoked key, with a JSON-RPC error body.
+					res.writeHead(403);
+					return res.end(
+						JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							error: { code: -32001, message: "invalid API key" },
 						}),
 					);
 				case "refused-403-large":
@@ -289,7 +315,7 @@ describe.each(Object.entries(clients))("%s client", (upstreamName, client) => {
 });
 
 describe("a non-2xx answer", () => {
-	it("node client: passes the JSON-RPC error of a refusal through, code and all", async () => {
+	it("node client: passes the JSON-RPC error of a parameter refusal through, code and all", async () => {
 		const { error } = await failure(() =>
 			clients.node.call(upstream.url("refused-403")),
 		);
@@ -299,6 +325,26 @@ describe("a non-2xx answer", () => {
 			message: "param values not whitelisted for JSON RPC method",
 			data: "Custom RPC: eth_getBlockByNumber",
 		});
+	});
+
+	it("node client: passes the JSON-RPC error of a method refusal through, code and all", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("refused-403-method")),
+		);
+		expect(error).toBeInstanceOf(NodeRpcError);
+		expect(error).toMatchObject({
+			code: -87926,
+			message: "JSON RPC method not whitelisted",
+			data: "Custom RPC: eth_getStorageAt",
+		});
+	});
+
+	it("node client: a 403 with any other JSON-RPC error throws the status", async () => {
+		const { error } = await failure(() =>
+			clients.node.call(upstream.url("forbidden-403")),
+		);
+		expect(error).not.toBeInstanceOf(NodeRpcError);
+		expect((error as Error).message).toBe("Node HTTP 403");
 	});
 
 	it("node client: a body that is not a JSON-RPC error throws the status", async () => {

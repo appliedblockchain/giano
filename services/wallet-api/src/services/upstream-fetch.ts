@@ -46,7 +46,7 @@ export type PostJsonRpcOptions = {
 	/**
 	 * Which JSON-RPC errors a non-2xx answer may carry to the caller. The body is read within the
 	 * limits. An error this accepts is returned as the answer, so a node that refuses a request this
-	 * way (the Silent Data gateway: HTTP 403, -107486) reaches the caller with its code and message.
+	 * way (the Silent Data gateway: HTTP 403, -107486 or -87926) reaches the caller with its code and message.
 	 * Any other non-2xx answer throws its status.
 	 */
 	passErrorBody?: (error: JsonRpcErrorBody) => boolean;
