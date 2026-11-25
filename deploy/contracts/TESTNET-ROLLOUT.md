@@ -270,8 +270,9 @@ first, with the secret unchanged, and the secret changes after it.
 5. **Install the sponsorship rules on 19874 for each tenant, `example` and `byoui`.** The command calls
    `dev`'s wallet-api admin API, so it works only after step 4. Run it once per tenant, each with its own
    operator file: `pnpm contracts:sponsorship --chain iron-kestrel --env-file "$PWD/<file>"
-   --accept-unverified-implementation`. The path must be absolute: the command runs in `packages/contracts`,
-   so a path relative to the repository root is not found. The operator file sets `WALLET_API_URL` to
+   --accept-unverified-implementation`. The path must be absolute. Node itself reads `--env-file`, even after
+   the script name, and resolves it from `packages/contracts`: with a path relative to the repository root
+   it exits with "not found" before the script starts. The operator file sets `WALLET_API_URL` to
    `dev`'s wallet-api, the tenant's `TENANT_SLUG` and `ADMIN_API_KEY`, and `SPONSOR_ALLOWLIST` to the
    private test token `0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b`. Anyone may mint that token, so the warning of step 8 in
    "Steps" applies: allow-list it only for a demo tenant.
