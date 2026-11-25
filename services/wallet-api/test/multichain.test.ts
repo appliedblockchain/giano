@@ -319,6 +319,39 @@ describe("config: the chain list", () => {
 			).toThrow(/factroy/);
 		});
 
+		it("takes the registry's paymaster deployment block only for the registry's paymaster", () => {
+			const registered = gianoAddresses[19874];
+			assert(
+				registered?.sponsorshipPaymaster,
+				"19874 has a registry paymaster",
+			);
+			const env = { ...BASE_ENV, BUNDLER_BASE_URL: "http://bundler:4337" };
+			const deployBlockOf = (extra: Record<string, unknown>) =>
+				loadConfig({
+					...env,
+					GIANO_CHAINS: JSON.stringify([
+						{
+							chainId: 19874,
+							name: "Silent Data",
+							rpcUrl: "http://a:8545",
+							...extra,
+						},
+					]),
+				}).CHAINS[0].sponsorshipPaymasterDeployBlock;
+			const block = BigInt(registered.sponsorshipPaymasterDeployBlock ?? -1);
+			expect(deployBlockOf({})).toBe(block);
+			expect(
+				deployBlockOf({
+					sponsorshipPaymaster: registered.sponsorshipPaymaster.toLowerCase(),
+				}),
+			).toBe(block);
+			expect(
+				deployBlockOf({
+					sponsorshipPaymaster: "0xf98b56de62ce88cEb70A9155582248cDBf2D0718",
+				}),
+			).toBeUndefined();
+		});
+
 		it("reads the bundler's chainType, so both services decide OP Stack the same way", () => {
 			const env = { ...BASE_ENV, BUNDLER_BASE_URL: "http://bundler:4337" };
 			const chainTypeOf = (extra: Record<string, unknown>) =>

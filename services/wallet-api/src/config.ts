@@ -6,6 +6,7 @@ import {
 	defaultChainName,
 	type GianoDeployment,
 	gianoAddresses,
+	proxyDeployBlock,
 	validateChainList,
 	walletApiChainSchema,
 } from "@appliedblockchain/giano-contracts";
@@ -823,7 +824,7 @@ const envSchema = z
 				sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
 					deployment?.sponsorshipPaymaster) as `0x${string}` | undefined,
 				sponsorshipPaymasterDeployBlock: registryDeployBlock(
-					env.SPONSORSHIP_PAYMASTER_ADDRESS,
+					env.SPONSORSHIP_PAYMASTER_ADDRESS as `0x${string}` | undefined,
 					deployment,
 				),
 				policy: resolvePolicy({
@@ -883,24 +884,18 @@ const envSchema = z
 
 /**
  * The registry's deployment block for its sponsorship paymaster, when the chain uses that paymaster:
- * `configured` is unset, or names the same address. Undefined otherwise: a block that belongs to
- * another proxy would start the log walk past that proxy's upgrades.
+ * `configured` is unset, or names the same address. Undefined otherwise. The rule is
+ * `proxyDeployBlock`'s: a block that belongs to another proxy would start the log walk past that
+ * proxy's upgrades.
  */
 function registryDeployBlock(
-	configured: string | undefined,
+	configured: `0x${string}` | undefined,
 	registry: GianoDeployment | undefined,
 ): bigint | undefined {
-	if (
-		registry?.sponsorshipPaymaster === undefined ||
-		registry.sponsorshipPaymasterDeployBlock === undefined
-	)
-		return undefined;
-	if (
-		configured !== undefined &&
-		configured.toLowerCase() !== registry.sponsorshipPaymaster.toLowerCase()
-	)
-		return undefined;
-	return BigInt(registry.sponsorshipPaymasterDeployBlock);
+	return proxyDeployBlock(configured ?? registry?.sponsorshipPaymaster, {
+		address: registry?.sponsorshipPaymaster,
+		blockNumber: registry?.sponsorshipPaymasterDeployBlock,
+	});
 }
 
 /**

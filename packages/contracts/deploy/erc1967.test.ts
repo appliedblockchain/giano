@@ -6,6 +6,7 @@ import {
 	implementationFromUpgradedLogs,
 	isMethodRefusedError,
 	isUpgradedLogWalkLimitError,
+	proxyDeployBlock,
 	proxyImplementation,
 	proxyImplementationWithSource,
 	UPGRADED_LOG_CHUNK,
@@ -554,4 +555,40 @@ test("isMethodRefusedError matches refusals of the method, and nothing else", ()
 		"timeout",
 	])
 		assert.equal(isMethodRefusedError(other), false, String(other));
+});
+
+test("a deployment block applies only to the proxy it was recorded for", () => {
+	const proxy = getAddress("0xb2c7081be89d88f1da020530ebd5c14b8871615a");
+	const deployed = { address: proxy, blockNumber: 557_335 };
+	assert.equal(proxyDeployBlock(proxy, deployed), 557_335n);
+	assert.equal(
+		proxyDeployBlock(proxy, { address: proxy, blockNumber: 7n }),
+		7n,
+	);
+	// Case does not matter, on either side.
+	assert.equal(
+		proxyDeployBlock(proxy.toLowerCase() as Hex, deployed),
+		557_335n,
+	);
+	assert.equal(
+		proxyDeployBlock(proxy, {
+			...deployed,
+			address: proxy.toLowerCase() as Hex,
+		}),
+		557_335n,
+	);
+	// Another proxy, or anything missing: the walk starts at block 0.
+	assert.equal(
+		proxyDeployBlock("0x0000000000000000000000000000000000000001", deployed),
+		undefined,
+	);
+	assert.equal(proxyDeployBlock(undefined, deployed), undefined);
+	assert.equal(proxyDeployBlock(proxy, undefined), undefined);
+	assert.equal(proxyDeployBlock(proxy, { address: proxy }), undefined);
+	assert.equal(proxyDeployBlock(proxy, { blockNumber: 1 }), undefined);
+	// A malformed address (an unvalidated flag) does not match, and does not throw.
+	assert.equal(
+		proxyDeployBlock("0xnot-an-address" as Hex, deployed),
+		undefined,
+	);
 });

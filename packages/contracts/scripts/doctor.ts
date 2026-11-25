@@ -82,7 +82,7 @@ import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
-import { proxyImplementationWithSource } from "../erc1967";
+import { proxyDeployBlock, proxyImplementationWithSource } from "../erc1967";
 import {
 	gianoPaymasterAbi,
 	gianoSmartWalletAbi,
@@ -191,11 +191,20 @@ function requireAddress(
 	return getAddress(value) as `0x${string}`;
 }
 
+/**
+ * The deployment giano-doctor checks: the registry's fields, from flags/env where given, and the
+ * paymaster's deployment block, which applies only to the paymaster it was recorded for.
+ */
+type ResolvedDeployment = Omit<
+	Partial<GianoDeployment>,
+	"sponsorshipPaymasterDeployBlock"
+> & { sponsorshipPaymasterDeployBlock?: bigint };
+
 /** Resolve the deployment addresses from flags/env, defaulting to the registry for known chains. */
 function resolveDeployment(
 	chainId: number,
 	flags: Record<string, string>,
-): Partial<GianoDeployment> {
+): ResolvedDeployment {
 	let registry: GianoDeployment | undefined;
 	try {
 		registry = getGianoDeployment(chainId);
@@ -221,13 +230,10 @@ function resolveDeployment(
 		sponsorshipPaymasterImplementation:
 			registry?.sponsorshipPaymasterImplementation,
 		// The registry's deployment block belongs to the registry's proxy only.
-		sponsorshipPaymasterDeployBlock:
-			sponsorshipPaymaster &&
-			registry?.sponsorshipPaymaster &&
-			sponsorshipPaymaster.toLowerCase() ===
-				registry.sponsorshipPaymaster.toLowerCase()
-				? registry.sponsorshipPaymasterDeployBlock
-				: undefined,
+		sponsorshipPaymasterDeployBlock: proxyDeployBlock(sponsorshipPaymaster, {
+			address: registry?.sponsorshipPaymaster,
+			blockNumber: registry?.sponsorshipPaymasterDeployBlock,
+		}),
 		testPaymaster: pick(
 			"test-paymaster",
 			"PAYMASTER_ADDRESS",
@@ -338,7 +344,7 @@ async function readTenantRoster(
 async function checkSponsorshipPaymaster(
 	provider: JsonRpcProvider,
 	address: `0x${string}` | undefined,
-	deployment: Partial<GianoDeployment>,
+	deployment: ResolvedDeployment,
 	entryPoint: string,
 	flags: Record<string, string>,
 	chainId: number,
@@ -406,10 +412,7 @@ async function checkSponsorshipPaymaster(
 		// release code. On an RPC that refuses eth_getStorageAt (Silent Data), the latest Upgraded
 		// event instead, searched from the proxy's deployment block when the registry has it. Any
 		// other storage-read error (a timeout, a rate limit) is reported as it is.
-		const fromBlock =
-			deployment.sponsorshipPaymasterDeployBlock === undefined
-				? undefined
-				: BigInt(deployment.sponsorshipPaymasterDeployBlock);
+		const fromBlock = deployment.sponsorshipPaymasterDeployBlock;
 		const { implementation: impl, source } =
 			await proxyImplementationWithSource(
 				createPublicClient({ transport: http(rpcInUse) }),

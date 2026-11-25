@@ -4,7 +4,8 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type Address, getAddress, type Hex } from "viem";
+import type { Address, Hex } from "viem";
+import { proxyDeployBlock } from "../erc1967";
 import {
 	type LabelKey,
 	type NetworkClass,
@@ -111,17 +112,13 @@ export type DeploymentRecord = {
 /**
  * The block the record says deployed the paymaster proxy at `proxy`: where a walk through its
  * `Upgraded` logs can start. Undefined when the record names another proxy or has no block, and the
- * walk then starts at block 0.
+ * walk then starts at block 0. The rule is {@link proxyDeployBlock}'s.
  */
 export function paymasterProxyDeployBlock(
 	record: DeploymentRecord | undefined,
 	proxy: Address,
 ): bigint | undefined {
-	const entry = record?.contracts.paymasterProxy;
-	return entry?.blockNumber !== undefined &&
-		getAddress(entry.address) === getAddress(proxy)
-		? BigInt(entry.blockNumber)
-		: undefined;
+	return proxyDeployBlock(proxy, record?.contracts.paymasterProxy);
 }
 
 export function recordPath(chainId: number, dir = deploymentsDir()): string {
