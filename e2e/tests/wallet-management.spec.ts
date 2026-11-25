@@ -1,7 +1,18 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
+	type Address,
+	createPublicClient,
+	createWalletClient,
+	defineChain,
+	http,
+	parseAbi,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { CHAINS } from "../origins.mjs";
+import {
 	connectWallet,
 	expectOutContains,
+	openActionPopup,
 	openManagePopup,
 	readOnChainOwners,
 	TENANTS,
@@ -195,9 +206,8 @@ test("bring-your-own UI: view, add and remove reachable through the tenant’s o
 	await expect(popup.getByTestId("byo-manage-owner")).toHaveCount(1);
 	await expect(popup.getByTestId("byo-manage-last-owner")).toBeVisible();
 
-	// add an EOA through the BYO UI, then assert the on-chain set
+	// the BYO reference adds a passkey on this device; then assert the on-chain set
 	await popup.getByTestId("byo-manage-add").click();
-	// the BYO reference adds a passkey on this device; assert the flow reaches its progress view
 	await expect(popup.getByTestId("byo-manage-fingerprint")).toHaveText(
 		/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/,
 		{ timeout: 30_000 },
@@ -206,9 +216,130 @@ test("bring-your-own UI: view, add and remove reachable through the tenant’s o
 	await expect(popup.getByTestId("byo-manage-flow-done")).toBeVisible({
 		timeout: 90_000,
 	});
-	expect(
-		(await readOnChainOwners(address)).owners.length,
-	).toBeGreaterThanOrEqual(2);
+	expect((await readOnChainOwners(address)).owners).toHaveLength(2);
+
+	// remove the passkey just added (not this session's), through the BYO UI
+	await popup.getByTestId("byo-manage-flow-done").click();
+	const added = popup.locator("[data-testid=byo-manage-owner]", {
+		hasNot: popup.getByTestId("byo-manage-owner-current"),
+	});
+	await expect(added).toHaveCount(1, { timeout: 30_000 });
+	await added.getByTestId("byo-manage-remove").click();
+	await expect(popup.getByTestId("byo-manage-remove-current")).toHaveCount(0);
+	await popup.getByTestId("byo-manage-remove-approve").click();
+	await expect(popup.getByTestId("byo-manage-flow-done")).toBeVisible({
+		timeout: 90_000,
+	});
+	expect((await readOnChainOwners(address)).owners).toHaveLength(1);
 
 	await context.close();
+});
+
+/** The wallet's direct entry point for an owner, outside the EntryPoint. */
+const EXECUTE_ABI = parseAbi([
+	"function execute(address target, uint256 value, bytes data) payable",
+]);
+
+/**
+ * Anvil accounts #5 and #6: funded on every devnet, and used by no service (docs/E2E-DEV-KEYS.md
+ * names #0 and #1 only), so sending from them here cannot disturb a service's nonce.
+ */
+const OWNER_KEY =
+	"0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba" as const;
+const STRANGER_KEY =
+	"0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e" as const;
+
+test("an added Ethereum account can then sign for the wallet on its own, and a stranger cannot (WM-24, WM-26)", async ({
+	page,
+}) => {
+	const { address, popup } = await openManagement(page);
+	const owner = privateKeyToAccount(OWNER_KEY);
+
+	await popup.getByTestId("manage-add-address").click();
+	await popup.getByTestId("manage-address-input").fill(owner.address);
+	await popup.getByTestId("manage-address-continue").click();
+	await popup.getByTestId("manage-address-understood").check();
+	await popup.getByTestId("manage-address-approve").click();
+	await expect(popup.getByTestId("manage-flow-done")).toBeVisible({
+		timeout: 90_000,
+	});
+
+	// WM-26 says it plainly: the account acts directly, without the EntryPoint and the relay.
+	const chain = defineChain({
+		id: CHAINS.a.chainId,
+		name: CHAINS.a.name,
+		nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+		rpcUrls: { default: { http: [CHAINS.a.rpc] } },
+	});
+	const publicClient = createPublicClient({ chain, transport: http() });
+	const call = {
+		address: address as Address,
+		abi: EXECUTE_ABI,
+		functionName: "execute",
+		args: [owner.address, 0n, "0x"],
+	} as const;
+
+	// A stranger is refused by the wallet itself.
+	await expect(
+		publicClient.simulateContract({
+			...call,
+			account: privateKeyToAccount(STRANGER_KEY),
+		}),
+	).rejects.toThrow();
+
+	const ownerClient = createWalletClient({
+		account: owner,
+		chain,
+		transport: http(),
+	});
+	const hash = await ownerClient.writeContract(call);
+	const receipt = await publicClient.waitForTransactionReceipt({ hash });
+	expect(receipt.status).toBe("success");
+});
+
+test("an owner change applies on every chain where the wallet is deployed, and is skipped where it is not (WM-41, WM-44, WM-46)", async ({
+	page,
+}) => {
+	const { credentials, address } = await connectWallet(page, tenant);
+	// Deploy the wallet on chain B too: connect there, then send once.
+	const connectB = await openActionPopup(page, "#connect-chain-b", credentials);
+	await connectB.getByRole("button", { name: tenant.ui.connect }).click();
+	await expectOutContains(page, 'accountsB: ["0x');
+	const sendB = await openActionPopup(page, "#send-chain-b", credentials);
+	await sendB.getByRole("button", { name: tenant.ui.approveTx }).click();
+	await expectOutContains(page, `"chainId":${CHAINS.b.chainId}`);
+	expect((await readOnChainOwners(address, CHAINS.b)).deployed).toBe(true);
+
+	const popup = await openManagePopup(page, credentials);
+	await expect(popup.getByTestId("settings-address")).toHaveText(address);
+	const eoa = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+	await popup.getByTestId("manage-add-address").click();
+	await popup.getByTestId("manage-address-input").fill(eoa);
+	await popup.getByTestId("manage-address-continue").click();
+	await popup.getByTestId("manage-address-understood").check();
+	await popup.getByTestId("manage-address-approve").click();
+	await expect(popup.getByTestId("manage-flow-done")).toBeVisible({
+		timeout: 120_000,
+	});
+
+	// Per chain: confirmed on A and B, skipped on the chain where the wallet does not exist.
+	await expect(
+		popup.getByTestId(`manage-chain-progress-${CHAINS.a.chainId}`),
+	).toHaveAttribute("data-state", "confirmed");
+	await expect(
+		popup.getByTestId(`manage-chain-progress-${CHAINS.b.chainId}`),
+	).toHaveAttribute("data-state", "confirmed");
+	await expect(
+		popup.getByTestId(`manage-chain-progress-${CHAINS.sd.chainId}`),
+	).toHaveAttribute("data-state", "skipped");
+
+	for (const chain of [CHAINS.a, CHAINS.b]) {
+		const { owners } = await readOnChainOwners(address, chain);
+		expect(owners).toHaveLength(2);
+		expect(
+			owners.some((owner) =>
+				owner.ownerBytes.toLowerCase().endsWith(eoa.slice(2).toLowerCase()),
+			),
+		).toBe(true);
+	}
 });

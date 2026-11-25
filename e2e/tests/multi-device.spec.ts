@@ -39,7 +39,18 @@ const tenant = TENANTS.stock;
 const KNOWN_BUG = {
 	/** ClaimFlow maps `pending-declined` to the "connection problem" copy (WM-23). */
 	declinedCopy: "a declined claim code reads as a network failure",
+	/**
+	 * A device that never signed in on the wallet origin holds its own random external user id, so
+	 * its first dApp connect finds no credentials and registers a NEW passkey and wallet, instead of
+	 * signing in with the passkey it holds. Hits a joined device B, and any returning user on a fresh
+	 * browser or after clearing site data.
+	 */
+	connectCreatesWallet:
+		"connect on a fresh browser registers a new wallet instead of signing in",
 };
+
+/** Anvil account #1, a checksummed address used as an owner (no transaction is sent from it). */
+const EOA = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const FINGERPRINT = /^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/;
 
@@ -148,6 +159,34 @@ async function signInDeviceB(b: DeviceB) {
 	await b.wallet.getByTestId("manage-sign-in-existing").click();
 }
 
+/** A CDP credential id (base64) as wallet-api writes it (base64url, no padding). */
+function apiCredentialId(credential: VirtualCredential): string {
+	return Buffer.from(credential.credentialId as string, "base64").toString(
+		"base64url",
+	);
+}
+
+/** What wallet-api says the session held by this wallet-origin page is: its passkey and its wallet. */
+async function sessionOf(walletPage: Page) {
+	const token = await walletPage.evaluate(() =>
+		localStorage.getItem("giano:session-token"),
+	);
+	expect(token, "the wallet origin holds a session").not.toBeNull();
+	const response = await walletPage
+		.context()
+		.request.get(`${tenant.walletUrl}/api/v1/me`, {
+			headers: {
+				authorization: `Bearer ${token}`,
+				origin: tenant.walletUrl,
+			},
+		});
+	expect(response.status()).toBe(200);
+	return (await response.json()) as {
+		walletAddress: string;
+		credentialId: string;
+	};
+}
+
 /** The owner row whose fingerprint is the given one. */
 function ownerRow(page: Page, fingerprint: string) {
 	return page.locator("[data-testid=manage-owner-row]", {
@@ -235,12 +274,21 @@ test.describe("one wallet, two devices", () => {
 			timeout: 90_000,
 		});
 		await expect(out).toContainText(`accounts: ["${a.address}"`);
+		// The connect signed in device B's own passkey: the session it stored (shared with the wallet
+		// page, same origin and browser) is bound to it. The popup itself has closed.
+		expect((await sessionOf(b.wallet)).credentialId).toBe(
+			apiCredentialId(b.credentials[0]),
+		);
 
+		// The operation is signed by device B's passkey: its signature counter moves.
+		const signCount = () => b.credentials[0].signCount as number;
+		const before = signCount();
 		const send = await openActionPopup(dapp, "#send", b.credentials);
 		await expect(send.getByText(tenant.ui.txHeading)).toBeVisible();
 		await send.getByRole("button", { name: tenant.ui.approveTx }).click();
 		await expectOutContains(dapp, "receipt:success: true");
 		await expectOutContains(dapp, `"account":"${a.address}"`);
+		expect(signCount()).toBeGreaterThan(before);
 	});
 
 	test("the first device still signs after the second joins (WM-33)", async ({
@@ -358,5 +406,174 @@ test.describe("one wallet, two devices", () => {
 
 		await b.wallet.getByTestId("manage-flow-done").click();
 		await expect(b.wallet.getByTestId("manage-sign-in")).toBeVisible();
+	});
+
+	test("after joining, device B's session is its own passkey on the same wallet, and both devices list both passkeys by name (WM-07, WM-10, WM-33)", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		// Device A names its own passkey first, so device B must show a name it never set.
+		const ownRowOnA = a.popup.locator("[data-testid=manage-owner-row]", {
+			has: a.popup.getByTestId("manage-owner-current"),
+		});
+		const fingerprintA = (await ownRowOnA
+			.getByTestId("manage-owner-fingerprint")
+			.textContent()) as string;
+		await a.popup.getByTestId("manage-rename").click();
+		await a.popup.getByTestId("manage-rename-input").fill("Laptop");
+		await a.popup.getByTestId("manage-rename-save").click();
+		await expect(ownRowOnA.getByTestId("manage-owner-name")).toHaveText(
+			"Laptop",
+		);
+
+		const b = await pairDeviceB(a, browser);
+		deviceB = b.context;
+		await signInDeviceB(b);
+		await expect(b.wallet.getByTestId("settings-address")).toHaveText(
+			a.address,
+			{ timeout: 30_000 },
+		);
+
+		// Device B's session: wallet-api binds it to device B's passkey and to device A's wallet.
+		const onB = await sessionOf(b.wallet);
+		expect(onB.credentialId).toBe(apiCredentialId(b.credentials[0]));
+		expect(onB.walletAddress.toLowerCase()).toBe(a.address.toLowerCase());
+		// Device A's session is unchanged: still device A's passkey.
+		const onA = await sessionOf(a.popup);
+		expect(onA.credentialId).toBe(apiCredentialId(a.credentials[0]));
+		expect(onA.walletAddress.toLowerCase()).toBe(a.address.toLowerCase());
+
+		// Device B lists both passkeys: its own marked current, device A's under the name A gave it.
+		await expect(b.wallet.getByTestId("manage-owner-row")).toHaveCount(2);
+		await expect(
+			ownerRow(b.wallet, b.fingerprint).getByTestId("manage-owner-current"),
+		).toBeVisible();
+		await expect(
+			ownerRow(b.wallet, fingerprintA).getByTestId("manage-owner-current"),
+		).toHaveCount(0);
+		await expect(
+			ownerRow(b.wallet, fingerprintA).getByTestId("manage-owner-name"),
+		).toHaveText("Laptop");
+
+		// Device A lists both too, with its own passkey still the current one.
+		await a.popup.getByTestId("manage-flow-done").click();
+		await expect(a.popup.getByTestId("manage-owner-row")).toHaveCount(2, {
+			timeout: 30_000,
+		});
+		await expect(
+			ownerRow(a.popup, fingerprintA).getByTestId("manage-owner-current"),
+		).toBeVisible();
+		await expect(
+			ownerRow(a.popup, b.fingerprint).getByTestId("manage-owner-current"),
+		).toHaveCount(0);
+	});
+
+	test("device B logs out and signs in again: the same wallet, with its own passkey (WM-33)", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		const b = await pairDeviceB(a, browser);
+		deviceB = b.context;
+		await signInDeviceB(b);
+		await expect(b.wallet.getByTestId("settings-address")).toHaveText(
+			a.address,
+			{ timeout: 30_000 },
+		);
+
+		await b.wallet
+			.getByRole("button", { name: "Log out (revoke session)" })
+			.click();
+		await b.wallet.getByTestId("manage-sign-in-existing").click();
+		await expect(b.wallet.getByTestId("settings-address")).toHaveText(
+			a.address,
+			{ timeout: 30_000 },
+		);
+		const session = await sessionOf(b.wallet);
+		expect(session.credentialId).toBe(apiCredentialId(b.credentials[0]));
+		await expect(
+			ownerRow(b.wallet, b.fingerprint).getByTestId("manage-owner-current"),
+		).toBeVisible();
+	});
+
+	test("device B connects from the dApp straight after joining, without signing in on the wallet first (WM-33)", async ({
+		page,
+		browser,
+	}) => {
+		test.fail(true, KNOWN_BUG.connectCreatesWallet);
+		const a = await startDeviceA(page);
+		const b = await pairDeviceB(a, browser);
+		deviceB = b.context;
+
+		// The user goes from the claim screen to the application, as most will.
+		const dapp = await b.context.newPage();
+		await dapp.goto(tenant.dappUrl);
+		const connect = await openWalletPopup(dapp, "#connect");
+		const { cdp, authenticatorId } = await addVirtualAuthenticator(connect);
+		await seedCredentials(cdp, authenticatorId, b.credentials);
+		const created = trackResidentCredentials(cdp);
+		await connect.getByRole("button", { name: tenant.ui.connect }).click();
+		const out = dapp.getByTestId("out");
+		await expect(out).toContainText(/accounts: \[|connect:error/, {
+			timeout: 90_000,
+		});
+		// It signs in with the passkey it holds, to the wallet it joined: no new passkey, no new wallet.
+		expect(created).toHaveLength(0);
+		await expect(out).toContainText(`accounts: ["${a.address}"`);
+		expect((await sessionOf(b.wallet)).credentialId).toBe(
+			apiCredentialId(b.credentials[0]),
+		);
+	});
+
+	test("an owner already removed by the other device is refused legibly, never with a bare revert (WM-29)", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		const b = await pairDeviceB(a, browser);
+		deviceB = b.context;
+		// A third owner, an address, which both devices then try to remove.
+		await a.popup.getByTestId("manage-flow-done").click();
+		await a.popup.getByTestId("manage-add-address").click();
+		await a.popup.getByTestId("manage-address-input").fill(EOA);
+		await a.popup.getByTestId("manage-address-continue").click();
+		await a.popup.getByTestId("manage-address-understood").check();
+		await a.popup.getByTestId("manage-address-approve").click();
+		await a.popup.getByTestId("manage-flow-done").click({ timeout: 90_000 });
+		expect((await readOnChainOwners(a.address)).owners).toHaveLength(3);
+
+		// Device B loads the list with the address in it.
+		await signInDeviceB(b);
+		const addressOnB = b.wallet.locator("[data-testid=manage-owner-row]", {
+			hasText: "Ethereum account",
+		});
+		await expect(addressOnB).toHaveCount(1, { timeout: 30_000 });
+
+		// Device A removes it first.
+		const addressOnA = a.popup.locator("[data-testid=manage-owner-row]", {
+			hasText: "Ethereum account",
+		});
+		await addressOnA.getByTestId("manage-remove").click();
+		await a.popup.getByTestId("manage-remove-approve").click();
+		await expect(a.popup.getByText("Credential removed")).toBeVisible({
+			timeout: 90_000,
+		});
+		expect((await readOnChainOwners(a.address)).owners).toHaveLength(2);
+
+		// Device B, on its stale list, tries the same removal.
+		await addressOnB.getByTestId("manage-remove").click();
+		await b.wallet.getByTestId("manage-remove-approve").click();
+		await expect(b.wallet.getByTestId("manage-flow-done")).toBeVisible({
+			timeout: 90_000,
+		});
+		await expect(b.wallet.getByText("Nothing was removed")).toBeVisible();
+		// Refused before anything was sent: no chain failed, none reverted.
+		await expect(
+			b.wallet.locator(
+				"[data-testid^=manage-chain-progress-][data-state=failed]",
+			),
+		).toHaveCount(0);
+		expect((await readOnChainOwners(a.address)).owners).toHaveLength(2);
 	});
 });
