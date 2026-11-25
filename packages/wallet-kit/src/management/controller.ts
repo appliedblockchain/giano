@@ -9,6 +9,7 @@ import {
 	type OwnerSet,
 	ownerFingerprint,
 	ownerSetsDiverge,
+	type PasskeyAddedFrom,
 	type PasskeyStorage,
 	publicKeyOwnerBytes,
 	type RegistryCredential,
@@ -61,6 +62,8 @@ export type OwnerRow = {
 	transports: string[] | null;
 	/** Where the passkey is stored, from its registry row (PS-1). Null without a row. */
 	storage: PasskeyStorage | null;
+	/** The device and browser it was added from, from its registry row (PS-1). Null without a row. */
+	addedFrom: PasskeyAddedFrom | null;
 	/** Present when the registry shows it removed but the chain still lists it, or vice-versa. */
 	removedAt: string | null;
 };
@@ -124,6 +127,8 @@ export type ManagementFlow =
 			type: "add";
 			step: "confirm-fingerprint"; // compare on both screens
 			fingerprint: string;
+			/** The device and browser the new passkey was created on, when wallet-api reports it. */
+			addedFrom: PasskeyAddedFrom | null;
 			name: string;
 			setName: (name: string) => void;
 			approve: () => void;
@@ -233,8 +238,14 @@ export type ManagementController = {
 	load: () => Promise<void>;
 
 	// ── sign-in (WM-57) ──
-	signIn: () => Promise<void>; // create-or-use a passkey on this device
-	signInWithExistingPasskey: () => Promise<void>; // discoverable: a device handed a credential via handoff
+	/**
+	 * Signs in with whichever passkey this device holds for the wallet origin (discoverable): one
+	 * that made its wallet or one added to a wallet from another device alike. Every passkey the
+	 * kit creates is discoverable (WK-20), so the browser can always list it.
+	 */
+	signIn: () => Promise<void>;
+	/** @deprecated The same as {@link signIn}, which is now discoverable. Kept for existing callers. */
+	signInWithExistingPasskey: () => Promise<void>;
 	logout: () => Promise<void>;
 	/** Signs out of every device holding a session for this user (G5 R2). */
 	logoutAll: () => Promise<void>;
@@ -382,6 +393,7 @@ export function createManagementController({
 				createdAt: credential?.createdAt ?? null,
 				transports: credential?.transports ?? null,
 				storage: credential?.storage ?? null,
+				addedFrom: credential?.addedFrom ?? null,
 				removedAt: credential?.removedAt ?? null,
 			};
 		});
@@ -418,6 +430,7 @@ export function createManagementController({
 							createdAt: credential.createdAt,
 							transports: credential.transports,
 							storage: credential.storage ?? null,
+							addedFrom: credential.addedFrom ?? null,
 							removedAt: credential.removedAt,
 						};
 					})
@@ -645,12 +658,19 @@ export function createManagementController({
 					log("add(this-device): credential created and deposited", {
 						fingerprint: deposited.fingerprint,
 					});
+					// The device it was created on, as wallet-api recorded it at the deposit: the
+					// default name. Best effort; the flow goes on without it.
+					const addedFrom = await api
+						.getPendingAddition(slot.id)
+						.then((pending) => pending.addedFrom ?? null)
+						.catch(() => null);
 					toConfirmFingerprint(
 						generation,
 						slot.id,
 						deposited.publicKey,
 						deposited.fingerprint,
 						mode,
+						addedFrom,
 					);
 				} else {
 					log("add(second-device): pending addition opened", {
@@ -699,6 +719,7 @@ export function createManagementController({
 							slot.publicKey,
 							fingerprint,
 							"second-device",
+							slot.addedFrom ?? null,
 						);
 					} else if (slot.status === "expired") {
 						stopPolling();
@@ -722,6 +743,7 @@ export function createManagementController({
 		publicKey: { x: Hex; y: Hex },
 		fingerprint: string,
 		mode: "this-device" | "second-device",
+		addedFrom: PasskeyAddedFrom | null,
 	) {
 		let name = "";
 		const emit = () =>
@@ -729,6 +751,7 @@ export function createManagementController({
 				type: "add",
 				step: "confirm-fingerprint",
 				fingerprint,
+				addedFrom,
 				name,
 				setName: (value: string) => {
 					name = value;
@@ -1113,6 +1136,19 @@ export function createManagementController({
 		}
 	}
 
+	/**
+	 * The one sign-in on the wallet origin: discoverable, so the browser lists every passkey this
+	 * device holds, and the one the user picks names its own user and wallet. Asking only for the
+	 * passkeys of the user this device last knew would hide a passkey added from another device.
+	 */
+	function signInWithHeldPasskey() {
+		return withBusy(async () => {
+			const result = await runtime.injection.signInWithExistingPasskey();
+			log("signed in", { walletAddress: result.walletAddress });
+			await load();
+		});
+	}
+
 	// ── lifecycle ───────────────────────────────────────────────────────────────────
 
 	function dismissFlow() {
@@ -1152,22 +1188,8 @@ export function createManagementController({
 		},
 		load,
 
-		signIn: () =>
-			withBusy(async () => {
-				await runtime.provider.request({ method: "eth_requestAccounts" });
-				await load();
-			}),
-
-		signInWithExistingPasskey: () =>
-			withBusy(async () => {
-				// Discoverable sign-in: how a device uses a passkey it gained through a handoff —
-				// possible because every credential the kit creates is discoverable (WK-20).
-				const result = await runtime.injection.signInWithExistingPasskey();
-				log("signed in with existing passkey", {
-					walletAddress: result.walletAddress,
-				});
-				await load();
-			}),
+		signIn: () => signInWithHeldPasskey(),
+		signInWithExistingPasskey: () => signInWithHeldPasskey(),
 
 		logout: () =>
 			withBusy(async () => {
