@@ -113,7 +113,14 @@ pnpm contracts:doctor --chain base-sepolia --env-file deploy/contracts/base-sepo
 ```
 
 All commands accept `--config <file>` in place of `--chain`. Operator commands support `--plan` to
-verify the selected target without invoking their underlying workflow. Provisioning and policy
+verify the selected target without invoking their underlying workflow. For `contracts:provision`
+and `contracts:sponsorship`, `--plan` runs every check of a real run and shows what the run would
+send: the provisioning transactions with the ETH they carry, or the sponsorship rules. It sends
+nothing and needs no terminal. The launcher names the missing keys, ROLE_ADMIN and the tenant and
+API settings together; the workflow then checks the role holders, the withdraw address and the
+sponsorship allowlist, and stops at the first problem. A provisioning plan fails when the operator
+holds less ETH than those transactions carry plus a gas budget. With `--signed-rpc`, the provisioning plan
+signs its reads, as the run does. Provisioning and policy
 writes require exact-text confirmation; noninteractive writes are refused. Existing exported
 variables take precedence over dotenv data. Conflicting CHAIN_ID/DEPLOY_CHAIN_ID inputs stop the
 operation. The selected profile's RPC environment reference takes precedence over DEPLOY_RPC_URL,
@@ -247,7 +254,9 @@ external-chain demo is documented in [DEMO.md](DEMO.md).
 Core deployment is not permission to serve traffic. For each chain, the operator must:
 
 1. Fund the operator for stake, tenant balances and gas (budget at least 0.1 ETH stake plus tenant
-   funding and fees), and the bundler executor for bundle gas (0.05 ETH is an initial reserve).
+   funding and fees), and the bundler executor for bundle gas. `pnpm contracts:funding` suggests
+   each amount: the stake and tenant balances as configured, plus a gas budget at twice the chain's
+   current gas price. On an OP Stack chain, the L1 data fee comes on top.
 2. Grant the intended roles, register the sponsorship signer, stake the paymaster, register the
    **existing database tenant UUIDs**, and fund balances on the new paymaster. No balance migrates
    from the old proxy or across chains. Do not generate new tenant UUIDs.
@@ -281,8 +290,10 @@ pnpm -F @appliedblockchain/giano-contracts provision:paymaster -- \
 # --grant-all-to is the explicit development topology. Production names a holder per role instead:
 #   --role-holder-signer-admin 0x… --role-holder-param-admin 0x… --role-holder-pauser 0x…
 #   --role-holder-stake-admin 0x… --role-holder-tenant-admin 0x… --role-holder-fee-collector 0x…
+# doctor reads the RPC from RPC_URL. Do not pass it as --rpc: pnpm prints the command line, and a
+# credential-bearing URL would be printed with it.
 pnpm -F @appliedblockchain/giano-contracts doctor -- chain \
-  --rpc "$RPC_URL" --chain-id "$CHAIN_ID" \
+  --chain-id "$CHAIN_ID" \
   --factory "$FACTORY_ADDRESS" \
   --sponsorship-paymaster "$SPONSORSHIP_PAYMASTER_ADDRESS" \
   --require-paymaster --role-admin "$PAYMASTER_ROLE_ADMIN" \

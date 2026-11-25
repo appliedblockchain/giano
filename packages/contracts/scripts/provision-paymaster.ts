@@ -20,7 +20,11 @@
  *     --tenant <uuid>:<withdrawAddress>:<slug>:<fundEth> \
  *     [--tenant ...] \
  *     [--role-holder-signer-admin 0x.. --role-holder-pauser 0x.. …] | [--grant-all-to 0x..]
- *     [--signed-rpc]
+ *     [--signed-rpc] [--plan]
+ *
+ * `--plan` runs every check of a real run, reads the chain, and lists each transaction the run
+ * would send, with the ETH it carries. It sends nothing. It fails when the key holds less ETH than
+ * those transactions carry.
  *
  * `--signed-rpc` signs every RPC request with the key, for an RPC that replaces `from` on an
  * unsigned eth_call or eth_estimateGas (Silent Data). Without it every role check fails there.
@@ -48,6 +52,8 @@ import {
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
 import { LOCAL_CHAIN_IDS } from "../chains";
+import { redactRpcUrls } from "../deploy/config";
+import { GAS_PRICE_HEADROOM } from "../deploy/funding";
 import {
 	mainnetRoleProblems,
 	provisioningIsMainnet,
@@ -79,6 +85,24 @@ type Args = {
 	flags: Record<string, string>;
 	repeated: Record<string, string[]>;
 };
+
+/**
+ * `text` without the RPC URLs this run may use. ethers and the fetch layer can quote the request
+ * URL in an error, and a Silent Data URL carries a write token (G48).
+ */
+function redact(text: string): string {
+	const argv = process.argv;
+	const flagged = argv.includes("--rpc")
+		? argv[argv.indexOf("--rpc") + 1]
+		: undefined;
+	return redactRpcUrls(text, [flagged, process.env.RPC_URL]);
+}
+
+/**
+ * The gas a plan budgets for each transaction it would send. A grant, a revoke, addSigner and
+ * registerTenant each use less than 200k gas; addStake and depositFor less than 100k.
+ */
+const PLAN_GAS_PER_TRANSACTION = 300_000n;
 
 function parseArgs(argv: string[]): Args {
 	const flags: Record<string, string> = {};
@@ -329,6 +353,35 @@ async function main(): Promise<void> {
 		log("    collapses the role separation the contract exists to enforce.");
 	}
 
+	const plan = flags.plan !== undefined;
+	if (plan) {
+		log("");
+		log("Plan only: the transactions a run would send now. Nothing is sent.");
+	}
+	/** In a plan: the transactions not sent, the ETH they carry, and the run roles not taken. */
+	let planned = 0;
+	let plannedValue = 0n;
+	const plannedRunRoles = new Set<string>();
+
+	/**
+	 * Sends one transaction and waits for it, and returns true. In a plan it only logs what it would
+	 * send, and returns false.
+	 */
+	const send = async (
+		action: string,
+		transaction: () => Promise<{ wait: () => Promise<unknown> }>,
+		value = 0n,
+	): Promise<boolean> => {
+		if (plan) {
+			planned++;
+			plannedValue += value;
+			log(`  → would ${action}`);
+			return false;
+		}
+		await (await transaction()).wait();
+		return true;
+	};
+
 	/** Grants `roleName` to `holder` unless it already holds it. */
 	const grant = async (roleName: string, holder: string) => {
 		const role: string = await paymaster[roleName]();
@@ -336,8 +389,12 @@ async function main(): Promise<void> {
 			log(`  • ${roleName} already held by ${getAddress(holder)}`);
 			return;
 		}
-		await (await paymaster.grantRole(role, getAddress(holder))).wait();
-		log(`  ✓ granted ${roleName} to ${getAddress(holder)}`);
+		if (
+			await send(`grant ${roleName} to ${getAddress(holder)}`, () =>
+				paymaster.grantRole(role, getAddress(holder)),
+			)
+		)
+			log(`  ✓ granted ${roleName} to ${getAddress(holder)}`);
 	};
 
 	/** This key's named holder for one of the run's roles is itself: it keeps that role. */
@@ -354,12 +411,19 @@ async function main(): Promise<void> {
 		for (const flag of RUN_ROLES) {
 			if (keeps(flag)) continue;
 			const role: string = await paymaster[ROLE_FLAGS[flag]]();
-			if (!(await paymaster.hasRole(role, wallet.address))) continue;
-			await (await paymaster.revokeRole(role, wallet.address)).wait();
+			if (
+				!plannedRunRoles.has(flag) &&
+				!(await paymaster.hasRole(role, wallet.address))
+			)
+				continue;
 			const holder = flags[`role-holder-${flag}`];
-			log(
-				`  ✓ gave up ${ROLE_FLAGS[flag]}${holder ? ` (held by ${getAddress(holder)})` : ""}`,
-			);
+			const heldBy = holder ? ` (held by ${getAddress(holder)})` : "";
+			if (
+				await send(`give up ${ROLE_FLAGS[flag]}${heldBy}`, () =>
+					paymaster.revokeRole(role, wallet.address),
+				)
+			)
+				log(`  ✓ gave up ${ROLE_FLAGS[flag]}${heldBy}`);
 		}
 	};
 
@@ -381,8 +445,13 @@ async function main(): Promise<void> {
 				const roleName = ROLE_FLAGS[flag];
 				const role: string = await paymaster[roleName]();
 				if (await paymaster.hasRole(role, wallet.address)) continue;
-				await (await paymaster.grantRole(role, wallet.address)).wait();
-				log(`  ✓ holds ${roleName} for this provisioning run`);
+				if (
+					await send(`take ${roleName} for this provisioning run`, () =>
+						paymaster.grantRole(role, wallet.address),
+					)
+				)
+					log(`  ✓ holds ${roleName} for this provisioning run`);
+				else plannedRunRoles.add(flag);
 			}
 		}
 
@@ -392,8 +461,12 @@ async function main(): Promise<void> {
 				log(`  • signer already authorised: ${getAddress(signer)}`);
 				continue;
 			}
-			await (await paymaster.addSigner(getAddress(signer))).wait();
-			log(`  ✓ authorised sponsorship signer ${getAddress(signer)}`);
+			if (
+				await send(`authorise sponsorship signer ${getAddress(signer)}`, () =>
+					paymaster.addSigner(getAddress(signer)),
+				)
+			)
+				log(`  ✓ authorised sponsorship signer ${getAddress(signer)}`);
 		}
 
 		// --- stake -------------------------------------------------------------------------------
@@ -401,10 +474,13 @@ async function main(): Promise<void> {
 			const info = await entryPoint.getDepositInfo(paymasterAddress);
 			if (info.staked && info.stake >= stakeWei) {
 				log(`  • already staked: ${formatEther(info.stake)} ETH`);
-			} else {
-				await (
-					await paymaster.addStake(unstakeDelay, { value: stakeWei })
-				).wait();
+			} else if (
+				await send(
+					`stake ${stakeEth} ETH with a ${unstakeDelay}s unstake delay`,
+					() => paymaster.addStake(unstakeDelay, { value: stakeWei }),
+					stakeWei,
+				)
+			) {
 				log(`  ✓ staked ${stakeEth} ETH with a ${unstakeDelay}s unstake delay`);
 			}
 		}
@@ -413,27 +489,31 @@ async function main(): Promise<void> {
 		for (const tenant of tenants) {
 			const existing = await paymaster.getTenant(tenant.id);
 			if (!existing.registered) {
-				await (
-					await paymaster.registerTenant(
-						tenant.id,
-						tenant.withdrawAddress,
-						tenant.slug,
+				const registration = `tenant ${tenant.slug} (${tenant.raw}) withdrawing to ${tenant.withdrawAddress}`;
+				if (
+					await send(`register ${registration}`, () =>
+						paymaster.registerTenant(
+							tenant.id,
+							tenant.withdrawAddress,
+							tenant.slug,
+						),
 					)
-				).wait();
-				log(
-					`  ✓ registered tenant ${tenant.slug} (${tenant.raw}) withdrawing to ${tenant.withdrawAddress}`,
-				);
+				)
+					log(`  ✓ registered ${registration}`);
 			} else {
 				log(`  • tenant ${tenant.slug} already registered`);
 			}
 
 			if (tenant.fundEth !== "0") {
-				await (
-					await paymaster.depositFor(tenant.id, {
-						value: parseEther(tenant.fundEth),
-					})
-				).wait();
-				log(`  ✓ funded ${tenant.slug} with ${tenant.fundEth} ETH`);
+				const value = parseEther(tenant.fundEth);
+				if (
+					await send(
+						`fund ${tenant.slug} with ${tenant.fundEth} ETH`,
+						() => paymaster.depositFor(tenant.id, { value }),
+						value,
+					)
+				)
+					log(`  ✓ funded ${tenant.slug} with ${tenant.fundEth} ETH`);
 			}
 		}
 
@@ -455,7 +535,8 @@ async function main(): Promise<void> {
 				);
 		}
 	} catch (error) {
-		if (!grantAllTo) {
+		// A plan took no role, so it has none to give up.
+		if (!grantAllTo && !plan) {
 			log("");
 			log(
 				"  ✗ provisioning stopped part-way; giving up the roles this key held for the run.",
@@ -468,13 +549,42 @@ async function main(): Promise<void> {
 			signer.reset();
 			await releaseRunRoles().catch((releaseError: unknown) =>
 				console.error(
-					`  ✗ could not give up the run's roles either (${(releaseError as Error).message}). This key may still hold ${RUN_ROLES.map((f) => ROLE_FLAGS[f]).join(", ")}: a rerun gives them up.`,
+					`  ✗ could not give up the run's roles either (${redact((releaseError as Error).message)}). This key may still hold ${RUN_ROLES.map((f) => ROLE_FLAGS[f]).join(", ")}: a rerun gives them up.`,
 				),
 			);
 		}
 		throw error;
 	}
 	if (!grantAllTo) await releaseRunRoles();
+
+	if (plan) {
+		// The run spends the ETH its transactions carry, plus gas. A key that holds less fails part-way
+		// through the run, after the transactions before it went out (S8).
+		const balance = await provider.getBalance(wallet.address);
+		const { gasPrice } = await provider.getFeeData();
+		const gas =
+			BigInt(planned) *
+			PLAN_GAS_PER_TRANSACTION *
+			(gasPrice ?? 0n) *
+			GAS_PRICE_HEADROOM;
+		const needed = plannedValue + gas;
+		log("");
+		log(
+			`Plan: ${planned} transaction(s), carrying ${formatEther(plannedValue)} ETH plus gas.`,
+		);
+		log(
+			gasPrice === null
+				? "  Gas: the gas price could not be read, so the check below leaves gas out."
+				: `  Gas: up to ${formatEther(gas)} ETH (${PLAN_GAS_PER_TRANSACTION} gas per transaction at ${GAS_PRICE_HEADROOM}× the gas price; on an OP Stack chain the L1 data fee comes on top).`,
+		);
+		log(`  ${wallet.address} holds ${formatEther(balance)} ETH.`);
+		if (balance < needed)
+			throw new Error(
+				`${wallet.address} holds ${formatEther(balance)} ETH, less than the ${formatEther(needed)} ETH the run needs (${formatEther(plannedValue)} ETH it sends, plus gas). Fund it first (pnpm contracts:funding).`,
+			);
+		log("Nothing was sent.");
+		return;
+	}
 
 	// --- verify, and fail loudly if the deployment is not actually usable (R-24, R-60) ----------
 	log("");
@@ -556,6 +666,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-	console.error(`\n${(error as Error).message}`);
+	console.error(`\n${redact((error as Error).message)}`);
 	process.exit(1);
 });

@@ -21,6 +21,7 @@ import {
 	http,
 	keccak256,
 	type PublicClient,
+	parseEther,
 	toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -204,6 +205,67 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			await client.getTransactionCount({ address: operator }),
 			nonce,
 		);
+
+		// --plan runs every check of a run and lists what the run would send, and sends nothing (G48 R3).
+		const literal = (text: string) =>
+			text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const planned = provision({ extra: ["--plan"] });
+		assert.equal(planned.status, 0, `${planned.stdout}\n${planned.stderr}`);
+		for (const action of [
+			"take SIGNER_ADMIN_ROLE for this provisioning run",
+			`authorise sponsorship signer ${SIGNER}`,
+			"stake 0.1 ETH with a 86400s unstake delay",
+			`register tenant provision-test (${TENANT})`,
+			"fund provision-test with 0.01 ETH",
+			`grant PAUSER_ROLE to ${HOLDERS.pauser[1]}`,
+			`give up SIGNER_ADMIN_ROLE (held by ${HOLDERS["signer-admin"][1]})`,
+		])
+			assert.match(planned.stdout, new RegExp(`→ would ${literal(action)}`));
+		assert.match(planned.stdout, /carrying 0\.11 ETH plus gas/);
+		assert.match(planned.stdout, /Nothing was sent/);
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+		for (const roleName of runRoles)
+			assert.equal(await operatorHolds(roleName), false, `took ${roleName}`);
+
+		// A plan checks the arguments as a run does.
+		const plannedTypo = provision({
+			holders: ["--role-holder-pauser", "0x123"],
+			extra: ["--plan"],
+		});
+		assert.notEqual(plannedTypo.status, 0);
+		assert.match(
+			plannedTypo.stderr,
+			/role holder for pauser is not an address/,
+		);
+
+		// A plan for more ETH than the key holds fails, where a run would fail part-way (S8).
+		const plannedShort = provision({
+			tenant: `${TENANT}:${holder("withdraw")}:provision-test:1000000`,
+			extra: ["--plan"],
+		});
+		assert.notEqual(plannedShort.status, 0, plannedShort.stdout);
+		assert.match(plannedShort.stderr, /1000000\.1 ETH it sends, plus gas\)/);
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+
+		// The check counts gas too: a key that holds exactly the ETH the run sends cannot pay for gas.
+		const balance = await client.getBalance({ address: operator });
+		const setBalance = (value: bigint) =>
+			testClient.setBalance({ address: operator, value });
+		await setBalance(parseEther("0.11"));
+		try {
+			const noGas = provision({ extra: ["--plan"] });
+			assert.notEqual(noGas.status, 0, noGas.stdout);
+			assert.match(noGas.stdout, /Gas: up to \S+ ETH/);
+			assert.match(noGas.stderr, /0\.11 ETH it sends, plus gas\)/);
+		} finally {
+			await setBalance(balance);
+		}
 
 		// A run that fails part-way (a tenant funded with more ETH than the key holds) still gives up
 		// the roles it took for the run.
