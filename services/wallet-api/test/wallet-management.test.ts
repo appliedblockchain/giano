@@ -320,6 +320,96 @@ describe("where a passkey is stored (PS-1)", () => {
 	});
 });
 
+describe("signing in with whichever passkey the device holds", () => {
+	const signInWith = async (
+		auth: TestAuthenticator,
+		storedExternalUserId: string,
+		discoverable: boolean,
+	) => {
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/options",
+			headers: { origin: ORIGIN },
+			payload: {
+				externalUserId: storedExternalUserId,
+				kind: "authentication",
+				discoverable,
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		const options = res.json() as {
+			challenge: string;
+			credentialIds: string[];
+			userExists: boolean;
+		};
+		const verified = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/authentication/verify",
+			headers: { origin: ORIGIN },
+			payload: {
+				response: makeAuthenticationResponse(auth, {
+					challenge: options.challenge,
+					origin: ORIGIN,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		return { options, verified };
+	};
+
+	it("lets a device whose stored user is someone else sign in with the passkey it holds, to that passkey's wallet", async () => {
+		// The device last knew user 'stale-user'; the passkey it holds now belongs to 'joined-user'.
+		await register("stale-user", createAuthenticator());
+		const held = createAuthenticator();
+		const joined = await register("joined-user", held);
+
+		// A challenge bound to the stored user refuses the other user's passkey (C3)...
+		const bound = await signInWith(held, "stale-user", false);
+		expect(bound.verified.statusCode).toBe(400);
+		expect((bound.verified.json() as { error: string }).error).toBe(
+			"challenge-user-mismatch",
+		);
+
+		// ...a discoverable one lets the passkey name its own user and wallet.
+		const { options, verified } = await signInWith(held, "stale-user", true);
+		expect(options.credentialIds).toEqual([]);
+		expect(options.userExists).toBe(false);
+		expect(verified.statusCode).toBe(200);
+		expect(verified.json()).toMatchObject({
+			externalUserId: "joined-user",
+			walletAddress: joined.walletAddress,
+			credentialId: joined.credentialId,
+		});
+	});
+
+	it("refuses a discoverable challenge for anything but sign-in", async () => {
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/options",
+			headers: { origin: ORIGIN },
+			payload: {
+				externalUserId: "anyone",
+				kind: "registration",
+				discoverable: true,
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe(
+			"discoverable-needs-authentication",
+		);
+	});
+
+	it("tells the claiming device which wallet it is joining", async () => {
+		const a = await register("claim-wallet-user", createAuthenticator());
+		const slot = await openSlot(a.session.token);
+		const claimed = await claim(slot.claimCode);
+		expect(claimed.statusCode).toBe(200);
+		expect((claimed.json() as { walletAddress: string }).walletAddress).toBe(
+			a.walletAddress,
+		);
+	});
+});
+
 describe("claim codes", () => {
 	it("normalises confusable characters and separators", () => {
 		expect(normaliseClaimCode("ab-3o Il9")).toBe("AB30119");
