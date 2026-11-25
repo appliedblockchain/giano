@@ -6,6 +6,7 @@ import type {
 import { useEffect, useRef } from "react";
 import { PasskeyDeviceGuidance } from "../PasskeyDeviceGuidance";
 import {
+	addedFromLabel,
 	ChainProgressList,
 	ChainsNotice,
 	FlowShell,
@@ -43,10 +44,14 @@ export function AddFlow({
 	useEffect(() => {
 		if (flow.step === "confirm-fingerprint" && !seeded.current) {
 			seeded.current = true;
+			// The device the passkey was created on names it best ("iPhone · Safari"); without it,
+			// fall back to the date.
+			const from = addedFromLabel(flow);
 			flow.setName(
-				variant === "this-device"
-					? `Backup passkey · ${new Date().toLocaleDateString()}`
-					: `Another device · ${new Date().toLocaleDateString()}`,
+				from ??
+					(variant === "this-device"
+						? `Backup passkey · ${new Date().toLocaleDateString()}`
+						: `Another device · ${new Date().toLocaleDateString()}`),
 			);
 		}
 	}, [flow, variant]);
@@ -161,6 +166,14 @@ export function AddFlow({
 				>
 					{flow.fingerprint}
 				</div>
+				{addedFromLabel(flow) ? (
+					<div className="kv">
+						<span className="k">Created on</span>
+						<span className="v" data-testid="manage-consent-added-from">
+							{addedFromLabel(flow)}
+						</span>
+					</div>
+				) : null}
 				<ChainsNotice chains={state.chains} />
 				{nameInput}
 				<div className="actions">

@@ -1,6 +1,7 @@
 import type {
 	ChainProgress,
 	ManagementChainStatus,
+	PasskeyAddedFrom,
 	SponsorshipRefusalReason,
 } from "@appliedblockchain/giano-wallet-kit";
 import type { ReactNode } from "react";
@@ -106,3 +107,16 @@ export const inputStyle = {
 	background: "var(--bg)",
 	color: "var(--fg)",
 } as const;
+
+/**
+ * The device and browser a passkey was added from, as "iPhone · Safari" (PS-1). Null when nothing
+ * was recorded. Self-reported by that browser: display only.
+ */
+export function addedFromLabel(row: {
+	addedFrom: PasskeyAddedFrom | null;
+}): string | null {
+	const parts = [row.addedFrom?.device, row.addedFrom?.browser].filter(
+		(part): part is string => !!part,
+	);
+	return parts.length > 0 ? parts.join(" · ") : null;
+}
