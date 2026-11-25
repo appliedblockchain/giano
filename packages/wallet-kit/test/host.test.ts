@@ -5,7 +5,7 @@ import {
 	RPC_ERRORS,
 } from "@appliedblockchain/giano-wallet-transport";
 import { type Address, encodeFunctionData, type Hex } from "viem";
-import { describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
 import { createConnectionGrants } from "../src/grants";
 import { createHostRequestHandler } from "../src/host";
 import { createRequestStore } from "../src/requests";
@@ -44,6 +44,8 @@ type FakeOptions = {
 	account?: boolean;
 	restore?: boolean;
 	connectResult?: unknown;
+	/** The wallet-api session this device holds; none by default. */
+	session?: string | null;
 };
 
 /** A user operation's calls that only call a dApp contract, as eth_prepareUserOperation takes them. */
@@ -55,10 +57,13 @@ function fakeRuntime(
 		account = true,
 		restore = true,
 		connectResult = ["0xabc"],
+		session = null,
 	}: FakeOptions = {},
 ) {
 	let accountAddress: Address | null = account ? ACCOUNT : null;
 	const calls: { method: string; params?: unknown }[] = [];
+	/** Every connect choice the host set on the injection, in order. */
+	const connectChoices: (string | null)[] = [];
 	const listeners = new Map<string, ((data: unknown) => void)[]>();
 	/** Fires a provider event, as the real provider does on connect or sign-in. */
 	const emit = (event: string, data: unknown) => {
@@ -67,6 +72,13 @@ function fakeRuntime(
 	const runtime = {
 		chainId,
 		chainName: `Chain ${chainId}`,
+		injection: {
+			getSessionToken: () => session,
+			setConnectChoice: (choice: string | null) => {
+				connectChoices.push(choice);
+			},
+			isWalletApiUrl: () => false,
+		},
 		provider: {
 			getSmartAccount: () =>
 				accountAddress ? { address: accountAddress } : null,
@@ -96,7 +108,7 @@ function fakeRuntime(
 	const setAccount = (address: Address | null) => {
 		accountAddress = address;
 	};
-	return { runtime, calls, setAccount, emit };
+	return { runtime, calls, setAccount, emit, connectChoices };
 }
 
 const DAPP = "https://app.test";
@@ -109,7 +121,7 @@ function harness(
 	} = {},
 ) {
 	const { connected = true, ...runtimeOptions } = options;
-	const { runtime, calls, setAccount, emit } = fakeRuntime(
+	const { runtime, calls, setAccount, emit, connectChoices } = fakeRuntime(
 		chainId,
 		runtimeOptions,
 	);
@@ -136,6 +148,7 @@ function harness(
 		handler,
 		requests,
 		calls,
+		connectChoices,
 		context,
 		runtime,
 		setAccount,
@@ -176,6 +189,80 @@ describe("the host request handler (WK-08…WK-12)", () => {
 		});
 		pendingOf(requests).approve();
 		await expect(call).resolves.toEqual(["0xabc"]);
+	});
+
+	describe("how a connect signs in", () => {
+		const FLAG = "giano:passkey-on-device";
+		afterEach(() => localStorage.removeItem(FLAG));
+
+		it("continues a session with no alternative, and sets no choice", async () => {
+			const { handler, requests, context, connectChoices } = harness(31337, {
+				session: "tok",
+			});
+			const call = handler("eth_requestAccounts", [], context);
+			expect(requests.current?.connect).toEqual({ primary: "session" });
+			expect(requests.current?.approveAlternative).toBeUndefined();
+			pendingOf(requests).approve();
+			await call;
+			expect(connectChoices).toEqual([null, null]);
+		});
+
+		it("on a device known to hold a passkey, signs in with whichever one the browser offers", async () => {
+			localStorage.setItem(FLAG, "1");
+			const { handler, requests, context, connectChoices } = harness();
+			const call = handler("eth_requestAccounts", [], context);
+			expect(requests.current?.connect).toEqual({
+				primary: "held-passkey",
+				alternative: "new-wallet",
+			});
+			pendingOf(requests).approve();
+			await call;
+			// set for this connect, and cleared after it
+			expect(connectChoices).toEqual(["existing", null]);
+		});
+
+		it("on such a device, the alternative creates a new wallet", async () => {
+			localStorage.setItem(FLAG, "1");
+			const { handler, requests, context, connectChoices } = harness();
+			const call = handler("eth_requestAccounts", [], context);
+			pendingOf(requests).approveAlternative?.();
+			await call;
+			expect(connectChoices).toEqual(["new", null]);
+		});
+
+		it("on a device that never signed in here, keeps the default and offers a held passkey as the alternative", async () => {
+			const { handler, requests, context, connectChoices } = harness();
+			const call = handler("eth_requestAccounts", [], context);
+			expect(requests.current?.connect).toEqual({
+				primary: "default",
+				alternative: "held-passkey",
+			});
+			pendingOf(requests).approveAlternative?.();
+			await call;
+			expect(connectChoices).toEqual(["existing", null]);
+		});
+
+		it("clears the choice even when the connect fails", async () => {
+			localStorage.setItem(FLAG, "1");
+			const { handler, requests, context, connectChoices, runtime } = harness();
+			vi.mocked(runtime.provider.request).mockRejectedValueOnce(
+				new Error("no passkey selected"),
+			);
+			const call = handler("eth_requestAccounts", [], context);
+			pendingOf(requests).approve();
+			await expect(call).rejects.toBeDefined();
+			expect(connectChoices).toEqual(["existing", null]);
+		});
+
+		it("offers no connect choice on other consent screens", async () => {
+			const { handler, requests, context, connectChoices } = harness();
+			const call = handler("personal_sign", ["0x68690a", "0xabc"], context);
+			await Promise.resolve();
+			expect(requests.current?.connect).toBeUndefined();
+			pendingOf(requests).approve();
+			await call;
+			expect(connectChoices).toEqual([]);
+		});
 	});
 
 	it("answers 4001 on rejection without touching the provider (WK-09)", async () => {

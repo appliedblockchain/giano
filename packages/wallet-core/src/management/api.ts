@@ -107,9 +107,13 @@ export type WalletManagementApi = {
 		id: string,
 		body: { chainIds: number[]; name?: string },
 	) => Promise<{ ok: true; credentialId: string }>;
-	claimPendingAddition: (
-		claimCode: string,
-	) => Promise<{ rpId: string; challenge: string; pendingAdditionId: string }>;
+	claimPendingAddition: (claimCode: string) => Promise<{
+		rpId: string;
+		challenge: string;
+		pendingAdditionId: string;
+		/** The wallet being joined. Absent from a wallet-api that predates it. */
+		walletAddress?: Hex;
+	}>;
 	fillPendingAddition: (
 		claimCode: string,
 		credential: Omit<PublicKeyCredential, "toJSON">,
@@ -250,13 +254,15 @@ export function createWalletManagementApi(
 		// ── Pending additions — the new device's side (the claim code only routes) ──
 
 		claimPendingAddition: (claimCode: string) =>
-			api<{ rpId: string; challenge: string; pendingAdditionId: string }>(
-				"/v1/wallet/pending-additions/claim",
-				{
-					method: "POST",
-					body: JSON.stringify({ claimCode }),
-				},
-			),
+			api<{
+				rpId: string;
+				challenge: string;
+				pendingAdditionId: string;
+				walletAddress?: Hex;
+			}>("/v1/wallet/pending-additions/claim", {
+				method: "POST",
+				body: JSON.stringify({ claimCode }),
+			}),
 
 		fillPendingAddition: (
 			claimCode: string,

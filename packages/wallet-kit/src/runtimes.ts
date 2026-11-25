@@ -25,6 +25,7 @@ import {
 } from "viem/account-abstraction";
 import type { WalletChainConfig, WalletConfig } from "./config";
 import { createTransactionDescriber } from "./describe";
+import { markPasskeyOnDevice, passkeyName } from "./passkey-on-device";
 
 const USER_ID_KEY = "giano:external-user-id";
 const SESSION_KEY = "giano:session-token";
@@ -237,11 +238,15 @@ export function createWalletRuntimes(config: WalletConfig): WalletRuntimes {
 		apiUrl: config.walletApiUrl,
 		passkeyDevicePreference: config.passkeyDevicePreference,
 		externalUserId,
-		credentialName: config.branding.name,
+		// A first passkey's wallet is derived from it afterwards, so its name carries the day.
+		credentialName: passkeyName(config.branding.name),
 		sessionToken: localStorage.getItem(SESSION_KEY),
 		onSessionChanged: (token) => {
-			if (token) localStorage.setItem(SESSION_KEY, token);
-			else localStorage.removeItem(SESSION_KEY);
+			if (token) {
+				localStorage.setItem(SESSION_KEY, token);
+				// A session comes from a sign-in or a registration: this device holds a passkey.
+				markPasskeyOnDevice();
+			} else localStorage.removeItem(SESSION_KEY);
 		},
 		// A discoverable sign-in can reveal the credential's canonical external user id (its
 		// passkey was added through a cross-device handoff) — persist it so later ceremonies
