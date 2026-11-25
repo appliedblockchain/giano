@@ -9,6 +9,7 @@ import {
 	type OwnerSet,
 	ownerFingerprint,
 	ownerSetsDiverge,
+	type PasskeyStorage,
 	publicKeyOwnerBytes,
 	type RegistryCredential,
 	readOwnerSet,
@@ -57,6 +58,8 @@ export type OwnerRow = {
 	isCurrent: boolean;
 	createdAt: string | null;
 	transports: string[] | null;
+	/** Where the passkey is stored, from its registry row (PS-1). Null without a row. */
+	storage: PasskeyStorage | null;
 	/** Present when the registry shows it removed but the chain still lists it, or vice-versa. */
 	removedAt: string | null;
 };
@@ -371,6 +374,7 @@ export function createManagementController({
 					!!credential && !!me && credential.credentialId === me.credentialId,
 				createdAt: credential?.createdAt ?? null,
 				transports: credential?.transports ?? null,
+				storage: credential?.storage ?? null,
 				removedAt: credential?.removedAt ?? null,
 			};
 		});
@@ -406,6 +410,7 @@ export function createManagementController({
 							isCurrent: !!me && credential.credentialId === me.credentialId,
 							createdAt: credential.createdAt,
 							transports: credential.transports,
+							storage: credential.storage ?? null,
 							removedAt: credential.removedAt,
 						};
 					})

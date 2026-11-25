@@ -23,6 +23,22 @@ export type PendingAddition = {
 	publicKey: { x: Hex; y: Hex } | null;
 };
 
+/**
+ * Where a passkey is stored, as its authenticator reported it to wallet-api (PS-1). Display only:
+ * never an input to any decision. Every field is null for a passkey registered before wallet-api
+ * recorded it.
+ */
+export type PasskeyStorage = {
+	/** The passkey provider (e.g. "Google Password Manager", "1Password"), or null when unknown. */
+	provider: string | null;
+	/** True when the passkey is backed up (synced), false when it is not. */
+	synced: boolean | null;
+	/** 'singleDevice': it cannot leave its authenticator. 'multiDevice': it can be synced. */
+	deviceType: "singleDevice" | "multiDevice" | null;
+	/** The authenticator's AAGUID, as reported. */
+	aaguid: string | null;
+};
+
 export type RegistryCredential = {
 	credentialId: string;
 	walletAddress: string;
@@ -32,6 +48,8 @@ export type RegistryCredential = {
 	transports: string[] | null;
 	createdAt: string;
 	removedAt: string | null;
+	/** Absent from a wallet-api that predates it. */
+	storage?: PasskeyStorage;
 };
 
 /**
