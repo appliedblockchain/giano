@@ -87,6 +87,11 @@ export type VirtualCredential = Record<string, unknown>;
  */
 export async function addVirtualAuthenticator(
 	page: Page,
+	/**
+	 * `synced`: the authenticator's passkeys are backup-eligible and backed up, as a passkey in a
+	 * synced password manager is. Defaults to a device-only authenticator.
+	 */
+	{ synced = false }: { synced?: boolean } = {},
 ): Promise<{ cdp: CDPSession; authenticatorId: string }> {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send("WebAuthn.enable");
@@ -100,6 +105,9 @@ export async function addVirtualAuthenticator(
 				hasUserVerification: true,
 				isUserVerified: true,
 				automaticPresenceSimulation: true,
+				...(synced
+					? { defaultBackupEligibility: true, defaultBackupState: true }
+					: {}),
 			},
 		},
 	);
