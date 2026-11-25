@@ -144,6 +144,7 @@ const listCredentials = async (token: string) => {
 					deviceType: "singleDevice" | "multiDevice" | null;
 					aaguid: string | null;
 				};
+				addedFrom: { device: string | null; browser: string | null };
 			}[];
 		}
 	).credentials;
@@ -317,6 +318,87 @@ describe("where a passkey is stored (PS-1)", () => {
 			deviceType: "multiDevice",
 			aaguid: GOOGLE,
 		});
+	});
+});
+
+describe("which device and browser a passkey was added from (PS-1)", () => {
+	const MAC_CHROME =
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+	const IPHONE_SAFARI =
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+
+	it("records it at registration, and at the deposit from another device, and shows the second device to the first", async () => {
+		const deviceA = createAuthenticator();
+		const options = await getOptions("added-from-user", "registration");
+		const registered = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: ORIGIN, "user-agent": MAC_CHROME },
+			payload: {
+				externalUserId: "added-from-user",
+				response: makeRegistrationResponse(deviceA, {
+					challenge: options.challenge,
+					origin: ORIGIN,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		expect(registered.statusCode).toBe(200);
+		const a = registered.json() as Registered;
+		expect((await listCredentials(a.session.token))[0].addedFrom).toEqual({
+			device: "Mac",
+			browser: "Chrome",
+		});
+
+		// Device B deposits from an iPhone.
+		const deviceB = createAuthenticator();
+		const slot = await openSlot(a.session.token);
+		const claimed = await claim(slot.claimCode);
+		const { challenge } = claimed.json() as { challenge: string };
+		const filled = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim/fill",
+			headers: { origin: ORIGIN, "user-agent": IPHONE_SAFARI },
+			payload: {
+				claimCode: slot.claimCode,
+				response: makeRegistrationResponse(deviceB, {
+					challenge,
+					origin: ORIGIN,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		expect(filled.statusCode).toBe(200);
+		const { publicKey } = filled.json() as {
+			publicKey: { x: string; y: string };
+		};
+
+		// Device A's poll names the device the key came from, before it signs for it.
+		const polled = await ctx.app.inject({
+			method: "GET",
+			url: `/v1/wallet/pending-additions/${slot.id}`,
+			headers: authed(a.session.token),
+		});
+		expect((polled.json() as { addedFrom: unknown }).addedFrom).toEqual({
+			device: "iPhone",
+			browser: "Safari",
+		});
+
+		ctx.chainState.contracts.add(a.walletAddress.toLowerCase());
+		ctx.chainState.ownerKeys.add(ownerKeyOf(publicKey.x, publicKey.y));
+		const completed = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/wallet/pending-additions/${slot.id}/complete`,
+			headers: { ...authed(a.session.token), "user-agent": MAC_CHROME },
+			payload: { chainIds: [31337] },
+		});
+		expect(completed.statusCode).toBe(200);
+		const { credentialId } = completed.json() as { credentialId: string };
+		// The bound row keeps the iPhone, not device A's browser that completed the binding.
+		const added = (await listCredentials(a.session.token)).find(
+			(credential) => credential.credentialId === credentialId,
+		);
+		expect(added?.addedFrom).toEqual({ device: "iPhone", browser: "Safari" });
 	});
 });
 
