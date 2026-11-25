@@ -71,8 +71,11 @@ async function startDeviceA(page: Page): Promise<DeviceA> {
 }
 
 /** Device B: a separate browser on the wallet origin, signed out, with an empty authenticator. */
-async function startDeviceB(browser: Browser) {
-	const context = await browser.newContext();
+async function startDeviceB(
+	browser: Browser,
+	{ userAgent }: { userAgent?: string } = {},
+) {
+	const context = await browser.newContext(userAgent ? { userAgent } : {});
 	const wallet = await context.newPage();
 	await wallet.goto(tenant.walletUrl);
 	// Device B keeps its passkey in a synced password manager; device A's stays on the device. The
@@ -100,7 +103,11 @@ async function startDeviceB(browser: Browser) {
  * Device A opens a pending addition; device B enters the claim code and creates its passkey.
  * Returns the fingerprint each device shows. Nothing has been signed yet.
  */
-async function offerDeviceB(a: DeviceA, browser: Browser) {
+async function offerDeviceB(
+	a: DeviceA,
+	browser: Browser,
+	deviceB: { userAgent?: string } = {},
+) {
 	await a.popup.getByTestId("manage-add-device").click();
 	const code = (
 		await a.popup.getByTestId("manage-claim-code").textContent({
@@ -109,7 +116,7 @@ async function offerDeviceB(a: DeviceA, browser: Browser) {
 	)?.trim();
 	expect(code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
 
-	const b = await startDeviceB(browser);
+	const b = await startDeviceB(browser, deviceB);
 	await b.wallet.getByTestId("manage-claim-entry").click();
 	await b.wallet.getByTestId("manage-claim-input").fill(code as string);
 	await b.wallet.getByTestId("manage-claim-continue").click();
@@ -150,7 +157,7 @@ async function pairDeviceB(a: DeviceA, browser: Browser): Promise<DeviceB> {
 /** Device B, on the wallet origin: back to the signed-out view, then a discoverable sign-in. */
 async function signInDeviceB(b: DeviceB) {
 	await b.wallet.getByTestId("manage-flow-done").click();
-	await b.wallet.getByTestId("manage-sign-in-existing").click();
+	await b.wallet.getByTestId("manage-sign-in").click();
 }
 
 /** A CDP credential id (base64) as wallet-api writes it (base64url, no padding). */
@@ -217,8 +224,9 @@ test.describe("one wallet, two devices", () => {
 		});
 		const row = ownerRow(a.popup, b.fingerprint);
 		await expect(row).toHaveCount(1);
-		await expect(row.getByTestId("manage-owner-name")).toContainText(
-			"Another device",
+		// The default name is the device and browser the passkey was created on (PS-1).
+		await expect(row.getByTestId("manage-owner-name")).toHaveText(
+			/^(Mac|Linux|Windows) · Chrome$/,
 		);
 		await expect(a.popup.getByTestId("manage-stray-credential")).toHaveCount(0);
 	});
@@ -490,7 +498,7 @@ test.describe("one wallet, two devices", () => {
 		await b.wallet
 			.getByRole("button", { name: "Log out (revoke session)" })
 			.click();
-		await b.wallet.getByTestId("manage-sign-in-existing").click();
+		await b.wallet.getByTestId("manage-sign-in").click();
 		await expect(b.wallet.getByTestId("settings-address")).toHaveText(
 			a.address,
 			{ timeout: 30_000 },
@@ -657,5 +665,47 @@ test.describe("one wallet, two devices", () => {
 		expect(a.credentials[0].userName).toMatch(
 			/^Giano E2E · \d{4}-\d{2}-\d{2}$/,
 		);
+	});
+
+	test("device A sees which device and browser a passkey was added from, and names it after them (PS-1)", async ({
+		page,
+		browser,
+	}) => {
+		const IPHONE_SAFARI =
+			"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+		const a = await startDeviceA(page);
+		const { b, fingerprintOnB } = await offerDeviceB(a, browser, {
+			userAgent: IPHONE_SAFARI,
+		});
+		deviceB = b.context;
+
+		// Before signing, device A's consent says where the key came from, and names it after it.
+		await expect(a.popup.getByTestId("manage-consent-added-from")).toHaveText(
+			"iPhone · Safari",
+		);
+		await expect(a.popup.getByTestId("manage-add-name")).toHaveValue(
+			"iPhone · Safari",
+		);
+		await a.popup.getByTestId("manage-fingerprint-approve").click();
+		await expect(
+			a.popup.getByText("Passkey added", { exact: true }),
+		).toBeVisible({ timeout: 120_000 });
+		await a.popup.getByTestId("manage-flow-done").click();
+
+		// Each row says when, on which device and browser, and where it is stored.
+		const rowB = ownerRow(a.popup, fingerprintOnB);
+		await expect(rowB.getByTestId("manage-owner-name")).toHaveText(
+			"iPhone · Safari",
+			{ timeout: 30_000 },
+		);
+		await expect(rowB).toContainText(/Passkey added .+ on iPhone · Safari/);
+		const rowA = a.popup.locator("[data-testid=manage-owner-row]", {
+			has: a.popup.getByTestId("manage-owner-current"),
+		});
+		await expect(rowA).toContainText(
+			/Passkey added .+ on (Mac|Linux|Windows) · Chrome/,
+		);
+		// The raw transports are gone from the subtitle.
+		await expect(rowA).not.toContainText("internal");
 	});
 });
