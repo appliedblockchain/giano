@@ -39,14 +39,6 @@ const tenant = TENANTS.stock;
 const KNOWN_BUG = {
 	/** ClaimFlow maps `pending-declined` to the "connection problem" copy (WM-23). */
 	declinedCopy: "a declined claim code reads as a network failure",
-	/**
-	 * A device that never signed in on the wallet origin holds its own random external user id, so
-	 * its first dApp connect finds no credentials and registers a NEW passkey and wallet, instead of
-	 * signing in with the passkey it holds. Hits a joined device B, and any returning user on a fresh
-	 * browser or after clearing site data.
-	 */
-	connectCreatesWallet:
-		"connect on a fresh browser registers a new wallet instead of signing in",
 };
 
 /** Anvil account #1, a checksummed address used as an owner (no transaction is sent from it). */
@@ -514,7 +506,6 @@ test.describe("one wallet, two devices", () => {
 		page,
 		browser,
 	}) => {
-		test.fail(true, KNOWN_BUG.connectCreatesWallet);
 		const a = await startDeviceA(page);
 		const b = await pairDeviceB(a, browser);
 		deviceB = b.context;
@@ -588,5 +579,83 @@ test.describe("one wallet, two devices", () => {
 			),
 		).toHaveCount(0);
 		expect((await readOnChainOwners(a.address)).owners).toHaveLength(2);
+	});
+
+	test("a device that last used another wallet connects with the passkey it now holds, to the wallet it joined (WM-33)", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		// Device B had a wallet of its own first, so its browser stores that wallet's user.
+		const context = await browser.newContext();
+		deviceB = context;
+		const before = await context.newPage();
+		const own = await connectWallet(before, tenant);
+		expect(own.address.toLowerCase()).not.toBe(a.address.toLowerCase());
+		await before.close();
+
+		// Then it joins device A's wallet.
+		await a.popup.getByTestId("manage-add-device").click();
+		const code = (
+			await a.popup.getByTestId("manage-claim-code").textContent({
+				timeout: 30_000,
+			})
+		)?.trim() as string;
+		const wallet = await context.newPage();
+		await wallet.goto(tenant.walletUrl);
+		const { cdp } = await addVirtualAuthenticator(wallet);
+		const joined = trackResidentCredentials(cdp);
+		await wallet
+			.getByRole("button", { name: "Log out (revoke session)" })
+			.click();
+		await wallet.getByTestId("manage-claim-entry").click();
+		await wallet.getByTestId("manage-claim-input").fill(code);
+		await wallet.getByTestId("manage-claim-continue").click();
+		await expect(wallet.getByTestId("manage-claim-fingerprint")).toHaveText(
+			FINGERPRINT,
+			{ timeout: 30_000 },
+		);
+		// It shows which wallet it is joining.
+		await expect(wallet.getByTestId("manage-claim-wallet")).toHaveText(
+			a.address,
+		);
+		await a.popup.getByTestId("manage-fingerprint-approve").click();
+		await expect(
+			a.popup.getByText("Passkey added", { exact: true }),
+		).toBeVisible({ timeout: 120_000 });
+
+		// The dApp connect asks the browser for the passkey the device holds, not for the passkeys
+		// of the user it last knew. The user picks the joined one.
+		const dapp = await context.newPage();
+		await dapp.goto(tenant.dappUrl);
+		const connect = await openWalletPopup(dapp, "#connect");
+		const auth = await addVirtualAuthenticator(connect);
+		await seedCredentials(auth.cdp, auth.authenticatorId, joined);
+		await expect(connect.getByTestId("connect-new-wallet")).toBeVisible();
+		await connect.getByRole("button", { name: tenant.ui.connect }).click();
+		const out = dapp.getByTestId("out");
+		await expect(out).toContainText(/accounts: \[|connect:error/, {
+			timeout: 90_000,
+		});
+		await expect(out).toContainText(`accounts: ["${a.address}"`);
+		expect((await sessionOf(wallet)).credentialId).toBe(
+			apiCredentialId(joined[0]),
+		);
+	});
+
+	test("each passkey is named for the picker: the wallet it joins, or the day a first wallet was made", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		const b = await pairDeviceB(a, browser);
+		deviceB = b.context;
+		// Device B's passkey names device A's wallet, so the picker tells it from other wallets'.
+		const short = `${a.address.slice(0, 6)}…${a.address.slice(-4)}`;
+		expect(b.credentials[0].userName).toBe(`Giano E2E · ${short}`);
+		// Device A's passkey made the wallet, before its address was known: it carries the day.
+		expect(a.credentials[0].userName).toMatch(
+			/^Giano E2E · \d{4}-\d{2}-\d{2}$/,
+		);
 	});
 });
