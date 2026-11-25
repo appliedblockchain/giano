@@ -28,9 +28,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export TENANT_SLUG
 : "${ADMIN_API_KEY:?provide the tenant admin API key in the selected operator environment}"
 
-# Empty on a mainnet, which never carries the demo ERC-20 (R-29). The served testnets (84532,
-# 11155111) carry it once `deploy:cli test-token` has run there; set it, or list it in
-# SPONSOR_ALLOWLIST, to sponsor it.
+# Always empty: the launcher clears it, and refuses an operator environment that sets it (G48).
+# A mainnet never carries the demo ERC-20 (R-29). On a testnet that carries it, list it in
+# SPONSOR_ALLOWLIST to sponsor it.
 TEST_ERC20_ADDRESS="${TEST_ERC20_ADDRESS:-}"
 # The tenant's own contracts to sponsor, comma-separated addresses, every function allowed. The
 # wallet-api enables no sponsorship at all, wallet management included, for a tenant whose allowlist
@@ -44,8 +44,8 @@ for contract in ${SPONSOR_ALLOWLIST//,/ }; do
   fi
 done
 if [ -z "$TEST_ERC20_ADDRESS" ] && [ -z "${SPONSOR_ALLOWLIST//[, ]/}" ]; then
-  echo "No contract to sponsor on chain $CHAIN_ID: there is no demo ERC-20 here, so set SPONSOR_ALLOWLIST" >&2
-  echo "to the tenant's contract addresses. The wallet-api sponsors nothing, not even wallet management," >&2
+  echo "No contract to sponsor on chain $CHAIN_ID: set SPONSOR_ALLOWLIST to the tenant's contract addresses." >&2
+  echo "The wallet-api sponsors nothing, not even wallet management," >&2
   echo "for a tenant with an empty allowlist." >&2
   exit 1
 fi

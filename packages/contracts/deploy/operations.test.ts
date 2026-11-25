@@ -80,6 +80,7 @@ test("all operator plans use the selected persisted profile, load dotenv without
 						"ADMIN_API_KEY",
 						"TENANT_SLUG",
 						"WALLET_API_URL",
+						"TEST_ERC20_ADDRESS",
 					].includes(key),
 			),
 		);
@@ -302,6 +303,35 @@ test("the operator environment is checked as a whole, and no message quotes a ke
 			address,
 		),
 		["Provide ADMIN_API_KEY."],
+	);
+	// The launcher clears TEST_ERC20_ADDRESS, so a value in the operator file is refused, not lost.
+	const sponsorship = {
+		ADMIN_API_KEY: "key",
+		TENANT_SLUG: "demo",
+		WALLET_API_URL: "http://x",
+	};
+	assert.deepEqual(
+		operatorInputProblems("sponsorship", sponsorship, address),
+		[],
+	);
+	const token = operatorInputProblems(
+		"sponsorship",
+		{ ...sponsorship, TEST_ERC20_ADDRESS: address },
+		address,
+	);
+	assert.equal(token.length, 1);
+	assert.match(
+		token[0],
+		/does not use TEST_ERC20_ADDRESS\. List the token in SPONSOR_ALLOWLIST/,
+	);
+	// provision does not read it.
+	assert.deepEqual(
+		operatorInputProblems(
+			"provision",
+			{ ...complete, TEST_ERC20_ADDRESS: address },
+			address,
+		),
+		[],
 	);
 	assert.deepEqual(operatorInputProblems("sponsorship", {}, "0x123"), [
 		"ROLE_ADMIN 0x123 is not an address.",

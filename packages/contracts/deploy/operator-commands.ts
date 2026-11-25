@@ -57,6 +57,12 @@ export function operatorInputProblems(
 				"Provide SPONSORSHIP_SIGNER_ADDRESS (the address wallet-api signs sponsorships with).",
 			);
 	}
+	// The launcher never passes TEST_ERC20_ADDRESS on: a chain with a profile carries no demo ERC-20
+	// to sponsor (R-29). Say so, rather than let the workflow report that no contract is listed.
+	if (command === "sponsorship" && env.TEST_ERC20_ADDRESS?.trim())
+		problems.push(
+			"contracts:sponsorship does not use TEST_ERC20_ADDRESS. List the token in SPONSOR_ALLOWLIST, and remove TEST_ERC20_ADDRESS from the operator environment.",
+		);
 	const needed =
 		command === "provision"
 			? ["PAYMASTER_TENANTS"]

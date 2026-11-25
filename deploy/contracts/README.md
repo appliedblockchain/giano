@@ -140,8 +140,9 @@ admin) to the profile's `GianoTimelock` (G9; see [the timelock runbook](../../do
 The profile's `timelock` section publishes the proposer Safe and one delay per timelocked function;
 `contracts:doctor` then asserts both. Provisioning reruns add tenant funding again. `contracts:sponsorship` installs the demo
 policy for the configured tenant through the real API; use the admin console/API for other policies.
-On a chain without the demo ERC-20 it needs `SPONSOR_ALLOWLIST`, the tenant's contract addresses: the
-wallet-api sponsors nothing, wallet management included, for a tenant with an empty allowlist.
+It needs `SPONSOR_ALLOWLIST`, the tenant's contract addresses: the wallet-api sponsors nothing,
+wallet management included, for a tenant with an empty allowlist. To sponsor the demo ERC-20 on a
+testnet, list its address there too. `contracts:sponsorship` refuses `TEST_ERC20_ADDRESS`.
 The same chain-adoption/code gates apply to an added chain. A new profile is not proof of readiness.
 
 ## 1. Set the canonical deployers once
