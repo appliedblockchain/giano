@@ -425,6 +425,19 @@ export function renderManage(
 									: "Passkey (added elsewhere)"),
 						),
 						` · ${owner.fingerprint}`,
+						owner.storage
+							? el(
+									"span",
+									{ dataset: { testid: "byo-manage-owner-storage" } },
+									` · ${owner.storage.provider ?? "provider not reported"}${
+										owner.storage.synced === null
+											? ""
+											: owner.storage.synced
+												? ", synced"
+												: ", not synced"
+									}`,
+								)
+							: "",
 						owner.isCurrent
 							? el(
 									"span",
