@@ -15,7 +15,7 @@ import {
 
 /**
  * The demo's private token section on chain 31339, "Devnet SD (Silent Data)": an anvil node behind
- * Silent Data's gateway (openspec/changes/local-silent-data-chain, design D7). Opt-in, like every
+ * Silent Data's gateway (openspec/changes/archive/2026-11-25-local-silent-data-chain, design D7). Opt-in, like every
  * spec under tests/demo: `pnpm test:demo`.
  *
  * 1. The gateway check, with no browser. It proves that the gateway, not the node, answers rpc-sd.
