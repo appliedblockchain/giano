@@ -14,6 +14,9 @@ records yet. Old examples can still contain legacy addresses.
 
 ## Start here
 
+Deploying Giano from nothing, contracts and environment together? Follow
+[`docs/FRESH-DEPLOYMENT.md`](../../docs/FRESH-DEPLOYMENT.md), which orders the steps below with the rest.
+
 From the repository root:
 
 ```sh
