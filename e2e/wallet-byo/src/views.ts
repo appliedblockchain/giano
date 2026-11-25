@@ -263,9 +263,23 @@ export function render(
 			el(
 				"div",
 				{ className: "idle" },
-				"Unlock your BYO wallet (or create one) with a passkey.",
+				pending.connect?.primary === "held-passkey"
+					? "Unlock your BYO wallet with a passkey this device holds."
+					: "Unlock your BYO wallet (or create one) with a passkey.",
 			),
 			buttons("Unlock with passkey", "byo-connect"),
+			// The kit offers the other choice; a tenant's own UI words it as it likes.
+			pending.approveAlternative
+				? el("button", {
+						className: "secondary",
+						textContent:
+							pending.connect?.primary === "held-passkey"
+								? "Start a new wallet instead"
+								: "I already have a passkey",
+						dataset: { testid: "byo-connect-alternative" },
+						onclick: () => pending.approveAlternative?.(),
+					})
+				: "",
 		);
 		return;
 	}

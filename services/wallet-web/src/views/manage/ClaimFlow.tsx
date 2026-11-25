@@ -85,9 +85,18 @@ export function ClaimFlow({
 				>
 					{flow.fingerprint}
 				</div>
+				{flow.walletAddress ? (
+					<div className="kv">
+						<span className="k">Joining wallet</span>
+						<span className="v" data-testid="manage-claim-wallet">
+							{flow.walletAddress}
+						</span>
+					</div>
+				) : null}
 				<p data-testid="manage-claim-next">
-					Once it is approved and confirmed on-chain, come back here and choose{" "}
-					<b>“Use a passkey created on another device”</b> to sign in with it.
+					Once it is approved and confirmed on-chain, go back to the app and
+					choose <b>Continue with passkey</b>, or sign in here with{" "}
+					<b>“Use a passkey created on another device”</b>.
 				</p>
 				<div className="actions">
 					<button
