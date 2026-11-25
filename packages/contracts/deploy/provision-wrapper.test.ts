@@ -3,7 +3,7 @@
  * a mainnet and asks for an explicit role topology. Every case here stops before any chain call.
  */
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	mkdtempSync,
@@ -11,9 +11,11 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import { REPO_ROOT } from "./profiles";
 
 const KEY =
@@ -290,15 +292,111 @@ test("--plan (GIANO_PLAN=1) reaches provision:paymaster, and the doctor does not
 	assert.ok(run.some((line) => line.includes("doctor chain")));
 });
 
-test("a sponsorship plan (GIANO_PLAN=1) runs its checks, shows the rules, and installs nothing", () => {
-	const planned = sponsorshipWrapper({
-		GIANO_PLAN: "1",
-		SPONSOR_ALLOWLIST: ADDRESS,
+test("a sponsorship plan (GIANO_PLAN=1) makes the reads of a run against the wallet-api, and installs nothing", async () => {
+	const requests: string[] = [];
+	let available = "1000";
+	const server = createServer((req, res) => {
+		requests.push(`${req.method} ${req.url}`);
+		res.setHeader("content-type", "application/json");
+		const url = req.url ?? "";
+		if (url === "/readyz")
+			return res.end(JSON.stringify({ sponsorship: "ok" }));
+		if (req.headers.authorization !== "Bearer demo-admin-key") {
+			res.statusCode = 401;
+			return res.end(JSON.stringify({ error: "unauthorised" }));
+		}
+		if (url.startsWith("/v1/admin/sponsorship/balance"))
+			return res.end(
+				JSON.stringify({
+					registered: true,
+					balanceWei: available,
+					availableWei: available,
+					feeWei: "0",
+					paymasterAddress: ADDRESS,
+				}),
+			);
+		if (url.startsWith("/v1/admin/sponsorship") && req.method === "GET")
+			return res.end(
+				JSON.stringify({
+					configured: false,
+					config: { enabled: false, allowlist: [] },
+					updatedAt: null,
+					valid: true,
+				}),
+			);
+		res.statusCode = 500;
+		res.end("{}");
 	});
-	assert.equal(planned.code, 0, planned.out);
-	assert.match(planned.out, new RegExp(`allowlisted: ${ADDRESS}`));
-	assert.match(planned.out, /Plan complete: no rule installed/);
-	// The checks still run in a plan.
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	assert.ok(address && typeof address !== "string");
+	const api = `http://127.0.0.1:${address.port}`;
+	// The wrapper runs while this process serves the mock, so it cannot be spawnSync.
+	const plan = async (env: Record<string, string>) => {
+		try {
+			const { stdout, stderr } = await promisify(execFile)(
+				"bash",
+				[join(REPO_ROOT, "deploy/contracts/provision-sponsorship.sh")],
+				{
+					cwd: REPO_ROOT,
+					env: {
+						PATH: process.env.PATH,
+						HOME: process.env.HOME,
+						GIANO_PROFILE_LOADED: "1",
+						CHAIN_ID: "84532",
+						RPC_URL: "http://127.0.0.1:1",
+						SPONSORSHIP_PAYMASTER_ADDRESS: ADDRESS,
+						TENANT_SLUG: "demo",
+						ADMIN_API_KEY: "demo-admin-key",
+						WALLET_API_URL: api,
+						GIANO_PLAN: "1",
+						SPONSOR_ALLOWLIST: ADDRESS,
+						...env,
+					},
+				},
+			);
+			return { code: 0, out: `${stdout}${stderr}` };
+		} catch (error) {
+			const failed = error as { code: number; stdout: string; stderr: string };
+			return { code: failed.code, out: `${failed.stdout}${failed.stderr}` };
+		}
+	};
+	try {
+		const planned = await plan({});
+		assert.equal(planned.code, 0, planned.out);
+		assert.match(planned.out, new RegExp(`allowlisted: ${ADDRESS}`));
+		assert.match(
+			planned.out,
+			/demo@84532: would install these rules \(none installed yet\)/,
+		);
+		assert.match(planned.out, /No rule was installed/);
+		assert.deepEqual(requests, [
+			"GET /readyz",
+			"GET /v1/admin/sponsorship?chainId=84532",
+			"GET /v1/admin/sponsorship/balance?chainId=84532",
+		]);
+
+		// A wrong admin key fails the plan, as it would fail the run's PUT.
+		const wrongKey = await plan({ ADMIN_API_KEY: "wrong" });
+		assert.notEqual(wrongKey.code, 0);
+		assert.match(wrongKey.out, /GET \/v1\/admin\/sponsorship returned 401/);
+
+		// So does a tenant with no balance to spend.
+		available = "0";
+		const unfunded = await plan({});
+		assert.notEqual(unfunded.code, 0);
+		assert.match(unfunded.out, /holds no available balance/);
+
+		// And a wallet-api that does not answer.
+		const down = await plan({ WALLET_API_URL: "http://127.0.0.1:1" });
+		assert.notEqual(down.code, 0);
+		assert.doesNotMatch(down.out, /No rule was installed/);
+
+		assert.ok(!requests.some((request) => !request.startsWith("GET ")));
+	} finally {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
+	// The wrapper's own checks still run in a plan, before any request.
 	assert.match(
 		sponsorshipWrapper({ GIANO_PLAN: "1" }).out,
 		/set SPONSOR_ALLOWLIST/,

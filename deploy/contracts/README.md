@@ -119,8 +119,10 @@ send: the provisioning transactions with the ETH they carry, or the sponsorship 
 nothing and needs no terminal. The launcher names the missing keys, ROLE_ADMIN and the tenant and
 API settings together; the workflow then checks the role holders, the withdraw address and the
 sponsorship allowlist, and stops at the first problem. A provisioning plan fails when the operator
-holds less ETH than those transactions carry plus a gas budget. With `--signed-rpc`, the provisioning plan
-signs its reads, as the run does. Provisioning and policy
+holds less ETH than those transactions carry plus a gas budget, and when the state the run would
+leave fails the run's final checks: a stake of at least 0.1 ETH, a signer, a funded tenant. With
+`--signed-rpc`, the provisioning plan signs its reads, as the run does. A sponsorship plan makes
+the run's reads of the wallet-api: its readiness, the admin key, and the tenant's paymaster balance. Provisioning and policy
 writes require exact-text confirmation; noninteractive writes are refused. Existing exported
 variables take precedence over dotenv data. Conflicting CHAIN_ID/DEPLOY_CHAIN_ID inputs stop the
 operation. The selected profile's RPC environment reference takes precedence over DEPLOY_RPC_URL,

@@ -33,6 +33,14 @@ export function provisioningIsMainnet(
 	);
 }
 
+/**
+ * The least EntryPoint stake a validating paymaster needs before bundlers accept its operations
+ * (0.1 ETH). The doctor fails a paymaster below it, and provisioning checks it too. It is the same
+ * value as `MIN_STAKE_WEI` in `packages/paymaster-sdk/src/health.ts`, which the admin console uses:
+ * change both.
+ */
+export const MIN_STAKE_WEI = 100_000_000_000_000_000n;
+
 /** The immediate roles, sent directly rather than through the timelock: one holder each on a mainnet. */
 export const IMMEDIATE_ROLES = [
 	"signer-admin",

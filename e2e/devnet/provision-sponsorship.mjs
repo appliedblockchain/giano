@@ -17,6 +17,11 @@
  * Fails loudly: a stack that cannot sponsor must fail to come up rather than come up broken.
  *
  * Usage:  WALLET_API_URL=http://api.localhost node e2e/devnet/provision-sponsorship.mjs
+ *
+ * `SPONSOR_PLAN=1` makes a plan (`pnpm contracts:sponsorship --plan`, G48 R3). It makes every read of
+ * a run: the wallet-api's readiness, the admin key (a read of the current rules), and the tenant's
+ * registration and balance on the paymaster. It shows the rules a run would install, and installs
+ * nothing.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -29,6 +34,7 @@ const apiUrl = (process.env.WALLET_API_URL ?? "http://api.localhost").replace(
 	/\/$/,
 	"",
 );
+const plan = Boolean(process.env.SPONSOR_PLAN);
 
 /**
  * Stacks other than the e2e devnet supply their tenants and demo ERC-20 through the environment
@@ -126,7 +132,7 @@ async function waitForReady(attempts = 120) {
 			const response = await fetch(`${apiUrl}/readyz`);
 			if (response.ok) return await response.json();
 			// 503 with a signer problem is a real failure, not a not-yet: report it rather than spin.
-			if (response.status === 503 && i > 20) {
+			if (response.status === 503 && (i > 20 || i === attempts - 1)) {
 				const body = await response.text();
 				throw new Error(`wallet-api is not ready after ${i} attempts: ${body}`);
 			}
@@ -138,7 +144,8 @@ async function waitForReady(attempts = 120) {
 	throw new Error(`${apiUrl}/readyz never became ready`);
 }
 
-const ready = await waitForReady();
+// A run waits for a stack that is still starting. A plan checks a stack that is already up.
+const ready = await waitForReady(plan ? 1 : 120);
 console.log(`wallet-api ready: ${JSON.stringify(ready)}`);
 
 if (ready.sponsorship !== "ok") {
@@ -160,41 +167,69 @@ for (const chainId of CHAIN_IDS) {
 		}
 
 		const config = demoConfig();
-		const write = await fetch(
-			`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`,
-			{
-				method: "PUT",
-				headers: {
-					"content-type": "application/json",
-					authorization: `Bearer ${adminKey}`,
+		if (plan) {
+			// The read checks the admin key and the chain, as the PUT would. Nothing is written.
+			const current = await fetch(
+				`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`,
+				{ headers: { authorization: `Bearer ${adminKey}` } },
+			);
+			if (!current.ok) {
+				console.error(
+					`  ✗ ${tenant.slug}@${chainId}: GET /v1/admin/sponsorship returned ${current.status} ${await current.text()}`,
+				);
+				failures += 1;
+				continue;
+			}
+			const stored = await current.json();
+			const now = !stored.configured
+				? "none installed yet"
+				: stored.valid
+					? "replacing the current rules"
+					: "replacing rules that no longer validate";
+			console.log(
+				`  • ${tenant.slug}@${chainId}: would install these rules (${now}): ${JSON.stringify(config)}`,
+			);
+		} else {
+			const write = await fetch(
+				`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`,
+				{
+					method: "PUT",
+					headers: {
+						"content-type": "application/json",
+						authorization: `Bearer ${adminKey}`,
+					},
+					body: JSON.stringify(config),
 				},
-				body: JSON.stringify(config),
-			},
-		);
-
-		if (!write.ok) {
-			console.error(
-				`  ✗ ${tenant.slug}@${chainId}: PUT /v1/admin/sponsorship returned ${write.status} ${await write.text()}`,
 			);
-			failures += 1;
-			continue;
-		}
-		console.log(`  ✓ ${tenant.slug}@${chainId}: sponsorship rules installed`);
 
-		// Read back rather than trusting the write: the stored value is re-validated on read, and a row
-		// that no longer parses means no sponsorship — which is exactly the silent failure this whole
-		// step exists to prevent.
-		const readBack = await fetch(
-			`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`,
-			{ headers: { authorization: `Bearer ${adminKey}` } },
-		);
-		const stored = await readBack.json();
-		if (!stored.configured || !stored.valid || stored.config.enabled !== true) {
-			console.error(
-				`  ✗ ${tenant.slug}@${chainId}: read-back says configured=${stored.configured} valid=${stored.valid}`,
+			if (!write.ok) {
+				console.error(
+					`  ✗ ${tenant.slug}@${chainId}: PUT /v1/admin/sponsorship returned ${write.status} ${await write.text()}`,
+				);
+				failures += 1;
+				continue;
+			}
+			console.log(`  ✓ ${tenant.slug}@${chainId}: sponsorship rules installed`);
+
+			// Read back rather than trusting the write: the stored value is re-validated on read, and a row
+			// that no longer parses means no sponsorship — which is exactly the silent failure this whole
+			// step exists to prevent.
+			const readBack = await fetch(
+				`${apiUrl}/v1/admin/sponsorship?chainId=${chainId}`,
+				{ headers: { authorization: `Bearer ${adminKey}` } },
 			);
-			failures += 1;
-			continue;
+			const stored = await readBack.json();
+			if (
+				!stored.configured ||
+				!stored.valid ||
+				stored.config.enabled !== true
+			) {
+				console.error(
+					`  ✗ ${tenant.slug}@${chainId}: read-back says configured=${stored.configured} valid=${stored.valid}`,
+				);
+				failures += 1;
+				continue;
+			}
 		}
 
 		const balance = await fetch(
@@ -231,11 +266,15 @@ for (const chainId of CHAIN_IDS) {
 
 if (failures > 0) {
 	console.error(
-		`\nsponsorship provisioning FAILED for ${failures} tenant(s) — this stack cannot sponsor`,
+		plan
+			? `\nsponsorship plan FAILED for ${failures} tenant(s) — a run would not leave this stack able to sponsor`
+			: `\nsponsorship provisioning FAILED for ${failures} tenant(s) — this stack cannot sponsor`,
 	);
 	process.exit(1);
 }
 
 console.log(
-	`\nSponsorship provisioned for every demo tenant on chains ${CHAIN_IDS.join(", ")}.`,
+	plan
+		? `\nPlan: every check passed on chains ${CHAIN_IDS.join(", ")}. No rule was installed.`
+		: `\nSponsorship provisioned for every demo tenant on chains ${CHAIN_IDS.join(", ")}.`,
 );

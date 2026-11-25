@@ -24,7 +24,8 @@
  *
  * `--plan` runs every check of a real run, reads the chain, and lists each transaction the run
  * would send, with the ETH it carries. It sends nothing. It fails when the key holds less ETH than
- * those transactions carry.
+ * those transactions carry plus gas, and when the state the run would leave fails the checks a run
+ * makes at its end (a stake, a signer, a funded tenant).
  *
  * `--signed-rpc` signs every RPC request with the key, for an RPC that replaces `from` on an
  * unsigned eth_call or eth_estimateGas (Silent Data). Without it every role check fails there.
@@ -49,12 +50,14 @@ import {
 	parseEther,
 	toUtf8String,
 	Wallet,
+	ZeroAddress,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
 import { LOCAL_CHAIN_IDS } from "../chains";
 import { redactRpcUrls } from "../deploy/config";
 import { GAS_PRICE_HEADROOM } from "../deploy/funding";
 import {
+	MIN_STAKE_WEI,
 	mainnetRoleProblems,
 	provisioningIsMainnet,
 	unstakeDelaySeconds,
@@ -180,6 +183,17 @@ function log(message: string): void {
 }
 
 /**
+ * Throws unless `value` is an address other than the zero address. GianoPaymaster refuses the zero
+ * address as a signer or a withdrawal address (`ZeroAddress`), and a role granted to it is lost. A
+ * run would find out only at that transaction, after the ones before it went out.
+ */
+function checkAddress(what: string, value: string): void {
+	if (!isAddress(value)) throw new Error(`${what} is not an address: ${value}`);
+	if (getAddress(value) === ZeroAddress)
+		throw new Error(`${what} is the zero address`);
+}
+
+/**
  * The contract keys tenants by a 16-byte id. Giano's `tenants.id` is a UUID, which is already
  * immutable, already unique and never reused — so it is used directly rather than introducing a
  * second identifier that would then have to be kept in step.
@@ -209,10 +223,7 @@ function parseTenant(spec: string): TenantSpec {
 			`--tenant expects <id>:<withdrawAddress>:<slug>[:<fundEth>], got: ${spec}`,
 		);
 	}
-	if (!isAddress(withdrawAddress))
-		throw new Error(
-			`tenant ${rawId}: withdraw address is not an address: ${withdrawAddress}`,
-		);
+	checkAddress(`tenant ${rawId}: withdraw address`, withdrawAddress);
 	return {
 		id: tenantIdToBytes16(rawId),
 		raw: rawId,
@@ -220,6 +231,73 @@ function parseTenant(spec: string): TenantSpec {
 		slug,
 		fundEth: fundEth ?? "0",
 	};
+}
+
+type TenantOutcome = { slug: string; balance: bigint; deficit: bigint };
+
+/** What the end-of-run checks read: the paymaster after a run, or as a plan projects it. */
+type Outcome = {
+	staked: boolean;
+	stake: bigint;
+	/** The paymaster's EntryPoint deposit. */
+	deposit: bigint;
+	signers: string[];
+	treasury: bigint;
+	tenants: TenantOutcome[];
+};
+
+/**
+ * Whether the paymaster can sponsor (R-24, R-60): what passed, and what failed. A run checks the
+ * chain after its transactions. A plan checks the state those transactions would leave.
+ */
+function usabilityChecks(outcome: Outcome): {
+	passed: string[];
+	failures: string[];
+} {
+	const passed: string[] = [];
+	const failures: string[] = [];
+	if (!outcome.staked)
+		failures.push(
+			"paymaster is not staked — bundlers will reject its operations",
+		);
+	else if (outcome.stake < MIN_STAKE_WEI)
+		failures.push(
+			`stake ${formatEther(outcome.stake)} ETH is below the ${formatEther(MIN_STAKE_WEI)} ETH minimum — bundlers will reject its operations, and the doctor fails it`,
+		);
+	else passed.push(`staked: ${formatEther(outcome.stake)} ETH`);
+
+	if (outcome.deposit === 0n)
+		failures.push("EntryPoint deposit is empty — nothing can be sponsored");
+	else passed.push(`deposit: ${formatEther(outcome.deposit)} ETH`);
+
+	if (outcome.signers.length === 0)
+		failures.push("no authorised signing key — nothing can be authorised");
+	else passed.push(`signers: ${outcome.signers.join(", ")}`);
+
+	let claims = outcome.treasury;
+	for (const tenant of outcome.tenants) {
+		claims += tenant.balance;
+		passed.push(
+			`${tenant.slug}: ${formatEther(tenant.balance)} ETH available, ${formatEther(tenant.deficit)} ETH deficit`,
+		);
+	}
+	if (
+		outcome.tenants.length > 0 &&
+		outcome.tenants.every((tenant) => tenant.balance === 0n)
+	)
+		failures.push(
+			"no tenant holds a balance — a deployment is not complete until one does",
+		);
+
+	if (claims > outcome.deposit)
+		failures.push(
+			`accounting invariant breached: claims ${formatEther(claims)} exceed deposit ${formatEther(outcome.deposit)}`,
+		);
+	else
+		passed.push(
+			`invariant holds, ${formatEther(outcome.deposit - claims)} ETH unattributed slack`,
+		);
+	return { passed, failures };
 }
 
 async function main(): Promise<void> {
@@ -310,13 +388,9 @@ async function main(): Promise<void> {
 		throw new Error(
 			"--grant-all-to and --role-holder-* are alternatives: one address for every role (development), or one holder per role",
 		);
-	if (grantAllTo && !isAddress(grantAllTo))
-		throw new Error(`--grant-all-to is not an address: ${grantAllTo}`);
-	for (const flag of namedHolders) {
-		const holder = flags[`role-holder-${flag}`];
-		if (!isAddress(holder))
-			throw new Error(`role holder for ${flag} is not an address: ${holder}`);
-	}
+	if (grantAllTo) checkAddress("--grant-all-to", grantAllTo);
+	for (const flag of namedHolders)
+		checkAddress(`role holder for ${flag}`, flags[`role-holder-${flag}`]);
 	// The mainnet rules, here as well as in the operator wrapper, so running this script directly does
 	// not skip them (#298 review).
 	const mainnet = provisioningIsMainnet(chainId);
@@ -330,9 +404,7 @@ async function main(): Promise<void> {
 	});
 	if (roleProblems.length)
 		throw new Error(`refusing to provision:\n  ${roleProblems.join("\n  ")}`);
-	for (const signer of repeated.signer ?? [])
-		if (!isAddress(signer))
-			throw new Error(`--signer is not an address: ${signer}`);
+	for (const signer of repeated.signer ?? []) checkAddress("--signer", signer);
 	const stakeEth = flags["stake-eth"];
 	const stakeWei =
 		stakeEth && stakeEth !== "true"
@@ -385,7 +457,14 @@ async function main(): Promise<void> {
 	/** Grants `roleName` to `holder` unless it already holds it. */
 	const grant = async (roleName: string, holder: string) => {
 		const role: string = await paymaster[roleName]();
-		if (await paymaster.hasRole(role, holder)) {
+		// In a plan, this key holds a run role it would take earlier in the run, though the chain does
+		// not show it yet. The run sends that grant once.
+		const takenInPlan =
+			getAddress(holder) === getAddress(wallet.address) &&
+			RUN_ROLES.some(
+				(flag) => ROLE_FLAGS[flag] === roleName && plannedRunRoles.has(flag),
+			);
+		if (takenInPlan || (await paymaster.hasRole(role, holder))) {
 			log(`  • ${roleName} already held by ${getAddress(holder)}`);
 			return;
 		}
@@ -504,8 +583,9 @@ async function main(): Promise<void> {
 				log(`  • tenant ${tenant.slug} already registered`);
 			}
 
-			if (tenant.fundEth !== "0") {
-				const value = parseEther(tenant.fundEth);
+			const value = parseEther(tenant.fundEth);
+			// depositFor reverts on 0 (ZeroAmount), so "0" and "0.0" both mean no deposit.
+			if (value > 0n) {
 				if (
 					await send(
 						`fund ${tenant.slug} with ${tenant.fundEth} ETH`,
@@ -558,6 +638,45 @@ async function main(): Promise<void> {
 	if (!grantAllTo) await releaseRunRoles();
 
 	if (plan) {
+		// The state the run would leave: the chain now, plus the stake, signers and tenant deposits the
+		// plan lists. The run checks that state at its end, and the wrapper's doctor checks it again
+		// (G48 R3). A plan that skipped these checks would pass a run that fails after it spent ETH.
+		const info = await entryPoint.getDepositInfo(paymasterAddress);
+		const stakes =
+			stakeWei !== undefined && !(info.staked && info.stake >= stakeWei);
+		const signers = (await paymaster.getSigners()).map((s: string) =>
+			getAddress(s),
+		);
+		for (const signer of repeated.signer ?? [])
+			if (!signers.includes(getAddress(signer)))
+				signers.push(getAddress(signer));
+		let deposit: bigint = await entryPoint.balanceOf(paymasterAddress);
+		const projected: TenantOutcome[] = [];
+		for (const tenant of tenants) {
+			const state: { balance: bigint; deficit: bigint } =
+				await paymaster.getTenant(tenant.id);
+			const funding = parseEther(tenant.fundEth);
+			// depositFor clears the tenant's deficit first and credits the rest to its balance, while the
+			// EntryPoint deposit grows by the whole amount.
+			let cleared = state.deficit;
+			if (funding < cleared) cleared = funding;
+			deposit += funding;
+			projected.push({
+				slug: tenant.slug,
+				balance: state.balance + funding - cleared,
+				deficit: state.deficit - cleared,
+			});
+		}
+		const { passed, failures } = usabilityChecks({
+			staked: info.staked || stakes,
+			stake:
+				stakes && stakeWei !== undefined ? info.stake + stakeWei : info.stake,
+			deposit,
+			signers,
+			treasury: await paymaster.treasury(),
+			tenants: projected,
+		});
+
 		// The run spends the ETH its transactions carry, plus gas. A key that holds less fails part-way
 		// through the run, after the transactions before it went out (S8).
 		const balance = await provider.getBalance(wallet.address);
@@ -579,8 +698,15 @@ async function main(): Promise<void> {
 		);
 		log(`  ${wallet.address} holds ${formatEther(balance)} ETH.`);
 		if (balance < needed)
-			throw new Error(
+			failures.push(
 				`${wallet.address} holds ${formatEther(balance)} ETH, less than the ${formatEther(needed)} ETH the run needs (${formatEther(plannedValue)} ETH it sends, plus gas). Fund it first (pnpm contracts:funding).`,
+			);
+		log("");
+		log("After the run:");
+		for (const line of passed) log(`  ✓ ${line}`);
+		if (failures.length > 0)
+			throw new Error(
+				`the run would not complete:\n  ✗ ${failures.join("\n  ✗ ")}`,
 			);
 		log("Nothing was sent.");
 		return;
@@ -589,39 +715,25 @@ async function main(): Promise<void> {
 	// --- verify, and fail loudly if the deployment is not actually usable (R-24, R-60) ----------
 	log("");
 	log("Verifying:");
-	const failures: string[] = [];
-
 	const info = await entryPoint.getDepositInfo(paymasterAddress);
-	if (!info.staked)
-		failures.push(
-			"paymaster is not staked — bundlers will reject its operations",
-		);
-	else log(`  ✓ staked: ${formatEther(info.stake)} ETH`);
-
-	const deposit: bigint = await entryPoint.balanceOf(paymasterAddress);
-	if (deposit === 0n)
-		failures.push("EntryPoint deposit is empty — nothing can be sponsored");
-	else log(`  ✓ deposit: ${formatEther(deposit)} ETH`);
-
-	const signers: string[] = await paymaster.getSigners();
-	if (signers.length === 0)
-		failures.push("no authorised signing key — nothing can be authorised");
-	else log(`  ✓ signers: ${signers.map((s) => getAddress(s)).join(", ")}`);
-
-	let claims: bigint = await paymaster.treasury();
-	let funded = false;
+	const outcome: TenantOutcome[] = [];
 	for (const tenant of tenants) {
 		const state = await paymaster.getTenant(tenant.id);
-		claims += state.balance;
-		if (state.balance > 0n) funded = true;
-		log(
-			`  ✓ ${tenant.slug}: ${formatEther(state.balance)} ETH available, ${formatEther(state.deficit)} ETH deficit`,
-		);
+		outcome.push({
+			slug: tenant.slug,
+			balance: state.balance,
+			deficit: state.deficit,
+		});
 	}
-	if (tenants.length > 0 && !funded)
-		failures.push(
-			"no tenant holds a balance — a deployment is not complete until one does",
-		);
+	const { passed, failures } = usabilityChecks({
+		staked: info.staked,
+		stake: info.stake,
+		deposit: await entryPoint.balanceOf(paymasterAddress),
+		signers: (await paymaster.getSigners()).map((s: string) => getAddress(s)),
+		treasury: await paymaster.treasury(),
+		tenants: outcome,
+	});
+	for (const line of passed) log(`  ✓ ${line}`);
 
 	if (!grantAllTo)
 		for (const flag of namedHolders) {
@@ -643,15 +755,6 @@ async function main(): Promise<void> {
 					`this bootstrap key still holds ${roleName}, which only its named holder should`,
 				);
 		}
-
-	if (claims > deposit)
-		failures.push(
-			`accounting invariant breached: claims ${formatEther(claims)} exceed deposit ${formatEther(deposit)}`,
-		);
-	else
-		log(
-			`  ✓ invariant holds, ${formatEther(deposit - claims)} ETH unattributed slack`,
-		);
 
 	if (failures.length > 0) {
 		log("");

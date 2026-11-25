@@ -23,6 +23,7 @@ import {
 	type PublicClient,
 	parseEther,
 	toHex,
+	zeroAddress,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { gianoPaymasterAbi } from "../generated";
@@ -239,6 +240,58 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		assert.match(
 			plannedTypo.stderr,
 			/role holder for pauser is not an address/,
+		);
+
+		// The paymaster refuses the zero address as a signer or a withdrawal address. A run refuses it
+		// before it sends anything, not at that transaction.
+		const zeros: [Parameters<typeof provision>[0], RegExp][] = [
+			[{ extra: ["--signer", zeroAddress] }, /--signer is the zero address/],
+			[
+				{ tenant: `${TENANT}:${zeroAddress}:provision-test:0.01` },
+				/withdraw address is the zero address/,
+			],
+		];
+		for (const [overrides, message] of zeros) {
+			const zero = provision(overrides);
+			assert.notEqual(zero.status, 0, zero.stdout);
+			assert.match(zero.stderr, message);
+		}
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+
+		// A plan checks the state the run would leave, as the run checks it at its end: a run with
+		// no tenant funding, or a stake below the minimum, would fail after it sent its transactions.
+		const unfunded = provision({
+			tenant: `${TENANT}:${holder("withdraw")}:provision-test:0.0`,
+			extra: ["--plan"],
+		});
+		assert.notEqual(unfunded.status, 0, unfunded.stdout);
+		assert.doesNotMatch(unfunded.stdout, /would fund/);
+		assert.match(unfunded.stderr, /no tenant holds a balance/);
+		assert.match(unfunded.stderr, /EntryPoint deposit is empty/);
+		const understaked = provision({ extra: ["--stake-eth", "0.05", "--plan"] });
+		assert.notEqual(understaked.status, 0, understaked.stdout);
+		assert.match(
+			understaked.stderr,
+			/stake 0\.05 ETH is below the 0\.1 ETH minimum/,
+		);
+
+		// A run role whose named holder is this key: the plan takes it once, as the run does.
+		const selfHeld = provision({
+			holders: ["--role-holder-signer-admin", operator],
+			extra: ["--plan"],
+		});
+		assert.equal(selfHeld.status, 0, `${selfHeld.stdout}\n${selfHeld.stderr}`);
+		assert.match(
+			selfHeld.stdout,
+			/→ would take SIGNER_ADMIN_ROLE for this provisioning run/,
+		);
+		assert.doesNotMatch(selfHeld.stdout, /would grant SIGNER_ADMIN_ROLE/);
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
 		);
 
 		// A plan for more ETH than the key holds fails, where a run would fail part-way (S8).

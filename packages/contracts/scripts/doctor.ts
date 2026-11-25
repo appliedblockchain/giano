@@ -80,6 +80,7 @@ import { p256Report } from "../deploy/p256";
 import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
 import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
+import { MIN_STAKE_WEI } from "../deploy/provision-rules";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
 import { proxyImplementationWithSource } from "../erc1967";
@@ -112,13 +113,12 @@ const P256_VERIFIER = "0xc2b78104907F722DABAc4C69f826a522B2754De4";
 /**
  * Below this, sponsored operations start failing in ways that look like client bugs.
  *
- * This and {@link MIN_STAKE_WEI} are duplicated from `packages/paymaster-sdk/src/health.ts`, which
- * applies the same verdicts to the admin console. They are duplicated rather than imported because
- * the SDK depends on this package — importing it back would close a workspace cycle. Change both.
+ * This and {@link MIN_STAKE_WEI} (deploy/provision-rules.ts, which provisioning also uses) are
+ * duplicated from `packages/paymaster-sdk/src/health.ts`, which applies the same verdicts to the
+ * admin console. They are duplicated rather than imported because the SDK depends on this package —
+ * importing it back would close a workspace cycle. Change both.
  */
 const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n; // 0.02 ETH
-/** A validating paymaster needs a stake before bundlers will accept its operations at all. */
-const MIN_STAKE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
 
 /** Tenants per `getTenants` page — the roster is read in pages so a large one cannot blow the call. */
 const TENANT_PAGE_SIZE = 50;

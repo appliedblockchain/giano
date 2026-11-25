@@ -53,7 +53,11 @@ fi
 # reaches it through wallet-web's nginx /api proxy, and so do we.
 : "${WALLET_API_URL:?provide the wallet-api base URL in the selected operator environment}"
 
-echo "==> Installing sponsorship rules"
+if [ -n "${GIANO_PLAN:-}" ]; then
+  echo "==> Plan: the sponsorship rules a run would install. Nothing is installed."
+else
+  echo "==> Installing sponsorship rules"
+fi
 echo "    wallet-api : $WALLET_API_URL"
 echo "    tenant     : $TENANT_SLUG"
 echo "    chain      : $CHAIN_ID"
@@ -65,13 +69,10 @@ for contract in ${SPONSOR_ALLOWLIST//,/ }; do
 done
 echo
 
-# --plan (GIANO_PLAN=1 from the launcher): every check above ran; install nothing.
-if [ -n "${GIANO_PLAN:-}" ]; then
-  echo "==> Plan complete: no rule installed. Rerun without --plan to install these rules."
-  exit 0
-fi
-
+# --plan (GIANO_PLAN=1 from the launcher): the runner makes every read of a run (the wallet-api's
+# readiness, the admin key, the tenant's paymaster balance) and installs nothing (G48 R3).
 WALLET_API_URL="$WALLET_API_URL" \
+SPONSOR_PLAN="${GIANO_PLAN:-}" \
 SPONSOR_CHAIN_IDS="$CHAIN_ID" \
 SPONSOR_ERC20="$TEST_ERC20_ADDRESS" \
 SPONSOR_ALLOWLIST="$SPONSOR_ALLOWLIST" \
