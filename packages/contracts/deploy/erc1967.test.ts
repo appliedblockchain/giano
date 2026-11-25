@@ -591,4 +591,16 @@ test("a deployment block applies only to the proxy it was recorded for", () => {
 		proxyDeployBlock("0xnot-an-address" as Hex, deployed),
 		undefined,
 	);
+	// Not even when both sides hold the same malformed value.
+	assert.equal(
+		proxyDeployBlock("0x", { address: "0x", blockNumber: 7 }),
+		undefined,
+	);
+	assert.equal(
+		proxyDeployBlock("0xnot-an-address" as Hex, {
+			address: "0xNOT-AN-ADDRESS" as Hex,
+			blockNumber: 7,
+		}),
+		undefined,
+	);
 });

@@ -2,7 +2,13 @@
  * ERC-1967 proxies (the paymaster proxy): which implementation a proxy delegates to. One reader for
  * the deploy tooling, giano-doctor and wallet-api, whatever client they use.
  */
-import { type Address, getAddress, type Hex, type PublicClient } from "viem";
+import {
+	type Address,
+	getAddress,
+	type Hex,
+	isAddress,
+	type PublicClient,
+} from "viem";
 
 /** bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1). */
 export const IMPLEMENTATION_SLOT =
@@ -32,9 +38,9 @@ export const UPGRADED_LOG_MAX_CHUNKS = 1_000;
  * that same proxy: where a walk through its `Upgraded` logs can start. A block recorded for another
  * proxy would start the walk past this proxy's upgrades, so it is never used. Undefined when the
  * addresses differ, or either is missing, or `deployed` has no block: the walk then starts at block 0.
- * Addresses compare without regard to case, and a malformed one simply does not match: giano-doctor
- * passes its flags through unvalidated. giano-doctor, wallet-api and the deploy tooling all decide
- * the walk's start here.
+ * Addresses compare without regard to case. A malformed one never matches, not even an identical
+ * malformed one: giano-doctor passes its flags through unvalidated. giano-doctor, wallet-api and the
+ * deploy tooling all decide the walk's start here.
  */
 export function proxyDeployBlock(
 	proxy: Address | undefined,
@@ -44,6 +50,12 @@ export function proxyDeployBlock(
 		proxy === undefined ||
 		deployed?.address === undefined ||
 		deployed.blockNumber === undefined
+	)
+		return undefined;
+	// Two identical malformed values must not match either: check both are 20 hex bytes first.
+	if (
+		!isAddress(proxy, { strict: false }) ||
+		!isAddress(deployed.address, { strict: false })
 	)
 		return undefined;
 	return proxy.toLowerCase() === deployed.address.toLowerCase()
