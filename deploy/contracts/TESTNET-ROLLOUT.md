@@ -7,7 +7,7 @@ environment off its legacy contracts. Everything here was rehearsed on a fork of
 done:** release v3 is live on both testnets and handed to the timelock (2026-11-17), `dev` was cut over to it
 (2026-11-19), its sponsorship rules are installed and the smoke test passed on both chains (2026-11-23). Steps
 12 and 13 are deferred (Notion ticket G46). The rest of this page records how the cut-over ran, for the next one;
-`TESTNET-ROLLOUT-TRACKER.md` has the results and findings.
+[`TESTNET-ROLLOUT-RECORD.md`](TESTNET-ROLLOUT-RECORD.md) has the results and findings.
 
 Why `dev` needs it: `infra/versions.json` pins `dev` to `5ba71241`, from before the CREATE3 cutover
 (#132). That deployment runs EntryPoint v0.7 and the legacy factory `0x26dCd293…`. Current `main`
