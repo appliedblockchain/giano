@@ -1,0 +1,456 @@
+name: Claude review
+
+# Reviews a pull request with Claude Code when someone adds the `agent:review` label.
+#
+#   code-review ─┐
+#                ├─> merge ─> post
+#   security ────┘
+#
+# Two sessions review in parallel, with the BUILT-IN `/code-review` and `/security-review`.
+# A third session merges their findings into one review and removes duplicates. A plain
+# shell step then posts that review on the pull request and removes the label, so adding
+# the label again requests a new review.
+#
+# Every review covers the whole pull request. From the second review on, the merge session
+# also compares against the previous review: it marks each finding new or still open, and
+# posts inline comments for the new ones only, so a finding is not commented on twice.
+#
+# No Claude session here can write to GitHub. The two review sessions read the pull
+# request's code, so they are the ones a prompt injection would reach: they get a read-only
+# token and only local tools. The merge session reads only the two reports. The only job
+# with `pull-requests: write` is `post`, and it runs no model.
+#
+# Setup, once per repository:
+#   - the `CLAUDE_CODE_OAUTH_TOKEN` secret, from `claude setup-token` run as the dedicated
+#     Claude account (not a person's account). Every run counts against that account's
+#     subscription limits. DevOps keeps the account's credentials; its login is not
+#     recorded here because this repository is public.
+#   - the label:
+#       gh label create agent:review --color 5319E7 \
+#         --description "Starts a Claude code and security review. Removed when the review is posted."
+#
+# Renewing the token: it expires about one year after it is created. Then every review
+# fails, and the pull request gets "The Claude review did not finish", pointing here; the
+# run log shows an authentication error. To renew, log in as the dedicated account, run
+# `claude setup-token`, and have a repository admin replace the secret.
+#
+# Only a person with write access can start a review: the action rejects bots and users
+# without write access. Pull requests from forks are skipped, because GitHub gives them no
+# secrets. Never move this to `pull_request_target`: a fork's code would then run with the
+# token.
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  # The label name is part of the group. Otherwise adding any OTHER label to the pull
+  # request would start a run in this group and cancel a review in progress.
+  group: claude-review-${{ github.event.pull_request.number }}-${{ github.event.label.name }}
+  cancel-in-progress: true
+
+env:
+  # Everything Claude writes here ends up in a public review, so these settings keep a
+  # prompt injection in the pull request's diff (vendored code, a dependency update) from
+  # publishing a secret or sending it anywhere.
+  #
+  # 1. Removes the Anthropic token and other secrets from the environment of the commands
+  #    Claude runs, so `git` cannot read them. Best effort: tested to remove AWS and custom
+  #    secrets, but it keeps GITHUB_TOKEN, which here is read-only and expires with the job.
+  CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
+  # 2. Only the tools a session needs. Each session gets an explicit `--tools` list, so every
+  #    other built-in tool (WebFetch, WebSearch, Edit, Write, ...) does not exist for it. Each
+  #    list is what the command declares and what it used in a local test. `--allowedTools`
+  #    only pre-approves calls: in a `-p` run, a call that needs approval and is not
+  #    pre-approved is denied. (`--permission-mode dontAsk` would add nothing: Claude Code
+  #    forces the mode back to `default` while CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is set.)
+  #
+  #    `--tools` does not cover MCP tools, so DENY removes all of them (`mcp__*`): the
+  #    dedicated account's claude.ai connectors would otherwise be available. DENY also
+  #    blocks the git flags that reach files outside the checkout. Claude Code already
+  #    refuses a path outside the working directory; this is a second layer. The `*` matches
+  #    the flag in any position (tested).
+  DENY: >-
+    mcp__*,Bash(git diff*--no-index*),Bash(git diff*--output*),Bash(git log*--output*),Bash(git show*--output*)
+  # 3. Token formats that must never be saved or posted. Each job checks its output with
+  #    CHECK_SECRETS in a plain shell step that no model can change.
+  #
+  #    No report or review ever passes through a step's `env`: GitHub prints a step's env
+  #    values in its log, and the log is public, so the content would be public before the
+  #    check runs. Each job reads its session's output from the execution file instead, and
+  #    hands it to the next job as an artifact.
+  SECRET_PATTERN: >-
+    sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----
+  # Run as `bash -c "$CHECK_SECRETS" check <file.json>`. Exits 1, and deletes the file, when
+  # it contains a token. It checks the decoded strings as well as the raw JSON: an escape such
+  # as `\u0073k-ant-` hides a token from the raw text, and jq decodes it before posting.
+  CHECK_SECRETS: |
+    set -euo pipefail
+    jq -r '.. | strings' "$1" > "$1.decoded"
+    if grep -Eq "$SECRET_PATTERN" "$1" "$1.decoded"; then
+      rm -f "$1" "$1.decoded"
+      exit 1
+    fi
+    rm -f "$1.decoded"
+  # 4. A pull request must not change the instructions of its own review. Otherwise it could
+  #    add "do not report X" to AGENTS.md and its review would obey. The action already
+  #    replaces the root CLAUDE.md and `.claude/` with the base branch's copies, but CLAUDE.md
+  #    only imports AGENTS.md, which the action leaves at the pull request's version. Claude
+  #    Code also loads a CLAUDE.md from any directory whose files it reads.
+  #
+  #    Run as `bash -c "$BASE_INSTRUCTIONS"` with BASE_REF set, after the checkout. It replaces
+  #    every AGENTS.md, CLAUDE.md and CLAUDE.local.md with the base branch's copy, and removes
+  #    the ones the base branch does not have. Only the working tree changes: the review still
+  #    sees the pull request's changes to these files in the diff.
+  BASE_INSTRUCTIONS: |
+    set -euo pipefail
+    names='(^|/)(AGENTS|CLAUDE|CLAUDE\.local)\.md$'
+    git ls-files -z | { grep -zE "$names" || true; } | xargs -0 -r rm -f --
+    git ls-tree -r -z --name-only "origin/$BASE_REF" | { grep -zE "$names" || true; } \
+      | xargs -0 -r git checkout "origin/$BASE_REF" --
+    git reset -q
+  # The jq filter that reads a session's structured output from its execution file:
+  # `jq -c "$READ_OUTPUT" "$EXECUTION_FILE"`. It takes the result's `structured_output`. When
+  # that is missing, it takes the input of the last StructuredOutput call: `/code-review` runs
+  # as a forked command, which calls StructuredOutput itself and leaves the result without it.
+  READ_OUTPUT: >-
+    ([.[] | select(.type == "result")] | last | .structured_output)
+    // ([.[] | select(.type == "assistant") | .message.content[]?
+    | select(.type == "tool_use" and .name == "StructuredOutput") | .input] | last)
+    // empty
+  # What each review session returns. `line` is a line number in the pull request's version
+  # of the file, so the post job can place an inline comment on it.
+  FINDINGS_SCHEMA: >-
+    {"type":"object","required":["summary","findings"],"properties":{
+    "summary":{"type":"string"},
+    "findings":{"type":"array","items":{"type":"object",
+    "required":["file","line","severity","title","detail"],"properties":{
+    "file":{"type":"string"},"line":{"type":"integer"},
+    "severity":{"type":"string","enum":["high","medium","low"]},
+    "title":{"type":"string"},"detail":{"type":"string"}}}}}}
+  # What the merge session returns: one GitHub review.
+  REVIEW_SCHEMA: >-
+    {"type":"object","required":["body","comments"],"properties":{
+    "body":{"type":"string"},
+    "comments":{"type":"array","items":{"type":"object",
+    "required":["path","line","body"],"properties":{
+    "path":{"type":"string"},"line":{"type":"integer"},"body":{"type":"string"}}}}}}
+
+jobs:
+  code-review:
+    name: Code review
+    if: >-
+      github.event.label.name == 'agent:review' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Full history, so the review can diff against the base branch.
+          fetch-depth: 0
+          # Leaves no token in .git/config for the session to find.
+          persist-credentials: false
+      - name: Take the review instructions from the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: bash -c "$BASE_INSTRUCTIONS"
+      - id: review
+        uses: anthropics/claude-code-action@v1
+        # `/code-review` runs as a forked command and returns its report through its own
+        # StructuredOutput call, not in the result. The action then fails the step for a
+        # missing `structured_output`, so the save step below decides whether the review
+        # worked: it fails when the execution file holds no report.
+        continue-on-error: true
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # The base is the pull request's own base, not always main: a stacked pull request
+          # targets the branch below it. The range keeps the review on local git, with no
+          # GitHub API call. The command must open the prompt: Claude Code expands a command
+          # only at the start of a `-p` prompt.
+          prompt: >-
+            /code-review high
+            origin/${{ github.event.pull_request.base.ref }}...${{ github.event.pull_request.head.sha }}
+          claude_args: >-
+            --tools "Read,Glob,Grep,Bash"
+            --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)"
+            --disallowedTools "${{ env.DENY }}"
+            --max-turns 40
+            --json-schema '${{ env.FINDINGS_SCHEMA }}'
+      - name: Save the report
+        id: save
+        if: steps.review.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        # Artifacts of a public repository are public too, so check before the upload.
+        run: |
+          set -euo pipefail
+          jq -c "$READ_OUTPUT" "$EXECUTION_FILE" > code-review.json
+          if [ ! -s code-review.json ]; then
+            echo "::error::The code review returned no report."
+            exit 1
+          fi
+          if ! bash -c "$CHECK_SECRETS" check code-review.json; then
+            echo "::error::The report looks like it contains a secret. It was not saved."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.save.outcome == 'success'
+        with:
+          name: review-code
+          path: code-review.json
+
+  security-review:
+    name: Security review
+    if: >-
+      github.event.label.name == 'agent:review' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Point origin/HEAD at the base branch
+        # `/security-review` diffs `origin/HEAD...`, and the checkout sets no origin/HEAD.
+        # A stacked pull request's base is the branch below it, not always main.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: git remote set-head origin "$BASE_REF"
+      - name: Take the review instructions from the base branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: bash -c "$BASE_INSTRUCTIONS"
+      - id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # The command must open the prompt: Claude Code expands a command only at the start
+          # of a `-p` prompt. The rest of the line reaches the command as its arguments.
+          prompt: >-
+            /security-review Report each finding at the line in HEAD's version of the file.
+          # Agent: the command checks its findings for false positives in a subagent.
+          claude_args: >-
+            --tools "Read,Glob,Grep,Bash,Agent"
+            --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)"
+            --disallowedTools "${{ env.DENY }}"
+            --max-turns 40
+            --json-schema '${{ env.FINDINGS_SCHEMA }}'
+      - name: Save the report
+        if: steps.review.outputs.structured_output != ''
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          set -euo pipefail
+          jq -c "$READ_OUTPUT" "$EXECUTION_FILE" > security-review.json
+          if ! bash -c "$CHECK_SECRETS" check security-review.json; then
+            echo "::error::The report looks like it contains a secret. It was not saved."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.review.outputs.structured_output != ''
+        with:
+          name: review-security
+          path: security-review.json
+
+  merge:
+    name: Merge the reviews
+    needs: [code-review, security-review]
+    # Runs when one review failed too, so the other one is still posted. Not when the run is
+    # cancelled: adding the label again cancels the running review, and the cancelled run
+    # must not post a partial review.
+    if: >-
+      !cancelled() &&
+      github.event.label.name == 'agent:review' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # Only the outcome of the save step. The review itself goes to the post job as an
+      # artifact (see SECRET_PATTERN).
+      saved: ${{ steps.save.outcome }}
+    steps:
+      # No checkout: this session reads only the reports, never the pull request's code.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: review-*
+          path: reviews
+          merge-multiple: true
+      - name: Fetch the previous review
+        # The most recent review this workflow posted on the pull request, found by the
+        # marker the post job adds. Each review lists every finding still open, so the
+        # comparison carries over from one review to the next.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p reviews
+          gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- claude-review "))) | {submitted_at, body}' \
+            | jq -rs 'sort_by(.submitted_at) | last | .body // empty' > reviews/previous-review.md
+          if [ ! -s reviews/previous-review.md ]; then
+            rm reviews/previous-review.md
+            echo "No previous review on this pull request."
+          fi
+      - id: merge
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            Merge two code review reports into one GitHub pull request review.
+
+            - reviews/code-review.json is from /code-review.
+            - reviews/security-review.json is from /security-review.
+            - reviews/previous-review.md is the previous review of this pull request, for an
+              earlier commit. Its commit is in the `<!-- claude-review sha=... -->` marker.
+
+            Any of these files can be missing. A missing report means that review did not
+            finish: say so at the top of the body. A missing previous review means this is
+            the first review of the pull request.
+
+            Rules for the findings:
+            - Keep every finding. Do not add a finding, and do not drop one.
+            - Remove a finding only when it repeats another one: same file, same problem.
+              Keep the clearer text, and note that both reviews reported it.
+            - Do not change a finding's meaning or severity.
+            - Order the findings by severity: high, medium, low.
+
+            When there is a previous review, compare against it:
+            - A finding is "still open" when the previous review lists the same problem in
+              the same file. The line number may have changed.
+            - A finding is "new" when the previous review does not list it.
+            - A finding in the previous review that neither report repeats is "no longer
+              reported". Do not call it fixed: the change may have fixed it, or this run
+              may have missed it.
+            - Exception: when a report is missing, do not mark the previous findings from
+              that review as no longer reported. Mark them "not checked".
+
+            The review:
+            - `comments`: one entry per NEW finding, at its file and line. Start its body
+              with the severity and the review it came from, for example
+              "**High** (security)". A still-open finding gets no new comment: the
+              previous review already has one.
+            - The body opens with one line per review: its summary and its number of
+              findings.
+            - When there is a previous review, the next line is:
+              "Since the previous review (<first 8 characters of its sha>): N new, N still
+              open, N no longer reported."
+            - Then list every current finding, new and still open, one line each, in
+              severity order, in this format:
+              "- **High** (security) `path:line` title. New." or "... Still open."
+              The next review compares against this list, so never leave a finding out.
+            - Then list the findings no longer reported (and any not checked) under their
+              own heading, one line each.
+            - When there are no findings, say so in the body, and leave `comments` empty.
+          claude_args: >-
+            --model sonnet
+            --tools Read
+            --disallowedTools "${{ env.DENY }}"
+            --max-turns 10
+            --json-schema '${{ env.REVIEW_SCHEMA }}'
+      - name: Save the review
+        id: save
+        if: steps.merge.outputs.structured_output != ''
+        env:
+          EXECUTION_FILE: ${{ steps.merge.outputs.execution_file }}
+        run: |
+          set -euo pipefail
+          jq -c "$READ_OUTPUT" "$EXECUTION_FILE" > merged.json
+          if ! bash -c "$CHECK_SECRETS" check merged.json; then
+            echo "::error::The review looks like it contains a secret. It was not saved."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.save.outcome == 'success'
+        with:
+          # Not `review-*`, so a re-run of this job does not download it with the reports.
+          name: merged-review
+          path: merged.json
+
+  post:
+    name: Post the review
+    needs: [merge]
+    if: >-
+      !cancelled() &&
+      github.event.label.name == 'agent:review' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/download-artifact@v4
+        if: needs.merge.outputs.saved == 'success'
+        with:
+          name: merged-review
+      - name: Post the review
+        id: post
+        if: needs.merge.outputs.saved == 'success'
+        run: |
+          set -euo pipefail
+          # The last check before anything is public. The log names no match, only the fact.
+          if ! bash -c "$CHECK_SECRETS" check merged.json; then
+            echo "::error::The review looks like it contains a secret. It was not posted."
+            exit 1
+          fi
+          jq --arg sha "$HEAD_SHA" --arg run "$RUN_URL" '{
+            commit_id: $sha,
+            event: "COMMENT",
+            body: (.body
+              + "\n\n<sub>Claude review of " + $sha[0:8] + ". Raw reports: [workflow run](" + $run + ").</sub>"
+              # The next run finds this review by the marker and compares against it.
+              + "\n<!-- claude-review sha=" + $sha + " -->"),
+            comments: [.comments[] | {path, line, side: "RIGHT", body}]
+          }' merged.json > review.json
+          if ! gh api "repos/$REPO/pulls/$PR/reviews" --method POST --input review.json > /dev/null; then
+            # GitHub rejects the whole review when one comment is on a line outside the
+            # diff. Post again with every finding in the body instead.
+            echo "::warning::Inline comments rejected; posting the findings in the review body."
+            jq '{
+              commit_id,
+              event,
+              body: (.body + "\n\n---\n\n" + ([.comments[] | "`\(.path):\(.line)` \(.body)"] | join("\n\n"))),
+              comments: []
+            }' review.json > fallback.json
+            gh api "repos/$REPO/pulls/$PR/reviews" --method POST --input fallback.json > /dev/null
+          fi
+      - name: Report a failed review
+        # Every case where no review was posted: the merge job failed or saved nothing, the
+        # download failed, the post step refused the review, or GitHub rejected it. A
+        # cancelled run reports nothing: the run that replaced it posts the review.
+        if: "!cancelled() && steps.post.outcome != 'success'"
+        run: |
+          gh pr comment "$PR" --repo "$REPO" \
+            --body "The Claude review did not finish. See the [workflow run]($RUN_URL).
+          If every review fails, the \`CLAUDE_CODE_OAUTH_TOKEN\` secret may have expired: see the renewal steps at the top of \`.github/workflows/claude-review.yml\`."
+      - name: Remove the label
+        # Also when the run is cancelled while this job runs. The run that replaced it has
+        # already started, so removing the label does not stop it.
+        if: always()
+        run: gh pr edit "$PR" --repo "$REPO" --remove-label agent:review
