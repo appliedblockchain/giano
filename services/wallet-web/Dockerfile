@@ -35,13 +35,13 @@ RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
 # The SPA tool allow-list, staged at its real paths with exactly the shared libraries it links
 # beyond what the runtime already has (glibc and the loader), plus the html root owned by nginx so
 # the entrypoint can render config.json into it. The final stage takes all of it in one COPY.
-FROM dhi.io/nginx:1.30-debian13-dev@sha256:f524905d97a179b87815dc148e94a0fc5713779d2a0f5e139a6208aad331fadb AS tools
+FROM dhi.io/nginx:1.30-debian13-dev@sha256:c5b98a72c72b3b8869efa388c6634ad8f7c8f6c9322c0e8fb1281c2dfde595a9 AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends dash jq gettext-base \
  && rm -rf /var/lib/apt/lists/*
 COPY deploy/docker/stage-spa-tools.sh /usr/local/bin/stage-spa-tools.sh
 RUN sh /usr/local/bin/stage-spa-tools.sh /staging
 
-FROM dhi.io/nginx:1.30-debian13@sha256:64b41e33d5359702daa3124d7767b102f964ad57a1b425b43cabec52e5a4432a
+FROM dhi.io/nginx:1.30-debian13@sha256:3aed0b5ad694d18eb4897a50d0fd0cdcf4b51b52219739a2d8f833323da39b67
 COPY --from=tools /staging/ /
 COPY --from=build --chown=65532:65532 /repo/services/wallet-web/dist /usr/share/nginx/html
 COPY services/wallet-web/docker/nginx.conf.template /etc/giano/nginx.conf.template
