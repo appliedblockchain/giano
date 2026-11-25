@@ -269,16 +269,27 @@ first, with the secret unchanged, and the secret changes after it.
    `giano-dev-wallet-api`, `giano-dev-bundler` and `giano-dev-paymaster-admin`.
 5. **Install the sponsorship rules on 19874 for each tenant, `example` and `byoui`.** The command calls
    `dev`'s wallet-api admin API, so it works only after step 4. Run it once per tenant, each with its own
-   operator file: `pnpm contracts:sponsorship --chain iron-kestrel --env-file <file>
-   --accept-unverified-implementation`. The operator file sets `WALLET_API_URL` to `dev`'s wallet-api, the
-   tenant's `TENANT_SLUG` and `ADMIN_API_KEY`, and `SPONSOR_ALLOWLIST` to the private test token
-   `0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b`. Anyone may mint that token, so the warning of step 8 in
+   operator file: `pnpm contracts:sponsorship --chain iron-kestrel --env-file "$PWD/<file>"
+   --accept-unverified-implementation`. The path must be absolute. Node itself reads `--env-file`, even after
+   the script name, and resolves it from `packages/contracts`: with a path relative to the repository root
+   it exits with "not found" before the script starts. The operator file sets `WALLET_API_URL` to
+   `dev`'s wallet-api, the tenant's `TENANT_SLUG` and `ADMIN_API_KEY`, and `SPONSOR_ALLOWLIST` to the
+   private test token `0xFA7B71b9A5397b8A4faCC9127BE1C665f2F2cA9b`. Anyone may mint that token, so the warning of step 8 in
    "Steps" applies: allow-list it only for a demo tenant.
 
 **Readiness** (task 8.8's "done when"):
 
 6. `GET /v1/version` lists 19874 ready, and the two testnets are still ready.
 7. `giano_paymaster_watcher_lag_blocks` on wallet-api's `/metrics` is within a few blocks on 19874.
+   `/metrics` needs a bearer token: the `metrics-bearer-token` value in the `secrets-dev` note of the
+   "Giano dev/stg" vault. `read -s` keeps it out of the terminal and the shell history:
+
+   ```sh
+   read -rs TOKEN
+   curl -s -H "Authorization: Bearer $TOKEN" \
+     https://wallet.dev.giano.appliedblockchain.dev/api/metrics | grep watcher_lag
+   unset TOKEN
+   ```
 8. Both dApps, `example` and `byoui`, show Iron Kestrel in their chain lists and the private token card on
    that chain. Then run the end-to-end check (task 9.2) on `example`, and one sponsored transaction on
    `byoui`, through the BYO wallet.
