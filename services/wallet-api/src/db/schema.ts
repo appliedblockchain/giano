@@ -219,6 +219,19 @@ export const users = pgTable(
 	],
 );
 
+/**
+ * Where a passkey is stored (PS-1), as its authenticator reported it. Display only: never an input to
+ * authorisation or matching. NULL for a credential registered before these columns existed.
+ */
+const passkeyStorageColumns = () => ({
+	/** The authenticator's AAGUID, which names the passkey provider. All zeros when it reports none. */
+	aaguid: text("aaguid"),
+	/** 'singleDevice': cannot leave its authenticator. 'multiDevice': can be synced. */
+	deviceType: text("device_type", { enum: ["singleDevice", "multiDevice"] }),
+	/** Whether the passkey is backed up (synced) now. A sign-in refreshes it. */
+	backedUp: boolean("backed_up"),
+});
+
 export const credentials = pgTable(
 	"credentials",
 	{
@@ -240,6 +253,7 @@ export const credentials = pgTable(
 		walletAddress: text("wallet_address").notNull(),
 		/** User-set label (WM-07). Never an input to authorisation or matching (WM-11). */
 		name: text("name"),
+		...passkeyStorageColumns(),
 		/**
 		 * Set once the owner key was verified removed on-chain (WM-31). The row is kept so the
 		 * interface can show the credential honestly as "no longer an owner" (WM-04); a removed
@@ -364,6 +378,7 @@ export const pendingAdditions = pgTable(
 		publicKeyX: text("public_key_x"),
 		publicKeyY: text("public_key_y"),
 		transports: text("transports").array(),
+		...passkeyStorageColumns(),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),

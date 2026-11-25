@@ -8,6 +8,7 @@ import { requireSessionOf } from "../plugins/auth.js";
 import { ApiError } from "../plugins/error-handler.js";
 import type { ChainRegistry } from "../services/chains.js";
 import { isOwnerPublicKeyOnChain } from "../services/owner-check.js";
+import { passkeyProviderName } from "../services/passkey-providers.js";
 import type { SessionService } from "../services/sessions.js";
 
 /**
@@ -35,6 +36,20 @@ export default async function credentialRoutes(
 		createdAt: z.string(),
 		/** Set once the key was verified removed on-chain — shown as "no longer an owner" (WM-04). */
 		removedAt: z.string().nullable(),
+		/**
+		 * Where the passkey is stored, as its authenticator reported it (PS-1). Display only, never an
+		 * input to any decision. Every field is null for a passkey registered before this was recorded.
+		 */
+		storage: z.object({
+			/** The passkey provider named by the AAGUID, or null when it is not one we know. */
+			provider: z.string().nullable(),
+			/** True when the passkey is backed up (synced), false when it is not. */
+			synced: z.boolean().nullable(),
+			/** 'singleDevice': it cannot leave its authenticator. 'multiDevice': it can be synced. */
+			deviceType: z.enum(["singleDevice", "multiDevice"]).nullable(),
+			/** The authenticator's AAGUID, as reported. */
+			aaguid: z.string().nullable(),
+		}),
 	});
 
 	app.get(
@@ -93,14 +108,23 @@ export default async function credentialRoutes(
 					transports: credentials.transports,
 					createdAt: credentials.createdAt,
 					removedAt: credentials.removedAt,
+					aaguid: credentials.aaguid,
+					deviceType: credentials.deviceType,
+					backedUp: credentials.backedUp,
 				})
 				.from(credentials)
 				.where(eq(credentials.userId, requireSessionOf(request).userId));
 			return {
-				credentials: rows.map((row) => ({
+				credentials: rows.map(({ aaguid, deviceType, backedUp, ...row }) => ({
 					...row,
 					createdAt: row.createdAt.toISOString(),
 					removedAt: row.removedAt ? row.removedAt.toISOString() : null,
+					storage: {
+						provider: passkeyProviderName(aaguid),
+						synced: backedUp,
+						deviceType,
+						aaguid,
+					},
 				})),
 			};
 		},
