@@ -55,8 +55,8 @@
 
 ## 4. Reassess current advisories before the first production release (R4)
 
-- [ ] 4.1 Re-run `pnpm audit` on both workspaces and compare with the open Dependabot alerts. For each open advisory, fix it if a patched version passes the regression gates and is at least 7 days old; otherwise add a register entry for it, or renew its entry with a new reason. Verify the audit output and the register agree.
-- [ ] 4.2 Confirm `braces` and `sprintf-js`, recorded as residuals in the archived change `2026-10-26-fix-dependency-vulnerabilities`, are no longer reported, and say so in the PR description. Verify with the audit output.
+- [x] 4.1 Re-run `pnpm audit` on both workspaces and compare with the open Dependabot alerts. For each open advisory, fix it if a patched version passes the regression gates and is at least 7 days old; otherwise add a register entry for it, or renew its entry with a new reason. Verify the audit output and the register agree. Run on 2026-11-26: `pnpm audit` reports 0 advisories at any severity in both workspaces, and GitHub has no open Dependabot alert. GitHub withdrew GHSA-fc5q-39xc-vjpf (`picomatch`) on 2026-11-18, so AF-044 and AF-045 were removed. Their IDs are not reused.
+- [x] 4.2 Confirm `braces` and `sprintf-js`, recorded as residuals in the archived change `2026-10-26-fix-dependency-vulnerabilities`, are no longer reported, and say so in the PR description. Verify with the audit output. Neither is reported on 2026-11-26. GitHub withdrew both advisories: GHSA-vfj7-8cjw-p6xm (`braces`) on 2026-10-23 and GHSA-hp3w-g68c-fv3c (`sprintf-js`) on 2026-10-22. The lockfile has `braces` 3.0.3, above the range of the older GHSA-grv7-fg5c-xmjg (`< 3.0.3`).
 - [ ] 4.3 Review every register entry with its owner and record the review date in the PR description. Verify no entry expires before the planned release date.
 
 ## Workflow follow-up
