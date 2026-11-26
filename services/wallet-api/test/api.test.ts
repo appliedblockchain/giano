@@ -387,14 +387,196 @@ describe("registration ceremony", () => {
 			},
 		});
 		expect(res.statusCode).toBe(400);
-		expect((res.json() as { error: string }).error).toBe(
-			"challenge-user-mismatch",
-		);
+		// The message pins the G1 check: without it, the insert conflict further down throws the
+		// same code with "challenge no longer matches this user".
+		expect(res.json()).toMatchObject({
+			error: "challenge-user-mismatch",
+			message: "challenge was issued for a different user",
+		});
 		// The victim still has only their own credential, and no user was created for the fresh id.
 		expect((await getOptions("victim-unbound")).credentialIds).toEqual([
 			victim.credentialId,
 		]);
 		expect((await getOptions("attacker-fresh-id")).userExists).toBe(false);
+	});
+
+	it("rejects a challenge issued for a new id when the body names an existing user (closed registration)", async () => {
+		const adminKey = TENANT_B.adminKey;
+		const victim = await register(
+			"victim-unbound-closed",
+			createAuthenticator(),
+			TENANT_B,
+			adminKey,
+		);
+		// 'attacker-fresh-id-closed' does not exist, so this challenge has no bound user
+		const options = await getOptions(
+			"attacker-fresh-id-closed",
+			"registration",
+			TENANT_B,
+			adminKey,
+		);
+		expect(options.userExists).toBe(false);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				externalUserId: "victim-unbound-closed",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect(res.json()).toMatchObject({
+			error: "challenge-user-mismatch",
+			message: "challenge was issued for a different user",
+		});
+		expect(
+			(await getOptions("victim-unbound-closed", undefined, TENANT_B, adminKey))
+				.credentialIds,
+		).toEqual([victim.credentialId]);
+		expect(
+			(
+				await getOptions(
+					"attacker-fresh-id-closed",
+					undefined,
+					TENANT_B,
+					adminKey,
+				)
+			).userExists,
+		).toBe(false);
+	});
+
+	it("rejects a challenge issued for a new id when the body names an existing user whose passkeys were all removed (closed registration)", async () => {
+		const adminKey = TENANT_B.adminKey;
+		await register(
+			"victim-unbound-removed",
+			createAuthenticator(),
+			TENANT_B,
+			adminKey,
+		);
+		// With no active passkey, a closed tenant lets the user register again (registrationRefusal
+		// returns null). The challenge binding is the first check that stops a challenge issued for
+		// another id, and the message assertion pins that check: the create-only insert further
+		// down would also refuse it, with the same code and a different message.
+		await removeCredentials("victim-unbound-removed", TENANT_B);
+		const options = await getOptions(
+			"attacker-fresh-id-removed",
+			"registration",
+			TENANT_B,
+			adminKey,
+		);
+		expect(options.userExists).toBe(false);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				externalUserId: "victim-unbound-removed",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect(res.json()).toMatchObject({
+			error: "challenge-user-mismatch",
+			message: "challenge was issued for a different user",
+		});
+		expect(
+			(
+				await getOptions(
+					"victim-unbound-removed",
+					undefined,
+					TENANT_B,
+					adminKey,
+				)
+			).credentialIds,
+		).toEqual([]);
+		expect(
+			(
+				await getOptions(
+					"attacker-fresh-id-removed",
+					undefined,
+					TENANT_B,
+					adminKey,
+				)
+			).userExists,
+		).toBe(false);
+	});
+
+	it("refuses a claim challenge at registration (closed registration)", async () => {
+		const victim = await register(
+			"claim-redeem-victim-closed",
+			createAuthenticator(),
+			TENANT_B,
+			TENANT_B.adminKey,
+		);
+		const slot = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions",
+			headers: {
+				origin: TENANT_B.walletOrigin,
+				authorization: `Bearer ${victim.session.token}`,
+			},
+		});
+		expect(slot.statusCode).toBe(200);
+		const { claimCode } = slot.json() as { claimCode: string };
+		const claimed = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: { claimCode },
+		});
+		expect(claimed.statusCode).toBe(200);
+		const { challenge } = claimed.json() as { challenge: string };
+
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				externalUserId: "claim-redeem-victim-closed",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe("bad-challenge");
+		expect(
+			(
+				await getOptions(
+					"claim-redeem-victim-closed",
+					undefined,
+					TENANT_B,
+					TENANT_B.adminKey,
+				)
+			).credentialIds,
+		).toEqual([victim.credentialId]);
+		// The refusal must not burn the challenge: if it were consumed before the kind check,
+		// anyone who saw it could break the victim's pending addition.
+		const filled = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim/fill",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				claimCode,
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(filled.statusCode).toBe(200);
 	});
 
 	it("refuses a challenge issued for a new id once that user has registered", async () => {
