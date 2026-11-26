@@ -73,6 +73,8 @@ export {
 	type OwnerRow,
 	type SponsorshipRefusal,
 } from "./management/controller";
+// ── the link a second device opens to join a wallet (PS-2) ──
+export { claimCodeFromUrl, pairingUrl } from "./pairing";
 export {
 	hasPasskeyOnDevice,
 	markPasskeyOnDevice,
