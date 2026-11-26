@@ -19,6 +19,9 @@ export type {
 	UnknownReason,
 	UnknownTransaction,
 } from "@appliedblockchain/giano-tx-describe";
+// ── the wallet-management controller (WK-16…WK-21) ──
+/** Where a passkey is stored (PS-1), as wallet-api reports it on each owner row. */
+export type { PasskeyStorage } from "@appliedblockchain/giano-wallet-core";
 // ── the error shapes and reason codes a client keys behaviour off (spec §9, WK-15), and the
 // exact bytes a personal_sign / eth_sign request signs, for the consent screen ──
 export {
@@ -55,7 +58,6 @@ export type {
 	ChainProgress,
 	ChainStepState,
 } from "./management/apply-owner-change";
-// ── the wallet-management controller (WK-16…WK-21) ──
 export {
 	type AddressInputError,
 	type CreateManagementControllerOptions,

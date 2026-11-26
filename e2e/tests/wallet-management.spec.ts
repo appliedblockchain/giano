@@ -65,6 +65,11 @@ test("view: one credential on-chain, current session marked (WM-01, WM-10)", asy
 	await expect(popup.getByTestId("manage-owner-row")).toHaveCount(1);
 	// WM-10: the credential in use is marked as such.
 	await expect(popup.getByTestId("manage-owner-current")).toBeVisible();
+	// PS-1: where the passkey is stored. The virtual authenticator names no known provider, and
+	// its passkey cannot be synced.
+	await expect(popup.getByTestId("manage-owner-storage")).toHaveText(
+		"This device only",
+	);
 	// WM-03: a stable fingerprint derived from the owner bytes is shown.
 	await expect(popup.getByTestId("manage-owner-fingerprint")).toHaveText(
 		/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/,

@@ -289,6 +289,26 @@ describe("loading the set (WK-17, WM-01…WM-06)", () => {
 		expect(state.deployed).toBe(true);
 	});
 
+	it("carries where each passkey is stored onto its owner row, and null where the registry has no row (PS-1)", async () => {
+		const storage = {
+			provider: "Google Password Manager",
+			synced: true,
+			deviceType: "multiDevice" as const,
+			aaguid: "ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4",
+		};
+		const h = harness({ credentials: [{ ...credentialA, storage }] });
+		await h.controller.load();
+		expect(h.controller.state.owners[0].storage).toEqual(storage);
+		// the on-chain owner with no registry row has nothing to say about storage
+		expect(h.controller.state.owners[1].storage).toBeNull();
+	});
+
+	it("leaves storage null for a registry row from a wallet-api that does not report it", async () => {
+		const h = harness();
+		await h.controller.load();
+		expect(h.controller.state.owners[0].storage).toBeNull();
+	});
+
 	it("shows registry rows the chain does not back as strays, never omitted (WM-04)", async () => {
 		const h = harness({
 			chains: { 31337: { deployed: true, owners: [bytesB] } },

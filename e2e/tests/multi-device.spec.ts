@@ -83,7 +83,9 @@ async function startDeviceB(browser: Browser) {
 	const context = await browser.newContext();
 	const wallet = await context.newPage();
 	await wallet.goto(tenant.walletUrl);
-	const { cdp } = await addVirtualAuthenticator(wallet);
+	// Device B keeps its passkey in a synced password manager; device A's stays on the device. The
+	// management list must tell them apart (PS-1).
+	const { cdp } = await addVirtualAuthenticator(wallet, { synced: true });
 	const credentials = trackResidentCredentials(cdp);
 	// Device B signs here and then in dApp popups, each with its own virtual authenticator. A real
 	// device has one authenticator, so carry the signature counter forward from this page too, or
@@ -456,6 +458,14 @@ test.describe("one wallet, two devices", () => {
 			ownerRow(b.wallet, fingerprintA).getByTestId("manage-owner-name"),
 		).toHaveText("Laptop");
 
+		// PS-1: each device sees where each passkey is stored.
+		await expect(
+			ownerRow(b.wallet, b.fingerprint).getByTestId("manage-owner-storage"),
+		).toHaveText("Synced");
+		await expect(
+			ownerRow(b.wallet, fingerprintA).getByTestId("manage-owner-storage"),
+		).toHaveText("This device only");
+
 		// Device A lists both too, with its own passkey still the current one.
 		await a.popup.getByTestId("manage-flow-done").click();
 		await expect(a.popup.getByTestId("manage-owner-row")).toHaveCount(2, {
@@ -467,6 +477,9 @@ test.describe("one wallet, two devices", () => {
 		await expect(
 			ownerRow(a.popup, b.fingerprint).getByTestId("manage-owner-current"),
 		).toHaveCount(0);
+		await expect(
+			ownerRow(a.popup, b.fingerprint).getByTestId("manage-owner-storage"),
+		).toHaveText("Synced");
 	});
 
 	test("device B logs out and signs in again: the same wallet, with its own passkey (WM-33)", async ({

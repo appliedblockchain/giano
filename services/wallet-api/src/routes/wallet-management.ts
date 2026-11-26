@@ -448,6 +448,9 @@ export default async function walletManagementRoutes(
 						publicKeyX: deposited.publicKeyX,
 						publicKeyY: deposited.publicKeyY,
 						transports: slot.transports ?? [],
+						aaguid: slot.aaguid,
+						deviceType: slot.deviceType,
+						backedUp: slot.backedUp,
 						// WM-15: BOUND to the wallet the session already controls — never derived from
 						// the new key, which would name a different wallet.
 						walletAddress: session.walletAddress,
@@ -662,6 +665,9 @@ export default async function walletManagementRoutes(
 					publicKeyY: y,
 					transports:
 						info.credential.transports ?? response.response.transports ?? [],
+					aaguid: info.aaguid,
+					deviceType: info.credentialDeviceType,
+					backedUp: info.credentialBackedUp,
 				})
 				// Guarded re-check of status: two concurrent fills of one slot must not both win.
 				.where(

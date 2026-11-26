@@ -363,6 +363,7 @@ function OwnerRowView({
 			: row.credentialId
 				? `passkey · added ${row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "unknown"}${row.transports?.length ? ` · ${row.transports.join("/")}` : ""}`
 				: "passkey · added outside this deployment"; // WM-04: never silently omitted
+	const storage = row.kind === "passkey" ? storageLabel(row) : null;
 
 	return (
 		<div
@@ -402,6 +403,14 @@ function OwnerRowView({
 					>
 						{subtitle}
 					</div>
+					{storage ? (
+						<div
+							style={{ color: "var(--muted)", fontSize: 12 }}
+							data-testid="manage-owner-storage"
+						>
+							{storage}
+						</div>
+					) : null}
 				</div>
 				<span
 					className="v"
@@ -468,4 +477,40 @@ function OwnerRowView({
 			</div>
 		</div>
 	);
+}
+
+/** Transports that mean a separate, roaming authenticator, such as a USB or NFC security key. */
+const ROAMING_TRANSPORTS = new Set(["usb", "nfc", "ble"]);
+
+/**
+ * Where a passkey is stored, in a few words (PS-1): the provider when its authenticator named one, a
+ * security key when it is a roaming single-device key, and whether it is synced. Null for a row with
+ * no registry entry. Display only: never an input to any decision.
+ */
+function storageLabel(row: OwnerRow): string | null {
+	if (!row.storage) return null;
+	const { provider, synced, deviceType } = row.storage;
+	if (provider === null && synced === null && deviceType === null) {
+		return "Where it is stored was not recorded";
+	}
+	const securityKey =
+		provider === null &&
+		deviceType === "singleDevice" &&
+		!!row.transports?.some((transport) => ROAMING_TRANSPORTS.has(transport));
+	const where = provider
+		? `Stored in ${provider}`
+		: securityKey
+			? "On a security key"
+			: null;
+	const sync = synced
+		? "synced"
+		: deviceType === "singleDevice"
+			? "this device only"
+			: deviceType === "multiDevice"
+				? "not synced"
+				: null;
+	const label = [where, sync]
+		.filter((part): part is string => part !== null)
+		.join(" · ");
+	return label.charAt(0).toUpperCase() + label.slice(1);
 }

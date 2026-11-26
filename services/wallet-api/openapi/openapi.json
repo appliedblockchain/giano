@@ -2624,6 +2624,50 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "storage": {
+                            "type": "object",
+                            "properties": {
+                              "provider": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "synced": {
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
+                              },
+                              "deviceType": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "singleDevice",
+                                      "multiDevice"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "aaguid": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "provider",
+                              "synced",
+                              "deviceType",
+                              "aaguid"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -2634,7 +2678,8 @@
                           "publicKeyY",
                           "transports",
                           "createdAt",
-                          "removedAt"
+                          "removedAt",
+                          "storage"
                         ],
                         "additionalProperties": false
                       }
