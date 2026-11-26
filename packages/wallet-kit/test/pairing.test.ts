@@ -9,6 +9,13 @@ describe("the pairing link (PS-2)", () => {
 		expect(pairingUrl("https://wallet.example.com/", "AB3D9KFM")).toBe(
 			"https://wallet.example.com/#claim=AB3D9KFM",
 		);
+		// Only the origin: no path, and no slow parse of repeated slashes.
+		expect(
+			pairingUrl(
+				`https://wallet.example.com/manage${"/".repeat(10_000)}`,
+				"AB3D9KFM",
+			),
+		).toBe("https://wallet.example.com/#claim=AB3D9KFM");
 	});
 
 	it("reads the code back from the link", () => {
