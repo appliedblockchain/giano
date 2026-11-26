@@ -397,6 +397,107 @@ describe("registration ceremony", () => {
 		expect((await getOptions("attacker-fresh-id")).userExists).toBe(false);
 	});
 
+	it("rejects a challenge issued for a new id when the body names an existing user (closed registration)", async () => {
+		const adminKey = TENANT_B.adminKey;
+		const victim = await register(
+			"victim-unbound-closed",
+			createAuthenticator(),
+			TENANT_B,
+			adminKey,
+		);
+		// 'attacker-fresh-id-closed' does not exist, so this challenge has no bound user
+		const options = await getOptions(
+			"attacker-fresh-id-closed",
+			"registration",
+			TENANT_B,
+			adminKey,
+		);
+		expect(options.userExists).toBe(false);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				externalUserId: "victim-unbound-closed",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe(
+			"challenge-user-mismatch",
+		);
+		expect(
+			(await getOptions("victim-unbound-closed", undefined, TENANT_B, adminKey))
+				.credentialIds,
+		).toEqual([victim.credentialId]);
+		expect(
+			(
+				await getOptions(
+					"attacker-fresh-id-closed",
+					undefined,
+					TENANT_B,
+					adminKey,
+				)
+			).userExists,
+		).toBe(false);
+	});
+
+	it("refuses a claim challenge at registration (closed registration)", async () => {
+		const victim = await register(
+			"claim-redeem-victim-closed",
+			createAuthenticator(),
+			TENANT_B,
+			TENANT_B.adminKey,
+		);
+		const slot = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions",
+			headers: {
+				origin: TENANT_B.walletOrigin,
+				authorization: `Bearer ${victim.session.token}`,
+			},
+		});
+		expect(slot.statusCode).toBe(200);
+		const claimed = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: { claimCode: (slot.json() as { claimCode: string }).claimCode },
+		});
+		expect(claimed.statusCode).toBe(200);
+		const { challenge } = claimed.json() as { challenge: string };
+
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				externalUserId: "claim-redeem-victim-closed",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect((res.json() as { error: string }).error).toBe("bad-challenge");
+		expect(
+			(
+				await getOptions(
+					"claim-redeem-victim-closed",
+					undefined,
+					TENANT_B,
+					TENANT_B.adminKey,
+				)
+			).credentialIds,
+		).toEqual([victim.credentialId]);
+	});
+
 	it("refuses a challenge issued for a new id once that user has registered", async () => {
 		// Two challenges issued while 'race-user' did not exist: both are unbound.
 		const first = await getOptions("race-user", "registration");
