@@ -6,6 +6,7 @@ import {
 	LuHistory,
 	LuHourglass,
 	LuLayoutDashboard,
+	LuListChecks,
 	LuShieldCheck,
 	LuSlidersHorizontal,
 	LuUserCog,
@@ -21,8 +22,12 @@ const TABS: { tab: Tab; label: string; icon: ComponentType }[] = [
 	{ tab: "timelock", label: "Timelock", icon: LuHourglass },
 	{ tab: "activity", label: "Activity", icon: LuHistory },
 	{ tab: "health", label: "Health", icon: LuHeartPulse },
+	{ tab: "relay-policy", label: "Relay policy", icon: LuListChecks },
 	{ tab: "admins", label: "Admins", icon: LuUserCog },
 ];
+
+/** Tabs that are platform API pages: shown only where the console has a platform API. */
+const PLATFORM_TABS = new Set<Tab>(["relay-policy", "admins"]);
 
 /**
  * One tab bar for the whole console (openspec redesign-paymaster-console, D2): the Paymaster and
@@ -43,7 +48,7 @@ export function TabBar({
 	pendingOperations: number | undefined;
 	healthLevel: HealthLevel | undefined;
 }) {
-	const tabs = TABS.filter(({ tab }) => tab !== "admins" || platformApi);
+	const tabs = TABS.filter(({ tab }) => !PLATFORM_TABS.has(tab) || platformApi);
 	return (
 		<HStack
 			as="nav"

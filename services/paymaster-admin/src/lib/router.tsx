@@ -21,6 +21,7 @@ export type Tab =
 	| "timelock"
 	| "activity"
 	| "health"
+	| "relay-policy"
 	| "admins";
 
 export type Route =
@@ -36,6 +37,7 @@ export const TAB_PATHS: Record<Tab, string> = {
 	timelock: "/timelock",
 	activity: "/activity",
 	health: "/health",
+	"relay-policy": "/relay-policy",
 	admins: "/admins",
 };
 

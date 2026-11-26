@@ -230,6 +230,25 @@ export function platformApi(token: string) {
 		platformAdminHistory: () =>
 			call<{ entries: PlatformAdminHistoryEntry[] }>("GET", "/admins/history"),
 		chains: () => call<ChainsStatus>("GET", "/chains"),
+		chainPolicies: () =>
+			call<{ chains: ChainPolicyView[] }>("GET", "/chain-policies"),
+		/** Replaces the chain's stored relay policy; `version` is the one it was read at (0 if none). */
+		replaceChainPolicy: (
+			chainId: number,
+			version: number,
+			policy: Record<string, unknown>,
+		) =>
+			call<ChainPolicyView>(
+				"PUT",
+				`/chain-policies/${encodeURIComponent(chainId)}`,
+				policy,
+				{ "if-match": `"${version}"` },
+			),
+		chainPolicyHistory: (chainId: number, before?: string) =>
+			call<{ entries: ChainPolicyHistoryEntry[]; next: string | null }>(
+				"GET",
+				`/chain-policies/${encodeURIComponent(chainId)}/history${before ? `?before=${encodeURIComponent(before)}` : ""}`,
+			),
 		drift: () =>
 			call<{ chains: (ChainDrift | ChainDriftError)[] }>("GET", "/drift"),
 		usage: (chainId: number) =>
@@ -361,6 +380,45 @@ export type DriftEntry =
 			ledger: string;
 			chain: string;
 	  };
+
+/** A relay policy field's value: a decimal string for a cap, `"any"` or addresses for an allowlist. */
+export type ChainPolicyValue = string | string[] | null;
+
+/**
+ * One field of a chain's relay policy (GET /v1/platform/chain-policies): what applies and why.
+ * `override` is GIANO_CHAINS or an env var (`overriddenBy`) and cannot be edited here; `fallback` is
+ * undecided outside production; `undecided` is undecided in production, and refuses the chain.
+ */
+export type ChainPolicyFieldView = {
+	effective: ChainPolicyValue;
+	source: "override" | "stored" | "fallback" | "undecided";
+	overriddenBy: string | null;
+	stored: ChainPolicyValue;
+};
+
+/** A served chain's relay policy, as wallet-api resolves it (openspec chain-relay-policy-console). */
+export type ChainPolicyView = {
+	chainId: number;
+	name: string;
+	/** Send it back in If-Match; 0 when the chain has no stored row. */
+	version: number;
+	stored: Record<string, unknown> | null;
+	updatedAt: string | null;
+	updatedBy: string | null;
+	fields: Record<string, ChainPolicyFieldView>;
+	/** Why the chain's operations are refused; empty when they are not. */
+	problems: string[];
+};
+
+export type ChainPolicyHistoryEntry = {
+	id: string;
+	action: "seed" | "update" | string;
+	actor: string;
+	platformAdminSessionId: string | null;
+	before: Record<string, unknown> | null;
+	after: Record<string, unknown>;
+	createdAt: string;
+};
 
 /** GET /v1/platform/chains (B3): what only wallet-api can see about each chain it serves. */
 export type ChainsStatus = {
