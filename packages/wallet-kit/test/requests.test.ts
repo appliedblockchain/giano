@@ -26,6 +26,30 @@ const input = (
 });
 
 describe("the single-slot consent queue (WK-10)", () => {
+	it("offers a second button only for a connect with an alternative, and says which was pressed", async () => {
+		const store = createRequestStore();
+		const plain = store.requestConsent(input());
+		expect(store.current?.approveAlternative).toBeUndefined();
+		pendingOf(store).approve();
+		await expect(plain).resolves.toBe("primary");
+
+		const session = store.requestConsent(
+			input({ connect: { primary: "session" } }),
+		);
+		expect(store.current?.approveAlternative).toBeUndefined();
+		pendingOf(store).approve();
+		await session;
+
+		const choice = store.requestConsent(
+			input({
+				connect: { primary: "held-passkey", alternative: "new-wallet" },
+			}),
+		);
+		pendingOf(store).approveAlternative?.();
+		await expect(choice).resolves.toBe("alternative");
+		expect(store.current).toBeNull();
+	});
+
 	it("exposes the pending request as subscribable state and resolves on approve", async () => {
 		const store = createRequestStore();
 		const seen: (PendingRequest | null)[] = [];
@@ -36,7 +60,7 @@ describe("the single-slot consent queue (WK-10)", () => {
 		expect(store.current?.chainName).toBe("Devnet");
 
 		pendingOf(store).approve();
-		await expect(consent).resolves.toBeUndefined();
+		await expect(consent).resolves.toBe("primary");
 		expect(store.current).toBeNull();
 		expect(seen).toEqual([
 			null,

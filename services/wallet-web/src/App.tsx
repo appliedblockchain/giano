@@ -46,6 +46,14 @@ function Popup({ config }: { config: WalletConfig }) {
 			setProcessing(true);
 			request.approve();
 		},
+		...(request.approveAlternative
+			? {
+					approveAlternative: () => {
+						setProcessing(true);
+						request.approveAlternative?.();
+					},
+				}
+			: {}),
 	});
 
 	return (

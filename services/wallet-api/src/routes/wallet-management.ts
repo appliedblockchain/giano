@@ -498,6 +498,12 @@ export default async function walletManagementRoutes(
 						rpId: z.string(),
 						challenge: z.string(),
 						pendingAdditionId: z.string(),
+						/**
+						 * The wallet the new device is joining, so it can show it and name its passkey
+						 * after it. A wallet address is public on-chain, and it grants nothing: adding an
+						 * owner still needs the authorising device's signature and the fingerprint check.
+						 */
+						walletAddress: z.string(),
 					}),
 					404: errorResponseSchema,
 					409: errorResponseSchema,
@@ -530,7 +536,12 @@ export default async function walletManagementRoutes(
 				slot.userId,
 				tenant.id,
 			);
-			return { rpId: tenant.rpId, challenge, pendingAdditionId: slot.id };
+			return {
+				rpId: tenant.rpId,
+				challenge,
+				pendingAdditionId: slot.id,
+				walletAddress: slot.walletAddress,
+			};
 		},
 	);
 

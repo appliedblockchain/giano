@@ -2057,6 +2057,10 @@
                       "registration",
                       "authentication"
                     ]
+                  },
+                  "discoverable": {
+                    "default": false,
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -3504,12 +3508,16 @@
                     },
                     "pendingAdditionId": {
                       "type": "string"
+                    },
+                    "walletAddress": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "rpId",
                     "challenge",
-                    "pendingAdditionId"
+                    "pendingAdditionId",
+                    "walletAddress"
                   ],
                   "additionalProperties": false
                 }

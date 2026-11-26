@@ -1,3 +1,4 @@
+import type { ConnectChoice } from "@appliedblockchain/giano-wallet-core";
 import {
 	NOT_CONNECTED_REASON,
 	RPC_ERRORS,
@@ -6,7 +7,14 @@ import {
 } from "@appliedblockchain/giano-wallet-transport";
 import type { WalletConfig } from "./config";
 import { type ConnectionGrants, createConnectionGrants } from "./grants";
-import { createRequestStore, type RequestStore, toRpcError } from "./requests";
+import { hasPasskeyOnDevice } from "./passkey-on-device";
+import {
+	type ConnectOffer,
+	type ConsentDecision,
+	createRequestStore,
+	type RequestStore,
+	toRpcError,
+} from "./requests";
 import type { WalletRuntime, WalletRuntimes } from "./runtimes";
 import { checkSelfCall, OPERATION_METHODS } from "./self-calls";
 
@@ -214,8 +222,12 @@ export function createHostRequestHandler({
 		// the account can change while the user decides.
 		const checked = assertNoSelfCall(runtime, method, params);
 		if (checked) pinSender(method, params, checked);
+		// How a connect signs in, decided before the screen so it can label its buttons.
+		const connect =
+			method === "eth_requestAccounts" ? connectOfferFor(runtime) : undefined;
+		let decision: ConsentDecision = "primary";
 		if (needsConsent) {
-			await requests.requestConsent({
+			decision = await requests.requestConsent({
 				kind:
 					method === "eth_requestAccounts"
 						? "connect"
@@ -230,6 +242,7 @@ export function createHostRequestHandler({
 				chainId: runtime.chainId,
 				chainName: runtime.chainName,
 				runtime,
+				...(connect ? { connect } : {}),
 			});
 		}
 		let forwarded = params;
@@ -242,6 +255,10 @@ export function createHostRequestHandler({
 			if (account) forwarded = pinSender(method, params, account);
 		}
 		let result: unknown;
+		// The user's choice applies to this connect alone.
+		if (connect) {
+			runtime.injection.setConnectChoice(connectChoiceFor(connect, decision));
+		}
 		try {
 			result = await runtime.provider.request({
 				method,
@@ -249,6 +266,8 @@ export function createHostRequestHandler({
 			} as never);
 		} catch (error) {
 			throw toRpcError(error, runtime.injection.isWalletApiUrl);
+		} finally {
+			if (connect) runtime.injection.setConnectChoice(null);
 		}
 		// The grant is recorded only once the user approved AND the account was established: a
 		// cancelled passkey ceremony after the approval connects nothing.
@@ -393,4 +412,28 @@ export function createWalletHost({
 			return transport.dappOrigin;
 		},
 	};
+}
+
+/**
+ * What a connect offers (see {@link ConnectOffer}): continue a session, sign in with a passkey this
+ * device is known to hold, or the default for a device that has never signed in here.
+ */
+function connectOfferFor(runtime: WalletRuntime): ConnectOffer {
+	if (runtime.injection.getSessionToken()) return { primary: "session" };
+	if (hasPasskeyOnDevice()) {
+		return { primary: "held-passkey", alternative: "new-wallet" };
+	}
+	return { primary: "default", alternative: "held-passkey" };
+}
+
+/** The injection's connect choice for the button the user pressed. */
+function connectChoiceFor(
+	offer: ConnectOffer,
+	decision: ConsentDecision,
+): ConnectChoice | null {
+	if (offer.primary === "session") return null;
+	if (offer.primary === "held-passkey") {
+		return decision === "primary" ? "existing" : "new";
+	}
+	return decision === "primary" ? null : "existing";
 }
