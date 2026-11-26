@@ -36,6 +36,7 @@
 		"@appliedblockchain/giano-wallet-kit": "workspace:^",
 		"@playwright/test": "1.61.1",
 		"esbuild": "0.25.4",
+		"jsqr": "1.4.0",
 		"portless": "0.15.5",
 		"viem": "2.57.10"
 	}
