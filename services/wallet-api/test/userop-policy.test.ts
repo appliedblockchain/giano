@@ -17,6 +17,9 @@ const PAYMASTER = "0x15a2075f2407427C5dd0BDe9d1966c48BD70E2f2";
 const baseConfig: PolicyConfig = {
 	maxCallGas: 1_000_000n,
 	maxVerificationGas: 1_000_000n,
+	maxPreVerificationGas: 500_000n,
+	maxPaymasterVerificationGas: 300_000n,
+	maxPaymasterPostOpGas: 300_000n,
 	maxFeePerGas: 100n * 10n ** 9n,
 	maxPriorityFeePerGas: 100n * 10n ** 9n,
 	allowedTargets: [],
@@ -67,9 +70,83 @@ describe("evaluatePolicy", () => {
 	it("accepts a compliant op and records every rule as an audit row", () => {
 		const decision = evaluatePolicy(baseOp, WALLET, baseConfig);
 		expect(decision.allowed).toBe(true);
-		// Eight rules since the sponsored-tenant cross-check joined them.
-		expect(decision.results).toHaveLength(8);
+		// Twelve since G6 added tenant-policy and the pre-verification and paymaster gas caps.
+		expect(decision.results.map((r) => r.rule)).toEqual([
+			"tenant-policy",
+			"sender-binding",
+			"call-gas-cap",
+			"verification-gas-cap",
+			"pre-verification-gas-cap",
+			"paymaster-verification-gas-cap",
+			"paymaster-post-op-gas-cap",
+			"max-fee-cap",
+			"priority-fee-cap",
+			"target-allowlist",
+			"paymaster-allowlist",
+			"sponsored-tenant-match",
+		]);
 		expect(decision.results.every((r) => r.passed)).toBe(true);
+	});
+
+	it("refuses every operation of a tenant whose stored policy is invalid (G6 R4)", () => {
+		const decision = evaluatePolicy(baseOp, WALLET, {
+			...baseConfig,
+			tenantPolicyError: "maxCallGas: expected a decimal string",
+		});
+		expect(decision.allowed).toBe(false);
+		expect(decision.rejectReason).toMatch(
+			/^tenant-policy: .*maxCallGas: expected a decimal string/,
+		);
+	});
+
+	it("caps preVerificationGas and the paymaster gas limits (G6 R3)", () => {
+		expect(
+			evaluatePolicy(
+				{ ...baseOp, preVerificationGas: 600_000n },
+				WALLET,
+				baseConfig,
+			).rejectReason,
+		).toContain("pre-verification-gas-cap");
+		const sponsored = { ...baseOp, paymaster: PAYMASTER as `0x${string}` };
+		expect(
+			evaluatePolicy(
+				{ ...sponsored, paymasterVerificationGasLimit: 400_000n },
+				WALLET,
+				baseConfig,
+			).rejectReason,
+		).toContain("paymaster-verification-gas-cap");
+		expect(
+			evaluatePolicy(
+				{ ...sponsored, paymasterPostOpGasLimit: 400_000n },
+				WALLET,
+				baseConfig,
+			).rejectReason,
+		).toContain("paymaster-post-op-gas-cap");
+		expect(
+			evaluatePolicy(
+				{
+					...sponsored,
+					paymasterVerificationGasLimit: 300_000n,
+					paymasterPostOpGasLimit: 300_000n,
+				},
+				WALLET,
+				baseConfig,
+			).allowed,
+		).toBe(true);
+	});
+
+	it("passes the paymaster gas caps for an operation with no paymaster", () => {
+		const decision = evaluatePolicy(
+			// stray limits without a paymaster are not paid for by anyone
+			{ ...baseOp, paymasterPostOpGasLimit: 10_000_000n },
+			WALLET,
+			baseConfig,
+		);
+		expect(decision.allowed).toBe(true);
+		expect(
+			decision.results.find((r) => r.rule === "paymaster-post-op-gas-cap")
+				?.detail,
+		).toBe("no paymaster in op");
 	});
 
 	it("rejects sender not matching the session wallet", () => {

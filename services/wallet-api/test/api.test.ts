@@ -814,6 +814,59 @@ describe("userop relay", () => {
 		);
 	});
 
+	it("fails closed when the tenant's stored policy cannot be parsed (G6 R4)", async () => {
+		const [stored] = await ctx.db
+			.select({ policy: tenants.policy })
+			.from(tenants)
+			.where(eq(tenants.slug, TENANT_A.slug));
+		// A row the write schema would refuse, as a manual edit or an old schema could leave it.
+		await ctx.db
+			.update(tenants)
+			.set({ policy: { maxCallGas: 12345, perChain: { x: {} } } })
+			.where(eq(tenants.slug, TENANT_A.slug));
+		try {
+			const sendsBefore = ctx.bundlerCalls.filter(
+				(c) => c.method === "eth_sendUserOperation",
+			).length;
+			const res = await ctx.app.inject({
+				method: "POST",
+				url: "/v1/userops",
+				headers: { authorization: `Bearer ${sessionToken}` },
+				payload: { userOperation: makeOp(40) },
+			});
+			expect(res.statusCode).toBe(403);
+			const body = res.json() as {
+				message: string;
+				policy: { rule: string; passed: boolean }[];
+			};
+			expect(body.message).toMatch(/^tenant-policy: /);
+			expect(body.policy[0]).toMatchObject({
+				rule: "tenant-policy",
+				passed: false,
+			});
+			// nothing reached the bundler, and the refusal is counted under its own rule
+			expect(
+				ctx.bundlerCalls.filter((c) => c.method === "eth_sendUserOperation")
+					.length,
+			).toBe(sendsBefore);
+			const metrics = await ctx.app.inject({
+				method: "GET",
+				url: "/metrics",
+				headers: ctx.config.METRICS_BEARER_TOKEN
+					? { authorization: `Bearer ${ctx.config.METRICS_BEARER_TOKEN}` }
+					: {},
+			});
+			expect(metrics.body).toMatch(
+				/giano_userop_policy_rejections_total\{rule="tenant-policy",tenant="[^"]+",chain="\d+"\} [1-9]/,
+			);
+		} finally {
+			await ctx.db
+				.update(tenants)
+				.set({ policy: stored.policy })
+				.where(eq(tenants.slug, TENANT_A.slug));
+		}
+	});
+
 	it("never accepts an entryPoint from the request body", async () => {
 		const op = {
 			...makeOp(5),

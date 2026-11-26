@@ -37,6 +37,7 @@ import useropRoutes from "./routes/userops.js";
 import walletManagementRoutes from "./routes/wallet-management.js";
 import webauthnRoutes from "./routes/webauthn.js";
 import wellKnownRoutes from "./routes/well-known.js";
+import { FALLBACK_FEE_CAPS } from "./services/chain-fee-caps.js";
 import { buildChainRegistry, type ChainRegistry } from "./services/chains.js";
 import { createChallengeService } from "./services/challenges.js";
 import { createDriftStore, type DriftStore } from "./services/drift.js";
@@ -302,12 +303,15 @@ export async function buildApp({
 		db,
 		config,
 		// deployment-wide default caps; the chain descriptor's policy and tenants.policy
-		// override per field, per chain (mergePolicy)
+		// override per field, per chain (mergePolicy). The fee caps were already resolved per chain
+		// (config.ts), so these apply only to a chain nothing gave one to.
 		defaultPolicy: {
 			maxCallGas: config.USEROP_MAX_CALL_GAS,
 			maxVerificationGas: config.USEROP_MAX_VERIFICATION_GAS,
-			maxFeePerGas: config.USEROP_MAX_FEE_PER_GAS,
-			maxPriorityFeePerGas: config.USEROP_MAX_PRIORITY_FEE_PER_GAS,
+			maxPreVerificationGas: config.USEROP_MAX_PRE_VERIFICATION_GAS,
+			maxPaymasterVerificationGas: config.USEROP_MAX_PAYMASTER_VERIFICATION_GAS,
+			maxPaymasterPostOpGas: config.USEROP_MAX_PAYMASTER_POST_OP_GAS,
+			...FALLBACK_FEE_CAPS,
 		},
 		metrics: app.metrics,
 	});

@@ -5,6 +5,9 @@ import { decodeFunctionData } from "viem";
 /**
  * Policy pipeline for relayed user operations. Every rule produces an audit entry;
  * the full list is persisted on the userop_log row whether accepted or rejected.
+ *
+ * What it protects, and the threat behind each rule, is written down in the README's "Relay
+ * policy" section. Add a line there with every new rule.
  */
 
 export type PolicyRuleResult = {
@@ -39,9 +42,12 @@ export function decodeSponsoredTenantId(
 export type PolicyConfig = {
 	maxCallGas: bigint;
 	maxVerificationGas: bigint;
+	maxPreVerificationGas: bigint;
+	maxPaymasterVerificationGas: bigint;
+	maxPaymasterPostOpGas: bigint;
 	maxFeePerGas: bigint;
 	maxPriorityFeePerGas: bigint;
-	/** lowercase addresses; empty = no restriction */
+	/** lowercase addresses; empty = no restriction (an `"any"` choice resolves to this) */
 	allowedTargets: string[];
 	/** lowercase addresses; empty = no restriction */
 	allowedPaymasters: string[];
@@ -50,6 +56,11 @@ export type PolicyConfig = {
 	 * operation sponsored by Giano's paymaster must name it.
 	 */
 	sponsorshipTenantId?: Hex;
+	/**
+	 * Set when the tenant's stored policy could not be parsed. The `tenant-policy` rule then refuses
+	 * the operation: a broken policy must never loosen the relay to the deployment defaults.
+	 */
+	tenantPolicyError?: string;
 };
 
 export type PolicyUserOp = {
@@ -61,7 +72,11 @@ export type PolicyUserOp = {
 	maxFeePerGas: bigint;
 	maxPriorityFeePerGas: bigint;
 	paymaster?: Address;
+	paymasterVerificationGasLimit?: bigint;
+	paymasterPostOpGasLimit?: bigint;
 	paymasterData?: Hex;
+	// `factory`/`factoryData` are deliberately absent: sender binding and the EntryPoint's own
+	// checks leave a mismatched factory nothing to do (README, "Relay policy").
 };
 
 /** Decodes execute/executeBatch calldata into target addresses. Unknown selectors → null. */
@@ -96,6 +111,17 @@ export function evaluatePolicy(
 	const pass = (rule: string, detail?: string) =>
 		results.push({ rule, passed: true, detail });
 
+	// 0. the tenant's own policy must be readable. If it is not, no cap or allowlist below is the
+	//    tenant's, so the operation is refused rather than checked against the deployment defaults.
+	if (config.tenantPolicyError !== undefined) {
+		fail(
+			"tenant-policy",
+			`the tenant's stored policy is invalid, so its operations are refused: ${config.tenantPolicyError}`,
+		);
+	} else {
+		pass("tenant-policy");
+	}
+
 	// 1. sender binding: the op must be from the session credential's wallet
 	if (userOp.sender.toLowerCase() !== sessionWalletAddress.toLowerCase()) {
 		fail(
@@ -123,6 +149,37 @@ export function evaluatePolicy(
 	} else {
 		pass("verification-gas-cap");
 	}
+
+	if (userOp.preVerificationGas > config.maxPreVerificationGas) {
+		fail(
+			"pre-verification-gas-cap",
+			`preVerificationGas ${userOp.preVerificationGas} > cap ${config.maxPreVerificationGas}`,
+		);
+	} else {
+		pass("pre-verification-gas-cap");
+	}
+	const paymasterGasCap = (
+		rule: string,
+		field: string,
+		value: bigint | undefined,
+		cap: bigint,
+	) => {
+		if (!userOp.paymaster) pass(rule, "no paymaster in op");
+		else if ((value ?? 0n) > cap) fail(rule, `${field} ${value} > cap ${cap}`);
+		else pass(rule);
+	};
+	paymasterGasCap(
+		"paymaster-verification-gas-cap",
+		"paymasterVerificationGasLimit",
+		userOp.paymasterVerificationGasLimit,
+		config.maxPaymasterVerificationGas,
+	);
+	paymasterGasCap(
+		"paymaster-post-op-gas-cap",
+		"paymasterPostOpGasLimit",
+		userOp.paymasterPostOpGasLimit,
+		config.maxPaymasterPostOpGas,
+	);
 
 	// 3. fee caps
 	if (userOp.maxFeePerGas > config.maxFeePerGas) {
