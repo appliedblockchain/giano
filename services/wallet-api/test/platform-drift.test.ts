@@ -464,14 +464,23 @@ describe("GET /v1/platform/drift", () => {
 	});
 
 	it("lists an active tenant with sponsorship on and no registration as unregistered, not as drift", async () => {
-		const sponsorship = (enabled: boolean) =>
+		const store = (config: Record<string, unknown>) =>
 			ctx.db
 				.insert(tenantSponsorship)
-				.values({ tenantId: idA, chainId: 31337, config: { enabled } })
+				.values({ tenantId: idA, chainId: 31337, config })
 				.onConflictDoUpdate({
 					target: [tenantSponsorship.tenantId, tenantSponsorship.chainId],
-					set: { config: { enabled } },
+					set: { config },
 				});
+		// A configuration the sponsorship service would act on: enabled, capped, allow-listed.
+		const sponsorship = (enabled: boolean) =>
+			store({
+				enabled,
+				maxCostPerTxWei: "1000000000000000",
+				allowlist: [
+					{ contract: OTHER.toLowerCase(), functions: ["0xa9059cbb"] },
+				],
+			});
 		const unregistered = async () => {
 			ctx.app.drift.clear(31337);
 			const token = await platformSignIn(ctx.app, ADMIN);
@@ -502,6 +511,11 @@ describe("GET /v1/platform/drift", () => {
 
 			// switched off
 			await sponsorship(false);
+			expect((await unregistered()).unregistered).toEqual([]);
+
+			// `enabled: true` but not a rule set the service accepts (no cap, no allowlist): it is read
+			// as deny-all, so it sponsors nothing and waits for nothing
+			await store({ enabled: true });
 			expect((await unregistered()).unregistered).toEqual([]);
 
 			// registered: no longer waiting

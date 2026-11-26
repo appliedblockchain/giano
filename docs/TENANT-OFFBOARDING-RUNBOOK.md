@@ -23,7 +23,7 @@ Do the steps in this order. Each one names who does it and how to check it.
 
 | # | Step | Who | How | Check |
 | --- | --- | --- | --- | --- |
-| 0 | **Notice to users.** Agree a date with the tenant. Until then the tenant stays active, so its users can still sign in and move funds or add another owner (§4). The tenant may switch its sponsorship off first (`PUT /v1/admin/sponsorship` with `enabled: false`). | Tenant | Its own channels | Agreed date passed |
+| 0 | **Notice to users.** Agree a date with the tenant. Until then the tenant stays active, so its users can still sign in and move funds or add another owner (§4). The tenant keeps its sponsorship switched on and funded on every chain until then: adding or removing an owner is a sponsored wallet-management operation, and switching sponsorship off refuses it too, so a user could not add the owner that keeps their wallet usable. It ends with suspension (step 2). | Tenant | Its own channels | Agreed date passed |
 | 1 | **Read the tenant's position.** Note its balance, deficit and withdrawal address on every chain, and give them to the tenant. After step 2 its admin keys stop working, so it can no longer read them through `/v1/admin/sponsorship/balance`. | Platform admin | Console: tenant page, *On chain* card for each chain | Figures recorded |
 | 2 | **Suspend.** The tenant stops resolving on the next request on every replica: ceremonies, relay, sponsorship, RPC, `/.well-known/webauthn`, admin keys and user sessions all answer as for an unknown tenant. Nothing is deleted, and resume restores it. | Platform admin | Console *Suspend* with a reason, or `POST /v1/platform/tenants/:slug/suspend` `{ reason }` | `tenant_history` has a `suspend` entry with your session |
 | 3 | **Disable on every chain where it is registered.** Closes the window in which an authorisation signed before the suspension is still valid on chain (up to `SPONSORSHIP_VALIDITY_SECONDS`). | Platform admin holding `TENANT_ADMIN_ROLE` | Console: the step offered after *Suspend*, `setTenantEnabled(id, false)` per chain. Not timelocked. | Drift shows no `enabled-state` entry for the tenant |
@@ -74,9 +74,9 @@ What they lose:
   will not use the passkey anywhere else, and no other Giano tenant can take that RP ID. The wallet
   still exists, but nothing can sign for it with that passkey.
 
-So the notice period (step 0) matters: before it ends, users should move their funds out, or add an
-owner they control outside the tenant's wallet (for example an externally owned address, through
-the wallet's `addOwnerAddress`). An owner added that way can keep using the wallet with any
+So the notice period (step 0) matters, and sponsorship must stay on through it: before it ends,
+users should move their funds out, or add an owner they control outside the tenant's wallet (for
+example an externally owned address, through the wallet's `addOwnerAddress`). An owner added that way can keep using the wallet with any
 ERC-4337 bundler and pay its own gas.
 
 ## 5. Open decisions

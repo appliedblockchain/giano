@@ -8,6 +8,7 @@ import {
 	tenants,
 } from "../db/schema.js";
 import type { PaymasterReader } from "./paymaster-contract.js";
+import { parseSponsorshipConfig } from "./sponsorship-config.js";
 
 /**
  * Drift (B5, specs/PLATFORM-ADMIN-SPECS.md §5, openspec tenant-chain-drift): where wallet-api's
@@ -227,9 +228,14 @@ export async function computeDrift(options: {
 			.select({ cursor: paymasterState.lastSyncedBlock })
 			.from(paymasterState)
 			.where(eq(paymasterState.chainId, chainId)),
-		// The config is validated on every write; a row whose `enabled` is not true does not sponsor.
+		// Narrowed in SQL to rows that say `enabled`, then parsed below as the sponsorship service
+		// reads them: a row that does not parse sponsors nothing, so it waits for nothing.
 		db
-			.select({ id: tenants.id, slug: tenants.slug })
+			.select({
+				id: tenants.id,
+				slug: tenants.slug,
+				config: tenantSponsorship.config,
+			})
 			.from(tenantSponsorship)
 			.innerJoin(tenants, eq(tenants.id, tenantSponsorship.tenantId))
 			.where(
@@ -308,6 +314,10 @@ export async function computeDrift(options: {
 		unchecked: uuids.filter((_, index) => perTenant[index].unchecked),
 		unregistered: sponsoring
 			.filter((row) => !registered.has(row.id))
+			.filter((row) => {
+				const parsed = parseSponsorshipConfig(row.config);
+				return parsed.ok && parsed.config.enabled;
+			})
 			.map((row) => ({ tenantId: row.id, slug: row.slug })),
 	};
 }
