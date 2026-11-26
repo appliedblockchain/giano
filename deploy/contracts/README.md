@@ -114,12 +114,14 @@ pnpm contracts:doctor --chain base-sepolia --env-file deploy/contracts/base-sepo
 
 All commands accept `--config <file>` in place of `--chain`. Operator commands support `--plan` to
 verify the selected target without invoking their underlying workflow. For `contracts:provision`
-and `contracts:sponsorship`, `--plan` runs every check of a real run and shows what the run would
-send: the provisioning transactions with the ETH they carry, or the sponsorship rules. It sends
-nothing and needs no terminal. The launcher names the missing keys, ROLE_ADMIN and the tenant and
+and `contracts:sponsorship`, `--plan` runs the checks a real run makes before it sends anything, and
+shows what the run would send: the provisioning transactions with the ETH they carry, or the
+sponsorship rules. It sends nothing and needs no terminal. The launcher names the missing keys, ROLE_ADMIN and the tenant and
 API settings together; the workflow then checks the role holders, the withdraw address and the
 sponsorship allowlist, and stops at the first problem. A provisioning plan fails when the operator
-holds less ETH than those transactions carry plus a gas budget. With `--signed-rpc`, the provisioning plan
+holds less ETH than those transactions carry plus a gas budget. A passing plan does not guarantee a
+passing run: the plan skips the checks a provisioning run makes after its transactions, and the
+sponsorship plan does not contact wallet-api. With `--signed-rpc`, the provisioning plan
 signs its reads, as the run does. Provisioning and policy
 writes require exact-text confirmation; noninteractive writes are refused. Existing exported
 variables take precedence over dotenv data. Conflicting CHAIN_ID/DEPLOY_CHAIN_ID inputs stop the

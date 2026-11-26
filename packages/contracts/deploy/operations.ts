@@ -51,7 +51,7 @@ async function main() {
 	const [command] = positionals;
 	if (values.help) {
 		console.log(
-			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation] [--signed-rpc]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\n--plan on provision and sponsorship runs every check of a real run and shows what it would send, and sends nothing.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc makes provision, timelock and handoff sign every request with the key they send from.",
+			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation] [--signed-rpc]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\n--plan on provision and sponsorship runs the checks a real run makes before it sends anything, shows what it would send, and sends nothing.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc makes provision, timelock and handoff sign every request with the key they send from.",
 		);
 		return;
 	}
@@ -147,8 +147,8 @@ async function main() {
 				(await rl.question(`Type '${phrase}' to continue: `)).trim() === phrase
 			);
 		};
-		// provision and sponsorship plan by running every check of a real run, then their workflow in
-		// plan mode, which sends nothing (G48 R3). The other commands stop here.
+		// provision and sponsorship plan by running the checks a real run makes before it sends anything,
+		// then their workflow in plan mode, which sends nothing (G48 R3). The other commands stop here.
 		const writes = command === "provision" || command === "sponsorship";
 		if (values.plan && !writes) {
 			console.log(

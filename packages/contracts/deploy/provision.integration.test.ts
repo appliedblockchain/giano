@@ -206,7 +206,8 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			nonce,
 		);
 
-		// --plan runs every check of a run and lists what the run would send, and sends nothing (G48 R3).
+		// --plan runs the checks before the first transaction, lists what the run would send, and sends
+		// nothing (G48 R3).
 		const literal = (text: string) =>
 			text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 		const planned = provision({ extra: ["--plan"] });

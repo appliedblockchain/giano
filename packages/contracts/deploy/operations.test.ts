@@ -104,7 +104,7 @@ test("all operator plans use the selected persisted profile, load dotenv without
 			assert.match(stdout, /Custom test chain \(54321\)/);
 			assert.match(stdout, /Read-only plan/);
 		}
-		// provision and sponsorship plan with every check of a real run (G48 R3): here they name every
+		// provision and sponsorship plan with the checks a real run makes first (G48 R3): they name every
 		// setting the operator file lacks, before any read beyond the RPC identity check.
 		const missing = {
 			provision: [

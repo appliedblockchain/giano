@@ -18,8 +18,9 @@
 # Usage: pnpm contracts:provision --chain <profile> --env-file <file> [--signed-rpc] [--plan]
 #   --signed-rpc signs every request with DEPLOYER_PRIVATE_KEY, for an RPC that replaces `from` on
 #   unsigned calls (Silent Data). The launcher passes it here as GIANO_SIGNED_RPC=1.
-#   --plan runs every check below and lists the transactions provisioning would send, but sends
-#   nothing. The launcher passes it here as GIANO_PLAN=1.
+#   --plan runs the checks below that come before the first transaction and lists the transactions
+#   provisioning would send, but sends nothing. It skips the checks after the transactions. The
+#   launcher passes it here as GIANO_PLAN=1.
 #   Idempotent for roles, signer and stake. NOT for funding: re-running adds TENANT_FUND_ETH to
 #   each tenant's balance again rather than topping it up to that figure.
 set -euo pipefail
