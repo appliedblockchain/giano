@@ -490,6 +490,21 @@ describe("pending-addition lifecycle (WM-18…WM-23)", () => {
 		expect(redeemed.statusCode).toBe(400);
 		expect((redeemed.json() as { error: string }).error).toBe("bad-challenge");
 		expect((await listCredentials(session.token)).length).toBe(1);
+		// The refusal must not burn the challenge: the same claim challenge still fills the slot.
+		const filled = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim/fill",
+			headers: { origin: ORIGIN },
+			payload: {
+				claimCode: slot.claimCode,
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: ORIGIN,
+					rpId: TENANT_A.rpId,
+				}),
+			},
+		});
+		expect(filled.statusCode).toBe(200);
 	});
 
 	it("refuses a registration challenge at fill and leaves the slot open for its own claim", async () => {
