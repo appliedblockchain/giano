@@ -520,6 +520,18 @@ paymaster's timelock in production, so a redirect is a public, queued proposal t
 published delay; the console builds the proposal rather than sending it. It is never an API
 action.
 
+The whole offboarding procedure, with what delete keeps and removes and what the tenant's users
+keep, is [`docs/TENANT-OFFBOARDING-RUNBOOK.md`](../docs/TENANT-OFFBOARDING-RUNBOOK.md).
+
+### 5.4 On-chain readiness
+
+A tenant can sponsor on a chain only once it is registered on that chain's paymaster and enabled
+there. Registration is per chain, so it is not a lifecycle state. wallet-api reads the tenant's
+paymaster record on every sponsorship decision, with its fee. A tenant that has switched
+sponsorship on and is not registered, or is disabled, is refused with `sponsorship-disabled` under
+the rule `paymaster-tenant`, before any reservation or signature, rather than authorised into an
+on-chain `UnknownTenant` or `TenantDisabled` revert (openspec `tenant-chain-readiness`).
+
 ---
 
 ## 6. Keeping the invariant under runtime writes
@@ -810,6 +822,10 @@ is served while it is no older than two reconcile intervals, and forgotten when 
 the watcher lock or a drift pass fails. Otherwise, as on a replica that does not run that chain's
 watcher, it is computed on request from the same database and chain, reused for 15 seconds, and
 shared while in flight. A chain whose drift cannot be computed is an error for that chain alone.
+
+Beside the drift, each chain's result lists `unregistered`: active tenants with sponsorship switched
+on for that chain that its paymaster has not registered, waiting for `registerTenant` (§5.4). It is
+not drift. It is the metric `giano_paymaster_unregistered_tenants{chain}` and a doctor warning.
 
 It is also the metrics `giano_paymaster_drifted_tenants{chain}` (this deployment's tenants) and
 `giano_paymaster_unknown_tenants{chain}` (tenants with no registry row: on a shared paymaster,
