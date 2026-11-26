@@ -158,7 +158,11 @@ Alto did. A resubmission of an operation it already has returns the same hash.
 It is the **same value wallet-api reads** (and paymaster-admin, as `GIANO_DEPLOYMENTS`), usually
 from the same secret, so the services cannot disagree about a chain. Fields more than one service
 reads sit at the top of each entry, and each service's own settings sit in its section. Each
-service validates its own section strictly and accepts the others' as-is.
+service validates its own section strictly and accepts the others' as-is. One exception:
+wallet-api also reads `bundler.chainType` (unless `bundler.enabled` is false) for its gasless
+check, so changing it changes wallet-api's fee-0 sponsorship decision too. With `auto`, each
+service checks the chain through its own RPC (wallet-api through `rpcUrl`, the bundler through
+`bundler.rpcUrl` when set); set `chainType` explicitly when the two URLs differ.
 
 ```jsonc
 [

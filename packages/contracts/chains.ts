@@ -197,7 +197,9 @@ const foreignSection: ForeignSection = z
  * the top — `rpcUrl`, `entryPoint` (wallet-api hashes against it, the bundler submits to it) and
  * `sponsorshipPaymaster` (wallet-api sponsors through it, the console administers it); each
  * service's own settings sit in its section, which that service validates strictly while accepting
- * the others' as-is. `entryPoint` and `sponsorshipPaymaster` default from the contracts registry.
+ * the others' as-is. One exception: wallet-api also reads `bundler.chainType` (unless
+ * `bundler.enabled` is false) for its gasless check, so a configured type is the answer for both.
+ * `entryPoint` and `sponsorshipPaymaster` default from the contracts registry.
  * Submission keys never appear here: the document reaches wallet-api, which must not hold them.
  */
 type BackendChainFields = {

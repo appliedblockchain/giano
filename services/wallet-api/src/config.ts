@@ -65,8 +65,11 @@ export type ResolvedChain = {
 	sponsorshipPaymasterDeployBlock?: bigint;
 	/**
 	 * The chain's type as giano-bundler is configured for it: the entry's `bundler.chainType`, read
-	 * from the same GIANO_CHAINS document, so both services decide OP Stack the same way. Unset (the
-	 * single-chain shorthand, or a chain with no `bundler` section) means `auto`.
+	 * from the same GIANO_CHAINS document. A configured `default` or `op-stack` is the answer for both
+	 * services. With `auto`, each service checks the GasPriceOracle code through its own RPC:
+	 * wallet-api through `rpcUrl`, giano-bundler through `bundler.rpcUrl` when it is set. Set
+	 * `chainType` explicitly when the two URLs differ. Unset (the single-chain shorthand, or a chain
+	 * with no `bundler` section) means `auto`.
 	 */
 	chainType?: ChainType | "auto";
 	/**
