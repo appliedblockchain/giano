@@ -11,6 +11,7 @@ import {
 	ChainsNotice,
 	FlowShell,
 	inputStyle,
+	PairingQr,
 	RefusalNotice,
 } from "./shared";
 
@@ -76,10 +77,14 @@ export function AddFlow({
 		return (
 			<FlowShell title="On your other device…">
 				<p>
-					1. Open <b>{window.location.origin}</b> on the other device and choose{" "}
-					<b>“Add this device to an existing wallet”</b>.
+					1. Scan this code with the other device's camera. It opens{" "}
+					<b>{window.location.origin}</b> with the code filled in.
 				</p>
-				<p>2. Enter this code there:</p>
+				<PairingQr url={flow.pairingUrl} />
+				<p>
+					Or open <b>{window.location.origin}</b> there, choose{" "}
+					<b>“Add this device to an existing wallet”</b>, and enter:
+				</p>
 				<div
 					className="data-box"
 					style={{ fontSize: 26, textAlign: "center", letterSpacing: 3 }}
@@ -88,8 +93,9 @@ export function AddFlow({
 					{formatted}
 				</div>
 				<p>
-					The code only routes the other device here — it cannot add anything by
-					itself. It expires at {new Date(flow.expiresAt).toLocaleTimeString()}.
+					2. Create the passkey there, then compare the fingerprints. The code
+					only routes the other device here — it cannot add anything by itself.
+					It expires at {new Date(flow.expiresAt).toLocaleTimeString()}.
 				</p>
 				<p>
 					<span className="spinner" /> Waiting for the other device…
