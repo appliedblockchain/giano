@@ -387,9 +387,12 @@ describe("registration ceremony", () => {
 			},
 		});
 		expect(res.statusCode).toBe(400);
-		expect((res.json() as { error: string }).error).toBe(
-			"challenge-user-mismatch",
-		);
+		// The message pins the G1 check: without it, the insert conflict further down throws the
+		// same code with "challenge no longer matches this user".
+		expect(res.json()).toMatchObject({
+			error: "challenge-user-mismatch",
+			message: "challenge was issued for a different user",
+		});
 		// The victim still has only their own credential, and no user was created for the fresh id.
 		expect((await getOptions("victim-unbound")).credentialIds).toEqual([
 			victim.credentialId,
@@ -427,9 +430,10 @@ describe("registration ceremony", () => {
 			},
 		});
 		expect(res.statusCode).toBe(400);
-		expect((res.json() as { error: string }).error).toBe(
-			"challenge-user-mismatch",
-		);
+		expect(res.json()).toMatchObject({
+			error: "challenge-user-mismatch",
+			message: "challenge was issued for a different user",
+		});
 		expect(
 			(await getOptions("victim-unbound-closed", undefined, TENANT_B, adminKey))
 				.credentialIds,
@@ -438,6 +442,64 @@ describe("registration ceremony", () => {
 			(
 				await getOptions(
 					"attacker-fresh-id-closed",
+					undefined,
+					TENANT_B,
+					adminKey,
+				)
+			).userExists,
+		).toBe(false);
+	});
+
+	it("rejects a challenge issued for a new id when the body names an existing user whose passkeys were all removed (closed registration)", async () => {
+		const adminKey = TENANT_B.adminKey;
+		await register(
+			"victim-unbound-removed",
+			createAuthenticator(),
+			TENANT_B,
+			adminKey,
+		);
+		// With no active passkey, a closed tenant lets the user register again (registrationRefusal
+		// returns null), so only the challenge binding stops a challenge issued for another id.
+		await removeCredentials("victim-unbound-removed", TENANT_B);
+		const options = await getOptions(
+			"attacker-fresh-id-removed",
+			"registration",
+			TENANT_B,
+			adminKey,
+		);
+		expect(options.userExists).toBe(false);
+		const res = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/webauthn/registration/verify",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				externalUserId: "victim-unbound-removed",
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge: options.challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect(res.json()).toMatchObject({
+			error: "challenge-user-mismatch",
+			message: "challenge was issued for a different user",
+		});
+		expect(
+			(
+				await getOptions(
+					"victim-unbound-removed",
+					undefined,
+					TENANT_B,
+					adminKey,
+				)
+			).credentialIds,
+		).toEqual([]);
+		expect(
+			(
+				await getOptions(
+					"attacker-fresh-id-removed",
 					undefined,
 					TENANT_B,
 					adminKey,
