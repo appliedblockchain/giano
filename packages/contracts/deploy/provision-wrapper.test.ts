@@ -289,7 +289,10 @@ test("--plan (GIANO_PLAN=1) reaches provision:paymaster, and the doctor does not
 	// Without it, the run is not a plan and the doctor verifies it.
 	const run = pnpmCommands("");
 	assert.ok(!run.some((line) => line.includes("--plan")));
-	assert.ok(run.some((line) => line.includes("doctor chain")));
+	// It checks the paymaster before the hand-off: a published timelock cannot hold its roles yet.
+	const doctor = run.filter((line) => line.includes("doctor chain"));
+	assert.equal(doctor.length, 1);
+	assert.match(doctor[0], / --before-handoff$/);
 });
 
 test("a sponsorship plan (GIANO_PLAN=1) makes the reads of a run against the wallet-api, and installs nothing", async () => {

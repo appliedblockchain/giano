@@ -41,6 +41,14 @@ export function provisioningIsMainnet(
  */
 export const MIN_STAKE_WEI = 100_000_000_000_000_000n;
 
+/**
+ * The least EntryPoint deposit a paymaster needs (0.02 ETH). Below it, sponsored operations start
+ * failing in ways that look like client bugs. The doctor fails a paymaster below it, and
+ * provisioning checks it too. It is the same value as `LOW_DEPOSIT_WEI` in
+ * `packages/paymaster-sdk/src/health.ts`: change both.
+ */
+export const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n;
+
 /** The immediate roles, sent directly rather than through the timelock: one holder each on a mainnet. */
 export const IMMEDIATE_ROLES = [
 	"signer-admin",

@@ -22,10 +22,15 @@
  *     [--role-holder-signer-admin 0x.. --role-holder-pauser 0x.. …] | [--grant-all-to 0x..]
  *     [--signed-rpc] [--plan]
  *
+ * Before its first transaction, a run projects the state it would leave and refuses to start when
+ * that state fails the checks the run makes at its end. They are the checks the wrapper's doctor
+ * makes after it: a stake of at least 0.1 ETH, an EntryPoint deposit of at least 0.02 ETH, exactly
+ * the --signer signers, a funded tenant and no tenant deficit across the whole roster, the
+ * accounting invariant, and ROLE_ADMIN and UPGRADER_ROLE each on this key alone until the hand-off.
+ *
  * `--plan` runs every check of a real run, reads the chain, and lists each transaction the run
  * would send, with the ETH it carries. It sends nothing. It fails when the key holds less ETH than
- * those transactions carry plus gas, and when the state the run would leave fails the checks a run
- * makes at its end (a stake, a signer, a funded tenant).
+ * those transactions carry plus gas, and when the state the run would leave fails the checks above.
  *
  * `--signed-rpc` signs every RPC request with the key, for an RPC that replaces `from` on an
  * unsigned eth_call or eth_estimateGas (Silent Data). Without it every role check fails there.
@@ -37,7 +42,8 @@
  *
  * `--grant-all-to` grants every role to one address instead. That is a development convenience and
  * the script says so loudly: it collapses the separation D13 exists to create. When that address is
- * not this key, this key takes the run's roles and gives them up at the end, as with a holder per role.
+ * not this key, this key takes the run's roles and gives them up at the end, as with a holder per role,
+ * and keeps the timelocked roles until the hand-off.
  */
 import {
 	Contract,
@@ -52,12 +58,14 @@ import {
 	toUtf8String,
 	Wallet,
 	ZeroAddress,
+	ZeroHash,
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
 import { LOCAL_CHAIN_IDS } from "../chains";
 import { redactRpcUrls } from "../deploy/config";
 import { GAS_PRICE_HEADROOM } from "../deploy/funding";
 import {
+	LOW_DEPOSIT_WEI,
 	MIN_STAKE_WEI,
 	mainnetRoleProblems,
 	provisioningIsMainnet,
@@ -134,13 +142,29 @@ function parseArgs(argv: string[]): Args {
  */
 const RUN_ROLES = ["signer-admin", "stake-admin", "tenant-admin"] as const;
 
+/**
+ * The timelocked roles. They stay with this key, the ROLE_ADMIN, until contracts:handoff gives them
+ * to the timelock, unless a holder is named. --grant-all-to another address does not take them.
+ */
+const TIMELOCKED_ROLES = [
+	"upgrader",
+	"fee-admin",
+	"withdraw-address-admin",
+] as const;
+
+/** Tenants per `getTenants` call, as the doctor reads the roster. */
+const ROSTER_PAGE_SIZE = 50n;
+
 /** `value` in wei, or an error naming what it was for. */
 function ether(what: string, value: string): bigint {
+	let wei: bigint;
 	try {
-		return parseEther(value);
+		wei = parseEther(value);
 	} catch {
 		throw new Error(`${what} is not an ETH amount: ${value}`);
 	}
+	if (wei < 0n) throw new Error(`${what} is not an ETH amount: ${value}`);
+	return wei;
 }
 
 /**
@@ -239,20 +263,35 @@ function parseTenant(spec: string): TenantSpec {
 
 type TenantOutcome = { slug: string; balance: bigint; deficit: bigint };
 
-/** What the end-of-run checks read: the paymaster after a run, or as a plan projects it. */
+/**
+ * What the end-of-run checks read: the paymaster after a run, or as a run would leave it. They are
+ * the checks the doctor makes after the provisioning wrapper (deploy/contracts/provision-paymaster.sh)
+ * runs this script, with the arguments the wrapper gives it.
+ */
 type Outcome = {
 	staked: boolean;
 	stake: bigint;
 	/** The paymaster's EntryPoint deposit. */
 	deposit: bigint;
 	signers: string[];
+	/** The --signer addresses. The wrapper's doctor expects exactly these signers. */
+	namedSigners: string[];
 	treasury: bigint;
+	/** Every tenant on the paymaster's roster, as the doctor reads it. */
 	tenants: TenantOutcome[];
+	/** This key, which the wrapper's doctor expects to hold ROLE_ADMIN alone until the hand-off. */
+	operator: string;
+	roleAdmins: string[];
+	upgraders: string[];
+	/** Who holds UPGRADER_ROLE alone until the hand-off: its named holder, or this key. */
+	upgrader: string;
+	defaultAdmins: bigint;
 };
 
 /**
- * Whether the paymaster can sponsor (R-24, R-60): what passed, and what failed. A run checks the
- * chain after its transactions. A plan checks the state those transactions would leave.
+ * Whether the paymaster can sponsor (R-24, R-60), and whether the doctor would pass it: what passed,
+ * and what failed. A run checks the state it would leave before its first transaction, and checks
+ * the chain after its last. A plan checks the state the run would leave.
  */
 function usabilityChecks(outcome: Outcome): {
 	passed: string[];
@@ -272,11 +311,25 @@ function usabilityChecks(outcome: Outcome): {
 
 	if (outcome.deposit === 0n)
 		failures.push("EntryPoint deposit is empty — nothing can be sponsored");
+	else if (outcome.deposit < LOW_DEPOSIT_WEI)
+		failures.push(
+			`EntryPoint deposit ${formatEther(outcome.deposit)} ETH is below the ${formatEther(LOW_DEPOSIT_WEI)} ETH minimum — sponsored operations start failing, and the doctor fails it. Fund the tenants with more.`,
+		);
 	else passed.push(`deposit: ${formatEther(outcome.deposit)} ETH`);
 
 	if (outcome.signers.length === 0)
 		failures.push("no authorised signing key — nothing can be authorised");
 	else passed.push(`signers: ${outcome.signers.join(", ")}`);
+	const unnamed =
+		outcome.namedSigners.length > 0
+			? outcome.signers.filter(
+					(signer) => !outcome.namedSigners.includes(signer),
+				)
+			: [];
+	if (unnamed.length > 0)
+		failures.push(
+			`signer(s) not named by --signer are authorised: ${unnamed.join(", ")}. The doctor expects exactly the named signers: remove the others first (removeSigner).`,
+		);
 
 	let claims = outcome.treasury;
 	for (const tenant of outcome.tenants) {
@@ -284,6 +337,10 @@ function usabilityChecks(outcome: Outcome): {
 		passed.push(
 			`${tenant.slug}: ${formatEther(tenant.balance)} ETH available, ${formatEther(tenant.deficit)} ETH deficit`,
 		);
+		if (tenant.deficit > 0n)
+			failures.push(
+				`tenant ${tenant.slug} carries a deficit of ${formatEther(tenant.deficit)} ETH — it cannot transact, and the doctor fails it. Fund it with more than its deficit.`,
+			);
 	}
 	if (
 		outcome.tenants.length > 0 &&
@@ -300,6 +357,26 @@ function usabilityChecks(outcome: Outcome): {
 	else
 		passed.push(
 			`invariant holds, ${formatEther(outcome.deposit - claims)} ETH unattributed slack`,
+		);
+
+	// The role topology the doctor checks until the hand-off (R-55).
+	const alone = (holders: string[], expected: string) =>
+		holders.length === 1 && holders[0] === expected;
+	if (alone(outcome.roleAdmins, outcome.operator))
+		passed.push(`ROLE_ADMIN: ${outcome.operator}`);
+	else
+		failures.push(
+			`ROLE_ADMIN is held by ${outcome.roleAdmins.join(", ")}. The doctor expects this key, ${outcome.operator}, alone until the hand-off.`,
+		);
+	if (alone(outcome.upgraders, outcome.upgrader))
+		passed.push(`UPGRADER_ROLE: ${outcome.upgrader}`);
+	else
+		failures.push(
+			`UPGRADER_ROLE would be held by ${outcome.upgraders.join(", ") || "no one"}. The doctor expects ${outcome.upgrader} alone until the hand-off.`,
+		);
+	if (outcome.defaultAdmins > 0n)
+		failures.push(
+			`DEFAULT_ADMIN_ROLE has ${outcome.defaultAdmins} holder(s): a superuser, which the doctor fails`,
 		);
 	return { passed, failures };
 }
@@ -441,6 +518,10 @@ async function main(): Promise<void> {
 			`  ⚠ --grant-all-to ${grantAllTo}: every role on one address. Development only — this`,
 		);
 		log("    collapses the role separation the contract exists to enforce.");
+		if (takesRunRoles)
+			log(
+				"    The timelocked roles stay with this key until the hand-off, as the doctor expects.",
+			);
 	}
 
 	const plan = flags.plan !== undefined;
@@ -448,6 +529,97 @@ async function main(): Promise<void> {
 		log("");
 		log("Plan only: the transactions a run would send now. Nothing is sent.");
 	}
+
+	const namedSigners = (repeated.signer ?? []).map((s) => getAddress(s));
+	const upgrader = getAddress(flags["role-holder-upgrader"] ?? wallet.address);
+	/** The addresses that hold `roleName` now. */
+	const holdersOf = async (roleName: string): Promise<string[]> => {
+		const role: string =
+			roleName === "DEFAULT_ADMIN_ROLE"
+				? ZeroHash
+				: await paymaster[roleName]();
+		const count: bigint = await paymaster.getRoleMemberCount(role);
+		const holders: string[] = [];
+		for (let i = 0n; i < count; i++)
+			holders.push(getAddress(await paymaster.getRoleMember(role, i)));
+		return holders;
+	};
+	/**
+	 * The paymaster's state, read as the doctor reads it: as it is now, or (`projected`) as this run
+	 * would leave it, with the stake, signers, registrations, deposits and role grants the run sends.
+	 */
+	const readOutcome = async (projected: boolean): Promise<Outcome> => {
+		const info = await entryPoint.getDepositInfo(paymasterAddress);
+		const stakes =
+			projected &&
+			stakeWei !== undefined &&
+			!(info.staked && info.stake >= stakeWei);
+		const signers = (await paymaster.getSigners()).map((s: string) =>
+			getAddress(s),
+		);
+		if (projected)
+			for (const signer of namedSigners)
+				if (!signers.includes(signer)) signers.push(signer);
+		let deposit: bigint = await entryPoint.balanceOf(paymasterAddress);
+
+		const roster = new Map<string, TenantOutcome>();
+		const count: bigint = await paymaster.tenantCount();
+		for (let start = 0n; start < count; start += ROSTER_PAGE_SIZE) {
+			const page = await paymaster.getTenants(start, ROSTER_PAGE_SIZE);
+			page.ids.forEach((id: string, i: number) => {
+				roster.set(id.toLowerCase(), {
+					slug: id,
+					balance: page.records[i].balance,
+					deficit: page.records[i].deficit,
+				});
+			});
+		}
+		for (const tenant of tenants) {
+			const row = roster.get(tenant.id);
+			// A tenant not on the roster is one the run registers; after a run, one it failed to.
+			if (!row && !projected) continue;
+			const state = row ?? { slug: tenant.slug, balance: 0n, deficit: 0n };
+			state.slug = tenant.slug;
+			if (projected) {
+				// depositFor clears the tenant's deficit first and credits the rest to its balance,
+				// while the EntryPoint deposit grows by the whole amount.
+				const funding = parseEther(tenant.fundEth);
+				let cleared = state.deficit;
+				if (funding < cleared) cleared = funding;
+				state.balance += funding - cleared;
+				state.deficit -= cleared;
+				deposit += funding;
+			}
+			roster.set(tenant.id, state);
+		}
+
+		const upgraders = await holdersOf("UPGRADER_ROLE");
+		if (projected && !upgraders.includes(upgrader)) upgraders.push(upgrader);
+		return {
+			staked: info.staked || stakes,
+			stake:
+				stakes && stakeWei !== undefined ? info.stake + stakeWei : info.stake,
+			deposit,
+			signers,
+			namedSigners,
+			treasury: await paymaster.treasury(),
+			tenants: [...roster.values()],
+			operator: getAddress(wallet.address),
+			roleAdmins: await holdersOf("ROLE_ADMIN"),
+			upgraders,
+			upgrader,
+			defaultAdmins: BigInt((await holdersOf("DEFAULT_ADMIN_ROLE")).length),
+		};
+	};
+
+	// The state the run would leave must pass the checks the run makes at its end, and the doctor's
+	// after it. Checked before the first transaction, in a run as in a plan: a run that fails them
+	// would spend ETH and then fail (G48 R3).
+	const projection = usabilityChecks(await readOutcome(true));
+	if (!plan && projection.failures.length > 0)
+		throw new Error(
+			`refusing to provision: the run would not complete:\n  ✗ ${projection.failures.join("\n  ✗ ")}`,
+		);
 	/** In a plan: the transactions not sent, the ETH they carry, and the run roles not taken. */
 	let planned = 0;
 	let plannedValue = 0n;
@@ -527,8 +699,12 @@ async function main(): Promise<void> {
 	try {
 		// --- roles -------------------------------------------------------------------------------
 		if (grantAllTo)
-			for (const roleName of Object.values(ROLE_FLAGS))
-				await grant(roleName, grantAllTo);
+			for (const [flag, roleName] of Object.entries(ROLE_FLAGS))
+				if (
+					!takesRunRoles ||
+					!(TIMELOCKED_ROLES as readonly string[]).includes(flag)
+				)
+					await grant(roleName, grantAllTo);
 		if (takesRunRoles) {
 			// When another address holds the roles, this key still has to authorise the signer, stake
 			// and register the tenants below. It takes only the roles those steps need, for as long as
@@ -600,6 +776,10 @@ async function main(): Promise<void> {
 					log(`  ✓ registered ${registration}`);
 			} else {
 				log(`  • tenant ${tenant.slug} already registered`);
+				if (getAddress(existing.withdrawAddress) !== tenant.withdrawAddress)
+					log(
+						`  ⚠ tenant ${tenant.slug} withdraws to ${getAddress(existing.withdrawAddress)}, not ${tenant.withdrawAddress}. This run does not change it: setTenantWithdrawAddress is a timelocked role's.`,
+					);
 			}
 
 			const value = parseEther(tenant.fundEth);
@@ -617,14 +797,10 @@ async function main(): Promise<void> {
 		}
 
 		// --- hand the roles over -----------------------------------------------------------------
-		if (!grantAllTo) {
+		if (takesRunRoles) {
 			// The timelocked roles stay with ROLE_ADMIN, this bootstrap key, until contracts:handoff
 			// gives them to the timelock and revokes them from everyone else, unless a holder is named.
-			for (const flag of [
-				"upgrader",
-				"fee-admin",
-				"withdraw-address-admin",
-			] as const)
+			for (const flag of TIMELOCKED_ROLES)
 				if (!flags[`role-holder-${flag}`])
 					await grant(ROLE_FLAGS[flag], wallet.address);
 			for (const flag of namedHolders)
@@ -657,44 +833,9 @@ async function main(): Promise<void> {
 	if (takesRunRoles) await releaseRunRoles();
 
 	if (plan) {
-		// The state the run would leave: the chain now, plus the stake, signers and tenant deposits the
-		// plan lists. The run checks that state at its end, and the wrapper's doctor checks it again
-		// (G48 R3). A plan that skipped these checks would pass a run that fails after it spent ETH.
-		const info = await entryPoint.getDepositInfo(paymasterAddress);
-		const stakes =
-			stakeWei !== undefined && !(info.staked && info.stake >= stakeWei);
-		const signers = (await paymaster.getSigners()).map((s: string) =>
-			getAddress(s),
-		);
-		for (const signer of repeated.signer ?? [])
-			if (!signers.includes(getAddress(signer)))
-				signers.push(getAddress(signer));
-		let deposit: bigint = await entryPoint.balanceOf(paymasterAddress);
-		const projected: TenantOutcome[] = [];
-		for (const tenant of tenants) {
-			const state: { balance: bigint; deficit: bigint } =
-				await paymaster.getTenant(tenant.id);
-			const funding = parseEther(tenant.fundEth);
-			// depositFor clears the tenant's deficit first and credits the rest to its balance, while the
-			// EntryPoint deposit grows by the whole amount.
-			let cleared = state.deficit;
-			if (funding < cleared) cleared = funding;
-			deposit += funding;
-			projected.push({
-				slug: tenant.slug,
-				balance: state.balance + funding - cleared,
-				deficit: state.deficit - cleared,
-			});
-		}
-		const { passed, failures } = usabilityChecks({
-			staked: info.staked || stakes,
-			stake:
-				stakes && stakeWei !== undefined ? info.stake + stakeWei : info.stake,
-			deposit,
-			signers,
-			treasury: await paymaster.treasury(),
-			tenants: projected,
-		});
+		// The state the run would leave, projected before the first transaction (`projection`). The
+		// run checks that state at its end, and the wrapper's doctor checks it again (G48 R3).
+		const { passed, failures } = projection;
 
 		// The run spends the ETH its transactions carry, plus gas. A key that holds less fails part-way
 		// through the run, after the transactions before it went out (S8).
@@ -734,24 +875,7 @@ async function main(): Promise<void> {
 	// --- verify, and fail loudly if the deployment is not actually usable (R-24, R-60) ----------
 	log("");
 	log("Verifying:");
-	const info = await entryPoint.getDepositInfo(paymasterAddress);
-	const outcome: TenantOutcome[] = [];
-	for (const tenant of tenants) {
-		const state = await paymaster.getTenant(tenant.id);
-		outcome.push({
-			slug: tenant.slug,
-			balance: state.balance,
-			deficit: state.deficit,
-		});
-	}
-	const { passed, failures } = usabilityChecks({
-		staked: info.staked,
-		stake: info.stake,
-		deposit: await entryPoint.balanceOf(paymasterAddress),
-		signers: (await paymaster.getSigners()).map((s: string) => getAddress(s)),
-		treasury: await paymaster.treasury(),
-		tenants: outcome,
-	});
+	const { passed, failures } = usabilityChecks(await readOutcome(false));
 	for (const line of passed) log(`  ✓ ${line}`);
 
 	if (!grantAllTo)

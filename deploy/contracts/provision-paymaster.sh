@@ -189,6 +189,8 @@ fi
 
 echo
 echo "==> Verifying on-chain (adoption checklist step 8)"
+# Before the hand-off: ROLE_ADMIN and UPGRADER_ROLE on this key, and no timelock checks yet. The
+# profile's timelock is checked by contracts:doctor after contracts:handoff.
 RPC_URL="$RPC_URL" pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
   --chain-id "$CHAIN_ID" \
   --factory "${FACTORY_ADDRESS:?not set — run pnpm contracts:deploy first}" \
@@ -196,7 +198,8 @@ RPC_URL="$RPC_URL" pnpm --filter @appliedblockchain/giano-contracts run doctor c
   ${TEST_PAYMASTER_ADDRESS:+--test-paymaster "$TEST_PAYMASTER_ADDRESS"} \
   --tenants "$TENANT_BYTES16" \
   --role-admin "$DEPLOYER_ADDR" \
-  --signers "$SIGNER_ADDR"
+  --signers "$SIGNER_ADDR" \
+  --before-handoff
 
 echo
 echo "==> Done. Next:"

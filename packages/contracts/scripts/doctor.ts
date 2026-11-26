@@ -6,8 +6,8 @@
  *     --rpc <url> --chain-id <id> [--factory 0x..] [--sponsorship-paymaster 0x..] \
  *     [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..] [--signers 0x..,0x..] \
  *     [--executor 0x..] [--timelock 0x.. [--timelock-delays minDelay=2d,upgradeToAndCall=7d,..]
- *     [--timelock-proposers 0x..,0x..]] [--require-timelock] [--profile <name|file>]
- *     [--wallet-api <url>]
+ *     [--timelock-proposers 0x..,0x..]] [--require-timelock] [--before-handoff]
+ *     [--profile <name|file>] [--wallet-api <url>]
  *
  *   pnpm --filter @appliedblockchain/giano-contracts doctor -- wallet \
  *     --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]
@@ -36,6 +36,11 @@
  * (deploy/operations.ts), so a published policy is asserted without flags. A timelocked role on a
  * key fails the run when a timelock is required (--require-timelock, or a mainnet chain), and warns
  * otherwise. The verdicts are the ones the SDK's `assessHealth` reaches, from the same functions.
+ *
+ * `--before-handoff` checks a paymaster that contracts:handoff has not yet handed to its timelock:
+ * the provisioning wrapper runs the doctor this way, right after provisioning. ROLE_ADMIN and
+ * UPGRADER_ROLE must then be held by --role-admin alone, and the timelock section is skipped: its
+ * checks cannot pass until the hand-off, and `pnpm contracts:doctor` makes them after it.
  * For registry chains the addresses default from the contracts registry.
  *
  * Addresses are per chain: nothing is compared with a fixed address. Code is checked against the
@@ -80,7 +85,7 @@ import { p256Report } from "../deploy/p256";
 import { type CoreKey, placements, undeclaredDeviations } from "../deploy/plan";
 import { chainPrerequisites, isContractAccount } from "../deploy/preflight";
 import { type ChainProfile, loadProfile } from "../deploy/profiles";
-import { MIN_STAKE_WEI } from "../deploy/provision-rules";
+import { LOW_DEPOSIT_WEI, MIN_STAKE_WEI } from "../deploy/provision-rules";
 import { readRecord } from "../deploy/records";
 import { entryPointRuntimeCode } from "../entrypoint";
 import { proxyImplementationWithSource } from "../erc1967";
@@ -110,15 +115,12 @@ import { type DriftChain, driftLines, driftUrl } from "./doctor-drift";
 const RIP7212_PRECOMPILE = "0x0000000000000000000000000000000000000100";
 /** daimo p256-verifier — the in-contract FCL fallback webauthn-sol uses when RIP-7212 is absent. */
 const P256_VERIFIER = "0xc2b78104907F722DABAc4C69f826a522B2754De4";
-/**
- * Below this, sponsored operations start failing in ways that look like client bugs.
- *
- * This and {@link MIN_STAKE_WEI} (deploy/provision-rules.ts, which provisioning also uses) are
- * duplicated from `packages/paymaster-sdk/src/health.ts`, which applies the same verdicts to the
- * admin console. They are duplicated rather than imported because the SDK depends on this package —
- * importing it back would close a workspace cycle. Change both.
+/*
+ * {@link MIN_STAKE_WEI} and {@link LOW_DEPOSIT_WEI} (deploy/provision-rules.ts, which provisioning
+ * also uses) are duplicated from `packages/paymaster-sdk/src/health.ts`, which applies the same
+ * verdicts to the admin console. They are duplicated rather than imported because the SDK depends on
+ * this package — importing it back would close a workspace cycle. Change both.
  */
-const LOW_DEPOSIT_WEI = 20_000_000_000_000_000n; // 0.02 ETH
 
 /** Tenants per `getTenants` page — the roster is read in pages so a large one cannot blow the call. */
 const TENANT_PAGE_SIZE = 50;
@@ -240,8 +242,8 @@ function resolveDeployment(
  * Normalises a tenant id to the contract's `bytes16` spelling, accepting the UUID form used
  * everywhere off-chain.
  *
- * Mirrors `toTenantId` in `packages/paymaster-sdk/src/tenant-id.ts`; see {@link LOW_DEPOSIT_WEI}
- * for why this package cannot import it. Rejects anything else loudly — an id that parsed by
+ * Mirrors `toTenantId` in `packages/paymaster-sdk/src/tenant-id.ts`; see the note on
+ * {@link LOW_DEPOSIT_WEI} above for why this package cannot import it. Rejects anything else loudly — an id that parsed by
  * accident would address a different tenant, and the contract reports that only as `UnknownTenant`.
  */
 function toTenantId(id: string): string {
@@ -604,10 +606,13 @@ async function checkSponsorshipPaymaster(
 		);
 
 		// With a timelock, it is the expected authority; the timelock section below checks the rest.
-		const expectedAuthority = (flags.timelock ??
-			process.env.PAYMASTER_TIMELOCK ??
-			flags["role-admin"] ??
-			process.env.PAYMASTER_ROLE_ADMIN) as string | undefined;
+		// Before the hand-off, the authority is still the role admin, whatever timelock is published.
+		const roleAdmin = flags["role-admin"] ?? process.env.PAYMASTER_ROLE_ADMIN;
+		const expectedAuthority = (
+			flags["before-handoff"]
+				? roleAdmin
+				: (flags.timelock ?? process.env.PAYMASTER_TIMELOCK ?? roleAdmin)
+		) as string | undefined;
 		for (const [label, role] of [
 			["ROLE_ADMIN", roleAdminRole],
 			["UPGRADER_ROLE", upgraderRole],
@@ -1262,7 +1267,14 @@ async function doctorChain(flags: Record<string, string>) {
 		chainId,
 	);
 	reportPlacement(chainId, profile);
-	if (sponsorshipPaymaster)
+	if (sponsorshipPaymaster && flags["before-handoff"]) {
+		section("Paymaster timelock (G9)");
+		report(
+			"info",
+			"not checked before the hand-off",
+			"the timelocked roles stay with ROLE_ADMIN until contracts:handoff; run contracts:doctor after it",
+		);
+	} else if (sponsorshipPaymaster)
 		await checkTimelock(
 			provider,
 			sponsorshipPaymaster,
@@ -1433,7 +1445,7 @@ async function main() {
 				"                [--require-paymaster] [--tenants <uuid,uuid>] [--role-admin 0x..]",
 				"                [--signers 0x..,0x..] [--executor 0x..] [--timelock 0x..]",
 				"                [--timelock-delays minDelay=2d,upgradeToAndCall=7d,..] [--timelock-proposers 0x..]",
-				"                [--require-timelock]",
+				"                [--require-timelock] [--before-handoff]",
 				"  doctor wallet --rpc <url> --chain-id <id> [--factory 0x..] (--pubkey <x>,<y> | --address 0x..) [--nonce 0]",
 			].join("\n"),
 		);

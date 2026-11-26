@@ -120,7 +120,10 @@ nothing and needs no terminal. The launcher names the missing keys, ROLE_ADMIN a
 API settings together; the workflow then checks the role holders, the withdraw address and the
 sponsorship allowlist, and stops at the first problem. A provisioning plan fails when the operator
 holds less ETH than those transactions carry plus a gas budget, and when the state the run would
-leave fails the run's final checks: a stake of at least 0.1 ETH, a signer, a funded tenant. With
+leave fails the checks the doctor makes after a run: a stake of at least 0.1 ETH, an EntryPoint
+deposit of at least 0.02 ETH, exactly the named signer, a funded tenant and no tenant deficit,
+the accounting invariant, and ROLE_ADMIN and UPGRADER_ROLE on the operator alone. A real run
+checks the same projected state and refuses to start when it fails. With
 `--signed-rpc`, the provisioning plan signs its reads, as the run does. A sponsorship plan makes
 the run's reads of the wallet-api: its readiness, the admin key, and the tenant's paymaster balance. Provisioning and policy
 writes require exact-text confirmation; noninteractive writes are refused. Existing exported
@@ -272,7 +275,8 @@ Core deployment is not permission to serve traffic. For each chain, the operator
 a production signer's key never leaves its HSM) and one holder per immediate role (`ROLE_HOLDER_*`
 in the operator file). The bootstrap key holds only the roles it needs while it runs, then hands each
 to its holder and gives it up. `PAYMASTER_GRANT_ALL_TO=<address>` puts every role on one address
-instead: a testnet shortcut, which a mainnet refuses, as it refuses a defaulted tenant withdrawal
+instead (the timelocked roles stay on the operator when that address is another one): a testnet
+shortcut, which a mainnet refuses, as it refuses a defaulted tenant withdrawal
 address. A mainnet also needs all six `ROLE_HOLDER_*`, each a different address and none of them
 the operator key, and an unstake delay of at least a day. `provision:paymaster` checks the same
 mainnet rules when run directly. The low-level equivalent, after exporting the **operator's**
@@ -294,14 +298,15 @@ pnpm -F @appliedblockchain/giano-contracts provision:paymaster -- \
 #   --role-holder-signer-admin 0x… --role-holder-param-admin 0x… --role-holder-pauser 0x…
 #   --role-holder-stake-admin 0x… --role-holder-tenant-admin 0x… --role-holder-fee-collector 0x…
 # doctor reads the RPC from RPC_URL. Do not pass it as --rpc: pnpm prints the command line, and a
-# credential-bearing URL would be printed with it.
+# credential-bearing URL would be printed with it. --before-handoff: ROLE_ADMIN and UPGRADER_ROLE are
+# still on the role admin, and the timelock is checked by contracts:doctor after contracts:handoff.
 pnpm -F @appliedblockchain/giano-contracts doctor -- chain \
   --chain-id "$CHAIN_ID" \
   --factory "$FACTORY_ADDRESS" \
   --sponsorship-paymaster "$SPONSORSHIP_PAYMASTER_ADDRESS" \
   --require-paymaster --role-admin "$PAYMASTER_ROLE_ADMIN" \
   --signers "$SPONSORSHIP_SIGNER_ADDRESS" --executor "$EXECUTOR_ADDRESS" \
-  --tenants "$TENANT_ID"
+  --tenants "$TENANT_ID" --before-handoff
 ```
 
 Read [the external-chain demo guide](DEMO.md) for

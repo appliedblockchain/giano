@@ -111,6 +111,7 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		const provision = (
 			overrides: {
 				tenant?: string;
+				signer?: string;
 				holders?: string[];
 				extra?: string[];
 				env?: Record<string, string>;
@@ -125,12 +126,12 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 					"--paymaster",
 					paymaster,
 					"--signer",
-					SIGNER,
+					overrides.signer ?? SIGNER,
 					"--stake-eth",
 					"0.1",
 					"--tenant",
 					overrides.tenant ??
-						`${TENANT}:${holder("withdraw")}:provision-test:0.01`,
+						`${TENANT}:${holder("withdraw")}:provision-test:0.02`,
 					...(overrides.holders ??
 						Object.entries(HOLDERS).flatMap(([flag, [, address]]) => [
 							`--role-holder-${flag}`,
@@ -217,12 +218,12 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			`authorise sponsorship signer ${SIGNER}`,
 			"stake 0.1 ETH with a 86400s unstake delay",
 			`register tenant provision-test (${TENANT})`,
-			"fund provision-test with 0.01 ETH",
+			"fund provision-test with 0.02 ETH",
 			`grant PAUSER_ROLE to ${HOLDERS.pauser[1]}`,
 			`give up SIGNER_ADMIN_ROLE (held by ${HOLDERS["signer-admin"][1]})`,
 		])
 			assert.match(planned.stdout, new RegExp(`→ would ${literal(action)}`));
-		assert.match(planned.stdout, /carrying 0\.11 ETH plus gas/);
+		assert.match(planned.stdout, /carrying 0\.12 ETH plus gas/);
 		assert.match(planned.stdout, /Nothing was sent/);
 		assert.equal(
 			await client.getTransactionCount({ address: operator }),
@@ -277,6 +278,23 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		assert.doesNotMatch(unfunded.stdout, /would fund/);
 		assert.match(unfunded.stderr, /no tenant holds a balance/);
 		assert.match(unfunded.stderr, /EntryPoint deposit is empty/);
+		// So would a deposit below the 0.02 ETH the doctor requires. A run refuses it before it sends
+		// anything.
+		for (const extra of [["--plan"], []]) {
+			const shallow = provision({
+				tenant: `${TENANT}:${holder("withdraw")}:provision-test:0.01`,
+				extra,
+			});
+			assert.notEqual(shallow.status, 0, shallow.stdout);
+			assert.match(
+				shallow.stderr,
+				/EntryPoint deposit 0\.01 ETH is below the 0\.02 ETH minimum/,
+			);
+		}
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
 		const understaked = provision({ extra: ["--stake-eth", "0.05", "--plan"] });
 		assert.notEqual(understaked.status, 0, understaked.stdout);
 		assert.match(
@@ -316,12 +334,12 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		const balance = await client.getBalance({ address: operator });
 		const setBalance = (value: bigint) =>
 			testClient.setBalance({ address: operator, value });
-		await setBalance(parseEther("0.11"));
+		await setBalance(parseEther("0.12"));
 		try {
 			const noGas = provision({ extra: ["--plan"] });
 			assert.notEqual(noGas.status, 0, noGas.stdout);
 			assert.match(noGas.stdout, /Gas: up to \S+ ETH/);
-			assert.match(noGas.stderr, /0\.11 ETH it sends, plus gas\)/);
+			assert.match(noGas.stderr, /0\.12 ETH it sends, plus gas\)/);
 		} finally {
 			await setBalance(balance);
 		}
@@ -429,12 +447,7 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			assert.match(allPlan.stdout, new RegExp(`→ would ${literal(action)}`));
 		const allRun = allTo([]);
 		assert.equal(allRun.status, 0, `${allRun.stdout}\n${allRun.stderr}`);
-		for (const roleName of [
-			...Object.values(HOLDERS).map(([name]) => name),
-			"UPGRADER_ROLE",
-			"FEE_ADMIN_ROLE",
-			"WITHDRAW_ADDRESS_ADMIN_ROLE",
-		])
+		for (const [roleName] of Object.values(HOLDERS))
 			assert.equal(
 				await read("hasRole", [await read(roleName), everything]),
 				true,
@@ -442,6 +455,98 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			);
 		for (const roleName of runRoles)
 			assert.equal(await operatorHolds(roleName), false, `kept ${roleName}`);
+		// The timelocked roles stay with this key until the hand-off: the doctor expects
+		// UPGRADER_ROLE on the role admin alone.
+		for (const roleName of [
+			"UPGRADER_ROLE",
+			"FEE_ADMIN_ROLE",
+			"WITHDRAW_ADDRESS_ADMIN_ROLE",
+		]) {
+			assert.equal(
+				await read("hasRole", [await read(roleName), everything]),
+				false,
+				roleName,
+			);
+			assert.equal(await operatorHolds(roleName), true, roleName);
+		}
+
+		// The doctor that the wrapper runs after this script expects exactly the --signer signers,
+		// and UPGRADER_ROLE on one holder. A plan, and a run before its first transaction, fail a
+		// state that breaks either.
+		const after = await client.getTransactionCount({ address: operator });
+		for (const [overrides, message] of [
+			[
+				{ signer: holder("other-signer") },
+				new RegExp(`not named by --signer are authorised: ${SIGNER}`),
+			],
+			[
+				{ extra: ["--role-holder-upgrader", holder("upgrader")] },
+				new RegExp(
+					`UPGRADER_ROLE would be held by ${operator}, ${holder("upgrader")}`,
+				),
+			],
+		] as [Parameters<typeof provision>[0], RegExp][])
+			for (const mode of [["--plan"], []]) {
+				const doctorFails = provision({
+					...overrides,
+					extra: [...(overrides?.extra ?? []), ...mode],
+				});
+				assert.notEqual(doctorFails.status, 0, doctorFails.stdout);
+				assert.match(doctorFails.stderr, message);
+			}
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			after,
+		);
+
+		// The wrapper's doctor runs right after provisioning, before the hand-off. A profile that
+		// publishes a timelock does not make it fail then: the timelock cannot hold its roles yet.
+		const doctor = (extra: string[]) =>
+			spawnSync(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"scripts/doctor.ts",
+					"chain",
+					"--chain-id",
+					"31337",
+					"--sponsorship-paymaster",
+					paymaster,
+					"--role-admin",
+					operator,
+					"--signers",
+					SIGNER,
+					...extra,
+				],
+				{
+					cwd: join(import.meta.dirname, ".."),
+					env: {
+						...process.env,
+						RPC_URL: rpc,
+						PAYMASTER_TIMELOCK: holder("timelock"),
+					},
+					encoding: "utf8",
+				},
+			);
+		const before = doctor(["--before-handoff"]);
+		for (const line of [
+			`✓ ROLE_ADMIN holder: ${operator}`,
+			`✓ UPGRADER_ROLE holder: ${operator}`,
+			"• not checked before the hand-off",
+			`✓ sponsorship signer set: ${SIGNER}`,
+			"✓ EntryPoint deposit",
+		])
+			assert.match(before.stdout, new RegExp(literal(line)), before.stdout);
+		assert.doesNotMatch(
+			before.stdout,
+			/expected the timelock|held by the timelock alone/,
+		);
+		// Without the option, the doctor asserts the published timelock, as contracts:doctor does
+		// after the hand-off.
+		const handedOff = doctor([]);
+		assert.notEqual(handedOff.status, 0);
+		assert.match(handedOff.stdout, /expected the timelock/);
 	} finally {
 		anvil.kill();
 		rmSync(dir, { recursive: true, force: true });
