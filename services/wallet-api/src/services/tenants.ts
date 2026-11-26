@@ -117,19 +117,27 @@ export type TenantPolicy = z.infer<typeof tenantPolicySchema>;
  * A stored policy in today's shape. Before G6 an empty allowlist was how "any address" was
  * written; it is read as `"any"`, which is what it meant, instead of being refused. Runs on every
  * read of a stored policy (the relay, and a patch's merge), so no data migration is needed and
- * the next write stores `"any"`. Anything else is passed through for the schema to judge.
+ * the next write stores `"any"`. Anything else, malformed arrays included, is passed through
+ * unchanged for the schema to judge.
  */
 export function upgradeStoredPolicy(policy: unknown): unknown {
 	if (typeof policy !== "object" || policy === null) return policy;
 	const { perChain } = policy as { perChain?: unknown };
-	if (typeof perChain !== "object" || perChain === null) return policy;
+	// An array is not a perChain map or entry: pass it through so the schema refuses it, instead
+	// of spreading it into an empty object that inherits the deployment defaults.
+	if (
+		typeof perChain !== "object" ||
+		perChain === null ||
+		Array.isArray(perChain)
+	)
+		return policy;
 	const isEmptyList = (value: unknown) =>
 		Array.isArray(value) && value.length === 0;
 	return {
 		...policy,
 		perChain: Object.fromEntries(
 			Object.entries(perChain).map(([chainId, entry]) => {
-				if (typeof entry !== "object" || entry === null)
+				if (typeof entry !== "object" || entry === null || Array.isArray(entry))
 					return [chainId, entry];
 				const upgraded: Record<string, unknown> = { ...entry };
 				for (const field of ["allowedTargets", "allowedPaymasters"]) {

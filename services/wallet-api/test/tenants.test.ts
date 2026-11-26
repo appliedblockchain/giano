@@ -489,6 +489,14 @@ describe("mergePolicy", () => {
 		expect(merged.allowedTargets).toEqual([]);
 	});
 
+	it("fails closed on a stored perChain array or array entry instead of reading it as {}", () => {
+		for (const broken of [{ perChain: [] }, { perChain: { "8453": [] } }]) {
+			expect(
+				mergePolicy(defaults, broken, 8453).tenantPolicyError,
+			).toBeDefined();
+		}
+	});
+
 	it("resolves the new gas caps like the others: perChain over base over defaults", () => {
 		const merged = mergePolicy(
 			defaults,

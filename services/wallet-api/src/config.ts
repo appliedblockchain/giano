@@ -43,10 +43,11 @@ const envAllowlist = z
 		return csv(value).map((a) => a.toLowerCase() as `0x${string}`);
 	})
 	.refine(
+		// A separator-only value (`,`) is a typo, not a choice: only "any" means unrestricted.
 		(value) =>
 			value === undefined ||
 			value === "any" ||
-			value.every((a) => /^0x[0-9a-f]{40}$/.test(a)),
+			(value.length > 0 && value.every((a) => /^0x[0-9a-f]{40}$/.test(a))),
 		'must be "any" or comma-separated 0x addresses',
 	);
 

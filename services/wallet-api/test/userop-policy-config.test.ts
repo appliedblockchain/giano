@@ -172,6 +172,24 @@ describe("production boot refusals (G6 R2, R5)", () => {
 		).toThrow(/chain 8453: USEROP_ALLOWED_TARGETS must be stated/);
 	});
 
+	it('refuses a separator-only allowlist: only "any" selects unrestricted', () => {
+		for (const field of [
+			"USEROP_ALLOWED_TARGETS",
+			"USEROP_ALLOWED_PAYMASTERS",
+		]) {
+			expect(() =>
+				loadConfig(
+					singleChain(8453, {
+						...production,
+						USEROP_ALLOWED_TARGETS: "any",
+						USEROP_ALLOWED_PAYMASTERS: PAYMASTER,
+						[field]: " , ",
+					}),
+				),
+			).toThrow(/must be "any" or comma-separated 0x addresses/);
+		}
+	});
+
 	it("refuses a chain that would get the fallback fee cap", () => {
 		expect(() =>
 			loadConfig(multiChain([{ chainId: 777777, policy: STATED }], production)),
