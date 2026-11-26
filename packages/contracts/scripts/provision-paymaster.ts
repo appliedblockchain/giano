@@ -36,7 +36,8 @@
  * then hands them to their holders and gives them up.
  *
  * `--grant-all-to` grants every role to one address instead. That is a development convenience and
- * the script says so loudly: it collapses the separation D13 exists to create.
+ * the script says so loudly: it collapses the separation D13 exists to create. When that address is
+ * not this key, this key takes the run's roles and gives them up at the end, as with a holder per role.
  */
 import {
 	Contract,
@@ -389,6 +390,10 @@ async function main(): Promise<void> {
 			"--grant-all-to and --role-holder-* are alternatives: one address for every role (development), or one holder per role",
 		);
 	if (grantAllTo) checkAddress("--grant-all-to", grantAllTo);
+	// This key sends the signer, stake and tenant transactions, so it needs their roles while the run
+	// lasts. It holds them as their holder only when --grant-all-to names this key itself.
+	const takesRunRoles =
+		!grantAllTo || getAddress(grantAllTo) !== getAddress(wallet.address);
 	for (const flag of namedHolders)
 		checkAddress(`role holder for ${flag}`, flags[`role-holder-${flag}`]);
 	// The mainnet rules, here as well as in the operator wrapper, so running this script directly does
@@ -413,6 +418,16 @@ async function main(): Promise<void> {
 	const unstakeDelay = unstakeDelaySeconds(flags["unstake-delay"] ?? "86400", {
 		mainnet,
 	});
+	if (stakeWei !== undefined) {
+		// The EntryPoint refuses an addStake whose unstake delay is shorter than the current one
+		// (InvalidUnstakeDelay), also on a top-up. This check runs before the run's first transaction.
+		const current = await entryPoint.getDepositInfo(paymasterAddress);
+		const tops = !(current.staked && current.stake >= stakeWei);
+		if (tops && BigInt(unstakeDelay) < BigInt(current.unstakeDelaySec))
+			throw new Error(
+				`--unstake-delay ${unstakeDelay}s is shorter than the paymaster's current unstake delay of ${current.unstakeDelaySec}s, and the EntryPoint does not let it decrease. Pass --unstake-delay ${current.unstakeDelaySec} or longer.`,
+			);
+	}
 	const tenants = (repeated.tenant ?? []).map(parseTenant);
 	for (const tenant of tenants)
 		ether(`tenant ${tenant.slug}'s funding`, tenant.fundEth);
@@ -495,7 +510,7 @@ async function main(): Promise<void> {
 				!(await paymaster.hasRole(role, wallet.address))
 			)
 				continue;
-			const holder = flags[`role-holder-${flag}`];
+			const holder = flags[`role-holder-${flag}`] ?? grantAllTo;
 			const heldBy = holder ? ` (held by ${getAddress(holder)})` : "";
 			if (
 				await send(`give up ${ROLE_FLAGS[flag]}${heldBy}`, () =>
@@ -511,10 +526,11 @@ async function main(): Promise<void> {
 		if (grantAllTo)
 			for (const roleName of Object.values(ROLE_FLAGS))
 				await grant(roleName, grantAllTo);
-		else {
-			// With one holder per role, this key still has to authorise the signer, stake and register
-			// the tenants below. It takes only the roles those steps need, for as long as they take, and
-			// gives them up afterwards, whether or not the run gets that far (`releaseRunRoles`).
+		if (takesRunRoles) {
+			// When another address holds the roles, this key still has to authorise the signer, stake
+			// and register the tenants below. It takes only the roles those steps need, for as long as
+			// they take, and gives them up afterwards, whether or not the run gets that far
+			// (`releaseRunRoles`).
 			const needs = [
 				...(repeated.signer?.length ? (["signer-admin"] as const) : []),
 				...(stakeWei !== undefined ? (["stake-admin"] as const) : []),
@@ -616,7 +632,7 @@ async function main(): Promise<void> {
 		}
 	} catch (error) {
 		// A plan took no role, so it has none to give up.
-		if (!grantAllTo && !plan) {
+		if (takesRunRoles && !plan) {
 			log("");
 			log(
 				"  ✗ provisioning stopped part-way; giving up the roles this key held for the run.",
@@ -635,7 +651,7 @@ async function main(): Promise<void> {
 		}
 		throw error;
 	}
-	if (!grantAllTo) await releaseRunRoles();
+	if (takesRunRoles) await releaseRunRoles();
 
 	if (plan) {
 		// The state the run would leave: the chain now, plus the stake, signers and tenant deposits the
@@ -744,7 +760,7 @@ async function main(): Promise<void> {
 			else failures.push(`${roleName} is not held by ${holder}`);
 		}
 
-	if (!grantAllTo)
+	if (takesRunRoles)
 		for (const flag of RUN_ROLES) {
 			const roleName = ROLE_FLAGS[flag];
 			if (

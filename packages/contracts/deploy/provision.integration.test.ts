@@ -380,6 +380,62 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 		])) as { registered: boolean; withdrawAddress: Address };
 		assert.equal(tenant.registered, true);
 		assert.equal(getAddress(tenant.withdrawAddress), holder("withdraw"));
+
+		// The EntryPoint refuses a top-up whose unstake delay is shorter than the current one. A plan
+		// and a run refuse it before they send anything. With the stake already enough, no top-up is
+		// sent, so a shorter delay does not matter.
+		const staked = await client.getTransactionCount({ address: operator });
+		for (const extra of [
+			["--stake-eth", "0.2", "--unstake-delay", "3600", "--plan"],
+			["--stake-eth", "0.2", "--unstake-delay", "3600"],
+		]) {
+			const shorter = provision({ extra });
+			assert.notEqual(shorter.status, 0, shorter.stdout);
+			assert.match(
+				shorter.stderr,
+				/--unstake-delay 3600s is shorter than the paymaster's current unstake delay of 86400s/,
+			);
+		}
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			staked,
+		);
+		const enough = provision({ extra: ["--unstake-delay", "3600", "--plan"] });
+		assert.equal(enough.status, 0, `${enough.stdout}\n${enough.stderr}`);
+		assert.doesNotMatch(enough.stdout, /would stake/);
+
+		// --grant-all-to another address: this key still sends the signer, stake and tenant
+		// transactions, so it takes their roles for the run and gives them up at the end.
+		const everything = holder("everything");
+		const allTo = (extra: string[]) =>
+			provision({
+				holders: ["--grant-all-to", everything],
+				extra: ["--stake-eth", "0.2", ...extra],
+			});
+		const allPlan = allTo(["--plan"]);
+		assert.equal(allPlan.status, 0, `${allPlan.stdout}\n${allPlan.stderr}`);
+		for (const action of [
+			`grant SIGNER_ADMIN_ROLE to ${everything}`,
+			"take STAKE_ADMIN_ROLE for this provisioning run",
+			"stake 0.2 ETH with a 86400s unstake delay",
+			`give up STAKE_ADMIN_ROLE (held by ${everything})`,
+		])
+			assert.match(allPlan.stdout, new RegExp(`→ would ${literal(action)}`));
+		const allRun = allTo([]);
+		assert.equal(allRun.status, 0, `${allRun.stdout}\n${allRun.stderr}`);
+		for (const roleName of [
+			...Object.values(HOLDERS).map(([name]) => name),
+			"UPGRADER_ROLE",
+			"FEE_ADMIN_ROLE",
+			"WITHDRAW_ADDRESS_ADMIN_ROLE",
+		])
+			assert.equal(
+				await read("hasRole", [await read(roleName), everything]),
+				true,
+				roleName,
+			);
+		for (const roleName of runRoles)
+			assert.equal(await operatorHolds(roleName), false, `kept ${roleName}`);
 	} finally {
 		anvil.kill();
 		rmSync(dir, { recursive: true, force: true });
