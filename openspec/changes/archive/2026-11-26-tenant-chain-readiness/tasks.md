@@ -21,8 +21,8 @@
 
 ## 4. Follow-ups (not in this change)
 
-- [ ] 4.1 Alert on `giano_paymaster_drifted_tenants` and `giano_paymaster_unregistered_tenants`. Datadog first needs to scrape wallet-api's `/metrics` (infra).
-- [ ] 4.2 Decide retention or erasure for a deleted tenant's users, credentials and logs (design, Open Questions; G34).
-- [ ] 4.3 Decide whether the on-chain disable should be enforced on suspend or delete rather than offered by the console.
-- [ ] 4.4 Decide the users' notice period before suspend, and who tells them: once the wallet origin is gone, a passkey bound to its RP ID can no longer sign (runbook §4).
-- [ ] 4.5 O-3 in `specs/PLATFORM-ADMIN-SPECS.md`: the network restriction on `/v1/platform/*` is still open.
+- [x] 4.1 Alert on `giano_paymaster_drifted_tenants` and `giano_paymaster_unregistered_tenants`. Datadog first needs to scrape wallet-api's `/metrics` (infra). Moved to G50.
+- [x] 4.2 Decide retention or erasure for a deleted tenant's users, credentials and logs (design, Open Questions; G34). Moved to G34 (tracked from G52).
+- [x] 4.3 Decide whether the on-chain disable should be enforced on suspend or delete rather than offered by the console. Moved to G52.
+- [x] 4.4 Decide the users' notice period before suspend, and who tells them: once the wallet origin is gone, a passkey bound to its RP ID can no longer sign (runbook §4). Moved to G52.
+- [x] 4.5 O-3 in `specs/PLATFORM-ADMIN-SPECS.md`: the network restriction on `/v1/platform/*` is still open. Moved to G53.
