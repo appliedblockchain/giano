@@ -24,6 +24,7 @@ import { requireTenantOf } from "../plugins/tenant.js";
 import type { ChainRegistry } from "../services/chains.js";
 import type { ChallengeService } from "../services/challenges.js";
 import type { SessionService } from "../services/sessions.js";
+import { addedFromColumns } from "../services/user-agent.js";
 import { computeWalletAddress } from "../services/wallet-address.js";
 
 const registrationResponseSchema = z
@@ -491,6 +492,7 @@ export default async function webauthnRoutes(
 						aaguid: info.aaguid,
 						deviceType: info.credentialDeviceType,
 						backedUp: info.credentialBackedUp,
+						...addedFromColumns(request.headers["user-agent"]),
 						walletAddress,
 						// WM-08: persisted as the credential's initial name rather than dropped. A name is
 						// a local label only — never an input to any decision (WM-11).

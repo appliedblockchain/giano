@@ -38,7 +38,7 @@ test("sign out everywhere ends the session on the other device too", async ({
 		await device.goto(tenant.walletUrl);
 		const { cdp, authenticatorId } = await addVirtualAuthenticator(device);
 		await seedCredentials(cdp, authenticatorId, credentials);
-		await device.getByTestId("manage-sign-in-existing").click();
+		await device.getByTestId("manage-sign-in").click();
 		await expect(device.getByTestId("settings-address")).toHaveText(address);
 
 		await popup.getByTestId("manage-logout-all").click();

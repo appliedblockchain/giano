@@ -2672,6 +2672,28 @@
                               "aaguid"
                             ],
                             "additionalProperties": false
+                          },
+                          "addedFrom": {
+                            "type": "object",
+                            "properties": {
+                              "device": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "browser": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "device",
+                              "browser"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -2683,7 +2705,8 @@
                           "transports",
                           "createdAt",
                           "removedAt",
-                          "storage"
+                          "storage",
+                          "addedFrom"
                         ],
                         "additionalProperties": false
                       }
@@ -3133,13 +3156,43 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "addedFrom": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "device": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "browser": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "device",
+                            "browser"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "id",
                     "status",
                     "expiresAt",
-                    "publicKey"
+                    "publicKey",
+                    "addedFrom"
                   ],
                   "additionalProperties": false
                 }

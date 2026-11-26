@@ -50,6 +50,14 @@ export default async function credentialRoutes(
 			/** The authenticator's AAGUID, as reported. */
 			aaguid: z.string().nullable(),
 		}),
+		/**
+		 * The device and browser the passkey was added from, from that request's User-Agent (PS-1).
+		 * Self-reported and display only; null for a passkey added before this was recorded.
+		 */
+		addedFrom: z.object({
+			device: z.string().nullable(),
+			browser: z.string().nullable(),
+		}),
 	});
 
 	app.get(
@@ -111,21 +119,33 @@ export default async function credentialRoutes(
 					aaguid: credentials.aaguid,
 					deviceType: credentials.deviceType,
 					backedUp: credentials.backedUp,
+					addedDevice: credentials.addedDevice,
+					addedBrowser: credentials.addedBrowser,
 				})
 				.from(credentials)
 				.where(eq(credentials.userId, requireSessionOf(request).userId));
 			return {
-				credentials: rows.map(({ aaguid, deviceType, backedUp, ...row }) => ({
-					...row,
-					createdAt: row.createdAt.toISOString(),
-					removedAt: row.removedAt ? row.removedAt.toISOString() : null,
-					storage: {
-						provider: passkeyProviderName(aaguid),
-						synced: backedUp,
-						deviceType,
+				credentials: rows.map(
+					({
 						aaguid,
-					},
-				})),
+						deviceType,
+						backedUp,
+						addedDevice,
+						addedBrowser,
+						...row
+					}) => ({
+						...row,
+						createdAt: row.createdAt.toISOString(),
+						removedAt: row.removedAt ? row.removedAt.toISOString() : null,
+						storage: {
+							provider: passkeyProviderName(aaguid),
+							synced: backedUp,
+							deviceType,
+							aaguid,
+						},
+						addedFrom: { device: addedDevice, browser: addedBrowser },
+					}),
+				),
 			};
 		},
 	);

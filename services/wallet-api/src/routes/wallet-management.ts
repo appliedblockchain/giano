@@ -20,6 +20,7 @@ import type { ChainRegistry } from "../services/chains.js";
 import type { ChallengeService } from "../services/challenges.js";
 import { isOwnerPublicKeyOnChain } from "../services/owner-check.js";
 import type { SessionContext } from "../services/sessions.js";
+import { addedFromColumns } from "../services/user-agent.js";
 import { coseToXY } from "./webauthn.js";
 
 /**
@@ -67,6 +68,13 @@ const pendingStatusSchema = z.object({
 	expiresAt: z.string(),
 	/** Present once a second device deposited a key — what device A derives the fingerprint from. */
 	publicKey: z.object({ x: z.string(), y: z.string() }).nullable(),
+	/**
+	 * The device and browser the key was deposited from, once deposited: shown on device A's consent
+	 * screen and used as the default name. Self-reported by that browser, display only (PS-1).
+	 */
+	addedFrom: z
+		.object({ device: z.string().nullable(), browser: z.string().nullable() })
+		.nullable(),
 });
 
 export default async function walletManagementRoutes(
@@ -296,6 +304,9 @@ export default async function walletManagementRoutes(
 					slot.publicKeyX && slot.publicKeyY
 						? { x: slot.publicKeyX, y: slot.publicKeyY }
 						: null,
+				addedFrom: slot.publicKeyX
+					? { device: slot.addedDevice, browser: slot.addedBrowser }
+					: null,
 			};
 		},
 	);
@@ -451,6 +462,8 @@ export default async function walletManagementRoutes(
 						aaguid: slot.aaguid,
 						deviceType: slot.deviceType,
 						backedUp: slot.backedUp,
+						addedDevice: slot.addedDevice,
+						addedBrowser: slot.addedBrowser,
 						// WM-15: BOUND to the wallet the session already controls — never derived from
 						// the new key, which would name a different wallet.
 						walletAddress: session.walletAddress,
@@ -679,6 +692,8 @@ export default async function walletManagementRoutes(
 					aaguid: info.aaguid,
 					deviceType: info.credentialDeviceType,
 					backedUp: info.credentialBackedUp,
+					// The NEW device's request: what device A shows it as, and the default name.
+					...addedFromColumns(request.headers["user-agent"]),
 				})
 				// Guarded re-check of status: two concurrent fills of one slot must not both win.
 				.where(

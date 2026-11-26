@@ -230,6 +230,10 @@ const passkeyStorageColumns = () => ({
 	deviceType: text("device_type", { enum: ["singleDevice", "multiDevice"] }),
 	/** Whether the passkey is backed up (synced) now. A sign-in refreshes it. */
 	backedUp: boolean("backed_up"),
+	/** The device family the passkey was added from, from the request's User-Agent ("iPhone"). */
+	addedDevice: text("added_device"),
+	/** The browser the passkey was added from, from the request's User-Agent ("Safari"). */
+	addedBrowser: text("added_browser"),
 });
 
 export const credentials = pgTable(
