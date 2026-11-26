@@ -856,6 +856,19 @@ describe("the claim flow (WM-19, WM-23)", () => {
 		localStorage.removeItem("giano:passkey-on-device");
 	});
 
+	it("fills in the code a pairing link carried, and waits for the user to continue (PS-2)", () => {
+		const h = harness({ session: null });
+		h.controller.startClaimOnThisDevice("AB3D9KFM");
+		const input = h.controller.flow as Extract<
+			ManagementFlow,
+			{ type: "claim"; step: "input" }
+		>;
+		expect(input.step).toBe("input");
+		expect(input.code).toBe("AB3D9KFM");
+		// No passkey is created until the user continues.
+		expect(h.depositPasskey).not.toHaveBeenCalled();
+	});
+
 	it("keys the error on the machine-readable code, distinct from a network failure", async () => {
 		const h = harness({ session: null });
 		h.depositPasskey.mockRejectedValue(
@@ -916,6 +929,21 @@ describe("renaming and lifecycle", () => {
 		await vi.waitFor(() =>
 			expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1"),
 		);
+	});
+
+	it("gives device A the pairing link for the new device, on the wallet origin (PS-2)", async () => {
+		const h = harness();
+		await h.controller.load();
+		h.controller.startAddSecondDevice();
+		await settle(flowIs(h, "add", "claim-code"));
+		const step = h.controller.flow as Extract<
+			ManagementFlow,
+			{ type: "add"; step: "claim-code" }
+		>;
+		expect(step.pairingUrl).toBe(
+			`${globalThis.location.origin}/#claim=${step.claimCode}`,
+		);
+		h.controller.dismissFlow();
 	});
 
 	it("declines an abandoned pending addition on dismiss (WM-52)", async () => {

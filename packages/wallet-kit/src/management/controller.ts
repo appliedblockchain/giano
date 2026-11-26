@@ -19,6 +19,7 @@ import {
 } from "@appliedblockchain/giano-wallet-core";
 import { type Address, getAddress, type Hex, isAddress } from "viem";
 import type { WalletConfig } from "../config";
+import { pairingUrl } from "../pairing";
 import { markPasskeyOnDevice, passkeyName } from "../passkey-on-device";
 import type { SponsorshipPreflight, WalletRuntimes } from "../runtimes";
 import { applyOwnerChange, type ChainProgress } from "./apply-owner-change";
@@ -120,6 +121,11 @@ export type ManagementFlow =
 			type: "add";
 			step: "claim-code";
 			claimCode: string;
+			/**
+			 * The link the new device opens, with the claim code in its fragment (PS-2): render it as a
+			 * QR code for a phone to scan. Typing the code on the wallet origin still works.
+			 */
+			pairingUrl: string;
 			expiresAt: string;
 			cancel: () => void;
 	  } // show on device A
@@ -258,7 +264,11 @@ export type ManagementController = {
 	startAddSecondDevice: () => void; // WM-18…WM-23
 	startAddAddress: () => void; // WM-24…WM-26
 	startRemove: (owner: OwnerRow) => void; // WM-27…WM-32
-	startClaimOnThisDevice: () => void; // the NEW device's side of a handoff
+	/**
+	 * The NEW device's side of a handoff. `code` fills the claim code in, as when the device opened a
+	 * pairing link (PS-2, see claimCodeFromUrl); the user still confirms before the passkey is created.
+	 */
+	startClaimOnThisDevice: (code?: string) => void;
 
 	/** Leaves the active flow: declines an abandoned slot, reloads when the flow changed the set. */
 	dismissFlow: () => void;
@@ -681,6 +691,8 @@ export function createManagementController({
 						type: "add",
 						step: "claim-code",
 						claimCode: slot.claimCode,
+						// This controller runs on the wallet origin, which is what the new device opens.
+						pairingUrl: pairingUrl(globalThis.location.origin, slot.claimCode),
 						expiresAt: slot.expiresAt,
 						cancel: () => void declineAdd(generation, slot.id, false),
 					});
@@ -1068,9 +1080,9 @@ export function createManagementController({
 
 	// ── the claim flow: the NEW device's half of a handoff (D8 phase 4, WM-19) ──────
 
-	function startClaimOnThisDevice() {
+	function startClaimOnThisDevice(code?: string) {
 		if (flow) return;
-		toClaimInput(++flowGeneration, "");
+		toClaimInput(++flowGeneration, code ?? "");
 	}
 
 	function toClaimInput(generation: number, code: string) {
