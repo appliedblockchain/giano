@@ -76,9 +76,15 @@ export const validationHooks: {
 		const hookFn = this.implementation[hookKey];
 		const value = await hookFn.apply(this.implementation, args);
 
-		if (typeof value !== "boolean") {
-			throw new Error("onCredentialSignedIn must return a boolean");
+		if (typeof value === "boolean") {
+			return value;
 		}
+		if (typeof value !== "string") {
+			throw new Error(
+				"onCredentialSignedIn must return a boolean or a wallet address",
+			);
+		}
+		assertHexAddress(value, { descriptor: "The signed-in wallet address" });
 
 		return value;
 	},

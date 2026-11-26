@@ -363,7 +363,7 @@ describe("withValidation", () => {
 			wrapped.onCredentialCreated("n", new Uint8Array([1]), {} as never),
 		).rejects.toThrow(/wallet address/);
 		await expect(wrapped.onCredentialSignedIn({} as never)).rejects.toThrow(
-			/must return a boolean/,
+			/signed-in wallet address/,
 		);
 		if (!wrapped.submitUserOperation)
 			throw new Error("the wrapped injection has no submitUserOperation");
@@ -822,6 +822,22 @@ describe("createWalletApiInjection", () => {
 			}
 		});
 
+		it("logout ends a session wallet-api already revoked as a logout, not as a refused session (WM-30)", async () => {
+			// Removing the passkey in use revokes its session before the wallet logs out.
+			const fetchImpl = respond(401);
+			const { injection, ended } = make(fetchImpl);
+			await injection.logout();
+			expect(fetchImpl).toHaveBeenCalledWith(
+				"https://wallet.test/api/v1/sessions/logout",
+				expect.objectContaining({
+					method: "POST",
+					headers: expect.objectContaining({ authorization: "Bearer tok" }),
+				}),
+			);
+			expect(injection.getSessionToken()).toBeNull();
+			expect(ended).toHaveBeenCalledExactlyOnceWith("logout");
+		});
+
 		it("logoutAll still ends the session here when wallet-api cannot be reached", async () => {
 			const fetchImpl = vi.fn(async () => {
 				throw new TypeError("Failed to fetch");
@@ -831,5 +847,206 @@ describe("createWalletApiInjection", () => {
 			expect(injection.getSessionToken()).toBeNull();
 			expect(ended).toHaveBeenCalledWith("logout-all");
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Several credentials for one user (one per device): which one this device signs with
+// ---------------------------------------------------------------------------
+
+describe("createWalletApiInjection with several credentials per user", () => {
+	let mock: InstalledWebAuthnMock;
+	beforeEach(() => (mock = installWebAuthnMock()));
+	afterEach(() => mock.uninstall());
+
+	const DEVICE_A = toBase64Url(new Uint8Array([0xa1, 0xa1]));
+	const DEVICE_B = toBase64Url(new Uint8Array([0xb2, 0xb2]));
+	const WALLET = getAddress("0x00000000000000000000000000000000000a11e7");
+
+	type Route = { status?: number; body: unknown };
+
+	/** A wallet-api double whose routes may answer with any status. Records each path asked for. */
+	function walletApi(routes: Record<string, Route>) {
+		const paths: string[] = [];
+		const fetchImpl = vi.fn(async (url: string) => {
+			const path = url.split("?")[0];
+			paths.push(path.replace("https://wallet.test/api", ""));
+			const key = Object.keys(routes).find((route) => path.endsWith(route));
+			const route = key === undefined ? undefined : routes[key];
+			const status = route ? (route.status ?? 200) : 404;
+			return {
+				ok: status >= 200 && status < 300,
+				status,
+				json: async () => route?.body ?? { message: "not found" },
+			} as Response;
+		});
+		return { fetchImpl, paths };
+	}
+
+	const options = (credentialIds: string[]) => ({
+		body: {
+			kind: "authentication",
+			challenge: toBase64Url(new Uint8Array([9, 9])),
+			credentialIds,
+		},
+	});
+
+	it("uses the session's own credential and wallet, even when another device's credential is listed first", async () => {
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
+			"/v1/me": {
+				body: {
+					externalUserId: "u",
+					walletAddress: WALLET,
+					credentialId: DEVICE_B,
+				},
+			},
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok-b",
+			fetch: fetchImpl as never,
+		});
+
+		const info = await injection.getCredentialInfo();
+
+		expect([...(info.credentialId as Uint8Array)]).toEqual([0xb2, 0xb2]);
+		expect(info.address).toBe(WALLET);
+	});
+
+	it("uses the session's credential and wallet even when the options list does not name it", async () => {
+		// The list is fetched for this device's external user id, which can differ from the
+		// session's user. The session still decides: the list's one id would derive another account.
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/options": options([DEVICE_A]),
+			"/v1/me": {
+				body: {
+					externalUserId: "other",
+					walletAddress: WALLET,
+					credentialId: DEVICE_B,
+				},
+			},
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok-b",
+			fetch: fetchImpl as never,
+		});
+
+		const info = await injection.getCredentialInfo();
+
+		expect([...(info.credentialId as Uint8Array)]).toEqual([0xb2, 0xb2]);
+		expect(info.address).toBe(WALLET);
+	});
+
+	it("offers every credential when there is no session, and names no wallet", async () => {
+		const { fetchImpl, paths } = walletApi({
+			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			fetch: fetchImpl as never,
+		});
+
+		const info = await injection.getCredentialInfo();
+
+		expect(Array.isArray(info.credentialId)).toBe(true);
+		expect((info.credentialId as Uint8Array[]).map((id) => [...id])).toEqual([
+			[0xa1, 0xa1],
+			[0xb2, 0xb2],
+		]);
+		expect(info.address).toBeUndefined();
+		expect(paths).not.toContain("/v1/me");
+	});
+
+	it("falls back to offering every credential when wallet-api refuses the session", async () => {
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
+			"/v1/me": { status: 401, body: { error: "unauthorized" } },
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok-ended",
+			fetch: fetchImpl as never,
+		});
+
+		const info = await injection.getCredentialInfo();
+
+		expect(Array.isArray(info.credentialId)).toBe(true);
+		expect(info.address).toBeUndefined();
+		expect(injection.getSessionToken()).toBeNull();
+	});
+
+	it("does not guess a credential when the session cannot be read", async () => {
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
+			"/v1/me": { status: 503, body: { error: "unavailable" } },
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok",
+			fetch: fetchImpl as never,
+		});
+
+		await expect(injection.getCredentialInfo()).rejects.toThrow(
+			/\/v1\/me failed/,
+		);
+	});
+
+	it("returns the wallet the sign-in bound the credential to", async () => {
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/authentication/verify": {
+				body: {
+					verified: true,
+					walletAddress: WALLET,
+					externalUserId: "u",
+					credentialId: DEVICE_B,
+					session: { token: "tok-b" },
+				},
+			},
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			fetch: fetchImpl as never,
+		});
+
+		const signedIn = await injection.onCredentialSignedIn({
+			id: DEVICE_B,
+			rawId: new Uint8Array([0xb2, 0xb2]).buffer,
+			type: "public-key",
+			response: {
+				clientDataJSON: new Uint8Array([1]).buffer,
+				authenticatorData: new Uint8Array([1]).buffer,
+				signature: new Uint8Array([1]).buffer,
+				userHandle: null,
+			},
+			getClientExtensionResults: () => ({}),
+		} as never);
+
+		expect(signedIn).toBe(WALLET);
+		expect(injection.getSessionToken()).toBe("tok-b");
+	});
+
+	it("accepts a wallet address from onCredentialSignedIn through validation", async () => {
+		const base = createMockInjection(mock.authenticator);
+		const wrapped = withValidation({
+			...base,
+			onCredentialSignedIn: async () => WALLET,
+		}) as unknown as GianoProviderInjection;
+		expect(await wrapped.onCredentialSignedIn({} as never)).toBe(WALLET);
+
+		const numeric = withValidation({
+			...base,
+			onCredentialSignedIn: async () => 1 as never,
+		}) as unknown as GianoProviderInjection;
+		await expect(numeric.onCredentialSignedIn({} as never)).rejects.toThrow(
+			/must return a boolean or a wallet address/,
+		);
 	});
 });

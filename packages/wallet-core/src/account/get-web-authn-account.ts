@@ -1,4 +1,4 @@
-import { concatHex, toHex } from "viem";
+import { type Address, concatHex, toHex } from "viem";
 import {
 	toWebAuthnAccount,
 	type WebAuthnAccount,
@@ -14,22 +14,39 @@ import type {
 } from "../provider-injection";
 import { getCredential } from "./get-credential";
 
-export const getWebAuthnAccount = async (
+type SignInInjection = Pick<
+	GianoProviderInjection,
+	"onCredentialSignedIn" | "getPublicKeyByCredentialId"
+>;
+
+/** A passkey sign-in: the account that signs with the passkey, and the smart account it signs for. */
+export type WebAuthnSignIn = {
+	account: WebAuthnAccount;
+	/**
+	 * The smart account the injection says this credential signs for. Undefined when the injection
+	 * returned `true` and left the choice to the caller.
+	 */
+	address: Address | undefined;
+};
+
+/**
+ * Runs the passkey ceremony, signs the credential in and builds its WebAuthn account. Returns
+ * null when the user cancelled the ceremony or the authenticator holds none of the allowed
+ * credentials.
+ */
+export const signInWithWebAuthn = async (
 	options: CredentialInfoUse | CredentialInfoUserPick,
-	injection: Pick<
-		GianoProviderInjection,
-		"onCredentialSignedIn" | "getPublicKeyByCredentialId"
-	>,
+	injection: SignInInjection,
 	preference?: PasskeyDevicePreference,
-): Promise<WebAuthnAccount | null> => {
+): Promise<WebAuthnSignIn | null> => {
 	try {
 		const credential = await getCredential(options, preference);
 		if (!credential) {
 			return null;
 		}
 
-		const signInSuccess = await injection.onCredentialSignedIn(credential);
-		if (!signInSuccess) {
+		const signedIn = await injection.onCredentialSignedIn(credential);
+		if (signedIn === false) {
 			throw new Error("Failed to sign in with credential");
 		}
 
@@ -40,13 +57,16 @@ export const getWebAuthnAccount = async (
 			throw new Error("Unknown credential ID");
 		}
 
-		return toWebAuthnAccount({
-			getFn: passkeyCredentialGet(preference),
-			credential: {
-				id: credential.id,
-				publicKey: concatHex([x, y]),
-			},
-		});
+		return {
+			account: toWebAuthnAccount({
+				getFn: passkeyCredentialGet(preference),
+				credential: {
+					id: credential.id,
+					publicKey: concatHex([x, y]),
+				},
+			}),
+			address: signedIn === true ? undefined : signedIn,
+		};
 	} catch (error) {
 		if (["NotAllowedError", "AbortError"].includes((error as Error).name)) {
 			return null;
@@ -54,3 +74,10 @@ export const getWebAuthnAccount = async (
 		throw error;
 	}
 };
+
+export const getWebAuthnAccount = async (
+	options: CredentialInfoUse | CredentialInfoUserPick,
+	injection: SignInInjection,
+	preference?: PasskeyDevicePreference,
+): Promise<WebAuthnAccount | null> =>
+	(await signInWithWebAuthn(options, injection, preference))?.account ?? null;

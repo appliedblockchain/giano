@@ -47,6 +47,11 @@ type ChainState = {
 	/** null entries are removal holes — indices are never reused (WM-02). */
 	owners: (Hex | null)[];
 	unreachable?: boolean;
+	/**
+	 * The signed-in passkey was added as an owner: the provider holds no account until it is
+	 * restored, and it cannot restore one on a chain where the account is not deployed.
+	 */
+	addedOwner?: boolean;
 };
 
 type Harness = ReturnType<typeof harness>;
@@ -77,6 +82,7 @@ function harness({
 		const cached = runtimeCache.get(chainId);
 		if (cached) return cached;
 		const chain = chains[chainId];
+		let smartAccount: object | null = chain.addedOwner ? null : {};
 		const runtime = {
 			chainId,
 			chainName: `Chain ${chainId}`,
@@ -105,7 +111,7 @@ function harness({
 				},
 			},
 			provider: {
-				getSmartAccount: () => ({}),
+				getSmartAccount: () => smartAccount,
 				on: vi.fn(),
 				request: vi.fn(
 					async ({
@@ -115,6 +121,14 @@ function harness({
 						method: string;
 						params?: unknown[];
 					}) => {
+						if (method === "giano_restoreAccount") {
+							if (!chain.deployed)
+								throw new Error(
+									"A passkey added as an owner can connect only to a deployed account.",
+								);
+							smartAccount = {};
+							return [WALLET];
+						}
 						if (method === "eth_sendTransaction") {
 							events.push(
 								`send:${chainId}:${(params as [{ data: Hex }])[0].data}`,
@@ -386,6 +400,37 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 			"confirmed",
 			"skipped",
 		]);
+	});
+
+	it("skips an undeployed chain for a passkey added as an owner, rather than failing it (WM-46)", async () => {
+		// The passkey cannot restore an account on a chain where the account is not deployed, so
+		// the deployment check must come before the restore.
+		const h = harness({
+			chains: {
+				31337: { deployed: true, owners: [bytesA], addedOwner: true },
+				31338: { deployed: false, owners: [], addedOwner: true },
+			},
+		});
+		await h.controller.load();
+		h.controller.startAddThisDevice();
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
+		(
+			h.controller.flow as Extract<
+				ManagementFlow,
+				{ step: "confirm-fingerprint" }
+			>
+		).approve();
+		await settle(flowIs(h, "add", "done"));
+
+		const done = h.controller.flow as Extract<
+			ManagementFlow,
+			{ step: "done"; type: "add" }
+		>;
+		expect(done.chains.map((row) => row.state)).toEqual([
+			"confirmed",
+			"skipped",
+		]);
+		expect(done.ok).toBe(true);
 	});
 
 	it("never binds when nothing confirmed on-chain", async () => {

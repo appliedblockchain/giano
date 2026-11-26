@@ -43,8 +43,8 @@ import type { GianoSmartAccountImplementation } from "./account";
 import {
 	connectGianoSmartAccount,
 	GianoAccountOwnerError,
-	getWebAuthnAccount,
 	STATIC_CALL_SIGNED_AT_BACKDATE_SECONDS,
+	signInWithWebAuthn,
 	toGianoSmartAccount,
 } from "./account";
 import {
@@ -496,7 +496,9 @@ export const createGianoProvider = (
 				// full sign-in ceremony via eth_requestAccounts.
 				const { credentialId } = credentialInfo;
 				const rawId = Array.isArray(credentialId)
-					? credentialId[0]
+					? credentialId.length === 1
+						? credentialId[0]
+						: null
 					: credentialId === null || credentialId === "user-pick"
 						? null
 						: credentialId;
@@ -757,19 +759,21 @@ export const createGianoProvider = (
 			const credentialInfo = await injection.getCredentialInfo();
 
 			if (credentialInfo.credentialId !== null) {
-				const webAuthnAccount = await getWebAuthnAccount(
+				const signedIn = await signInWithWebAuthn(
 					credentialInfo,
 					injection,
 					preference,
 				);
-				if (!webAuthnAccount) {
+				if (!signedIn) {
 					throw new Error("Invalid credential");
 				}
 				smartAccount = await connectGianoSmartAccount({
 					client: requireClient(),
-					owner: webAuthnAccount,
+					owner: signedIn.account,
 					factoryAddress: requireFactoryAddress(),
-					address: credentialInfo.address,
+					// The account the sign-in bound the credential to comes first: when several
+					// credentials were offered, only the sign-in knows which one the user chose.
+					address: signedIn.address ?? credentialInfo.address,
 				});
 				const smartAccountAddress = await smartAccount.getAddress();
 
