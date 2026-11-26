@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { TIMELOCKED_FUNCTION_NAMES } from "../timelock";
-import { SIGNED_RPC_COMMANDS, timelockCommand } from "./operator-commands";
+import {
+	operatorInputProblems,
+	SIGNED_RPC_COMMANDS,
+	timelockCommand,
+} from "./operator-commands";
 import type { ProfileFile } from "./profiles";
 
 const exec = promisify(execFile);
@@ -57,11 +67,24 @@ test("all operator plans use the selected persisted profile, load dotenv without
 		const env = Object.fromEntries(
 			Object.entries(process.env).filter(
 				([key]) =>
-					!["CHAIN_ID", "DEPLOY_CHAIN_ID", "CUSTOM_TEST_RPC_URL"].includes(key),
+					![
+						"CHAIN_ID",
+						"DEPLOY_CHAIN_ID",
+						"CUSTOM_TEST_RPC_URL",
+						// The settings the plans below must find missing.
+						"PAYMASTER_ROLE_ADMIN",
+						"DEPLOYER_PRIVATE_KEY",
+						"SPONSORSHIP_SIGNER_ADDRESS",
+						"SPONSORSHIP_SIGNER_KEY",
+						"PAYMASTER_TENANTS",
+						"ADMIN_API_KEY",
+						"TENANT_SLUG",
+						"WALLET_API_URL",
+					].includes(key),
 			),
 		);
-		for (const command of ["funding", "provision", "sponsorship", "doctor"]) {
-			const { stdout } = await exec(
+		const plan = (command: string) =>
+			exec(
 				process.execPath,
 				[
 					"--import",
@@ -76,12 +99,61 @@ test("all operator plans use the selected persisted profile, load dotenv without
 				],
 				{ cwd: new URL("..", import.meta.url), env },
 			);
+		for (const command of ["funding", "doctor"]) {
+			const { stdout } = await plan(command);
 			assert.match(stdout, /Custom test chain \(54321\)/);
 			assert.match(stdout, /Read-only plan/);
 		}
+		// provision and sponsorship plan with every check of a real run (G48 R3): here they name every
+		// setting the operator file lacks, before any read beyond the RPC identity check.
+		const missing = {
+			provision: [
+				"PAYMASTER_ROLE_ADMIN",
+				"DEPLOYER_PRIVATE_KEY",
+				"SPONSORSHIP_SIGNER_ADDRESS",
+				"PAYMASTER_TENANTS",
+			],
+			sponsorship: [
+				"PAYMASTER_ROLE_ADMIN",
+				"ADMIN_API_KEY",
+				"TENANT_SLUG",
+				"WALLET_API_URL",
+			],
+		};
+		for (const [command, names] of Object.entries(missing))
+			await assert.rejects(plan(command), (error: unknown) => {
+				assert.ok(error && typeof error === "object" && "stderr" in error);
+				const stderr = String(error.stderr);
+				assert.match(stderr, /Correct the selected operator environment/);
+				for (const name of names) assert.match(stderr, new RegExp(name));
+				return true;
+			});
 		assert.equal(methods.length, 4);
 		assert.ok(methods.every((method) => method === "eth_chainId"));
 		assert.equal(existsSync(marker), false);
+
+		// A blank PAYMASTER_ROLE_ADMIN= line leaves the profile's roleAdmin in force.
+		const withAdmin = JSON.parse(readFileSync(profile, "utf8"));
+		writeFileSync(
+			profile,
+			JSON.stringify({
+				...withAdmin,
+				roleAdmin: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+			}),
+		);
+		writeFileSync(
+			operator,
+			`CUSTOM_TEST_RPC_URL=http://127.0.0.1:${address.port}\nPAYMASTER_ROLE_ADMIN=\n`,
+		);
+		await assert.rejects(plan("provision"), (error: unknown) => {
+			assert.ok(error && typeof error === "object" && "stderr" in error);
+			const stderr = String(error.stderr);
+			assert.match(stderr, /Correct the selected operator environment/);
+			assert.doesNotMatch(stderr, /Persist ROLE_ADMIN/);
+			return true;
+		});
+		writeFileSync(profile, JSON.stringify(withAdmin));
+		const reads = methods.length;
 		writeFileSync(operator, "CHAIN_ID=1\n");
 		await assert.rejects(
 			exec(
@@ -110,7 +182,7 @@ test("all operator plans use the selected persisted profile, load dotenv without
 		);
 		assert.equal(
 			methods.length,
-			4,
+			reads,
 			"conflicting chain input must fail before any workflow is invoked",
 		);
 	} finally {
@@ -182,4 +254,69 @@ test("--signed-rpc is refused on a launcher command that sends no transaction, b
 			},
 		);
 	}
+});
+
+test("the operator environment is checked as a whole, and no message quotes a key", () => {
+	const key =
+		"0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+	const address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+	const complete = {
+		DEPLOYER_PRIVATE_KEY: key,
+		SPONSORSHIP_SIGNER_ADDRESS: address,
+		PAYMASTER_TENANTS: "demo:33333333-3333-4333-8333-333333333333",
+	};
+	assert.deepEqual(operatorInputProblems("provision", complete, address), []);
+	// The address in any letter case.
+	assert.deepEqual(
+		operatorInputProblems("provision", complete, address.toLowerCase()),
+		[],
+	);
+
+	const other = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+	const wrongKey = operatorInputProblems("provision", complete, other);
+	assert.equal(wrongKey.length, 1);
+	assert.match(
+		wrongKey[0],
+		new RegExp(`key of ${address}, not of ROLE_ADMIN ${other}`),
+	);
+
+	// provision:paymaster (ethers) takes a key without 0x, so this check takes it too.
+	assert.deepEqual(
+		operatorInputProblems(
+			"provision",
+			{ ...complete, DEPLOYER_PRIVATE_KEY: key.slice(2) },
+			address,
+		),
+		[],
+	);
+
+	// ethers refuses a stray space, so this check refuses it here, not later.
+	assert.equal(
+		operatorInputProblems(
+			"provision",
+			{ ...complete, DEPLOYER_PRIVATE_KEY: `${key} ` },
+			address,
+		).length,
+		1,
+	);
+
+	const empty = operatorInputProblems("provision", {}, undefined);
+	assert.equal(empty.length, 4);
+	assert.ok(empty.every((problem) => !problem.includes(key)));
+
+	// A blank line in the operator file counts as unset.
+	assert.deepEqual(
+		operatorInputProblems(
+			"sponsorship",
+			{ ADMIN_API_KEY: " ", TENANT_SLUG: "demo", WALLET_API_URL: "http://x" },
+			address,
+		),
+		["Provide ADMIN_API_KEY."],
+	);
+	assert.deepEqual(operatorInputProblems("sponsorship", {}, "0x123"), [
+		"ROLE_ADMIN 0x123 is not an address.",
+		"Provide ADMIN_API_KEY.",
+		"Provide TENANT_SLUG.",
+		"Provide WALLET_API_URL.",
+	]);
 });

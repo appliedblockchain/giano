@@ -213,11 +213,14 @@ test("sponsorship on a chain without the demo ERC-20 needs the tenant's contract
 });
 
 /**
- * The pnpm commands the wrapper runs, with GIANO_SIGNED_RPC set to `signedRpc`. A stand-in pnpm
- * records them and runs only the key derivation (`pnpm … exec node -e`) with the real pnpm, so no
- * chain call is made.
+ * The pnpm commands the wrapper runs, with GIANO_SIGNED_RPC set to `signedRpc` and `env` added. A
+ * stand-in pnpm records them and runs only the key derivation (`pnpm … exec node -e`) with the real
+ * pnpm, so no chain call is made.
  */
-function pnpmCommands(signedRpc: string): string[] {
+function pnpmCommands(
+	signedRpc: string,
+	env: Record<string, string> = {},
+): string[] {
 	const realPnpm = spawnSync("bash", ["-c", "command -v pnpm"], {
 		encoding: "utf8",
 	}).stdout.trim();
@@ -237,6 +240,7 @@ function pnpmCommands(signedRpc: string): string[] {
 			SPONSORSHIP_SIGNER_ADDRESS: ADDRESS,
 			PAYMASTER_GRANT_ALL_TO: ADDRESS,
 			GIANO_SIGNED_RPC: signedRpc,
+			...env,
 		});
 		assert.equal(code, 0, out);
 		return readFileSync(log, "utf8").trim().split("\n");
@@ -256,4 +260,47 @@ test("the launcher's --signed-rpc (GIANO_SIGNED_RPC=1) reaches provision:paymast
 	const unsigned = provisions("");
 	assert.equal(unsigned.length, 1);
 	assert.doesNotMatch(unsigned[0], /--signed-rpc/);
+});
+
+test("no command line carries the RPC URL: pnpm prints it, and a Silent Data URL holds the write token (G48 R1)", () => {
+	const tokened = "https://rpc.example.test/write-token-0123456789";
+	const commands = pnpmCommands("1", {
+		RPC_URL: tokened,
+		DEPLOY_RPC_URL: tokened,
+	});
+	assert.ok(commands.some((line) => line.includes("provision:paymaster")));
+	assert.ok(commands.some((line) => line.includes("doctor chain")));
+	for (const line of commands) {
+		assert.doesNotMatch(line, /write-token/);
+		assert.doesNotMatch(line, /--rpc\b/);
+	}
+});
+
+test("--plan (GIANO_PLAN=1) reaches provision:paymaster, and the doctor does not run", () => {
+	const planned = pnpmCommands("", { GIANO_PLAN: "1" });
+	const provisions = planned.filter((line) =>
+		line.includes("provision:paymaster"),
+	);
+	assert.equal(provisions.length, 1);
+	assert.match(provisions[0], / --plan$/);
+	assert.ok(!planned.some((line) => line.includes("doctor")));
+	// Without it, the run is not a plan and the doctor verifies it.
+	const run = pnpmCommands("");
+	assert.ok(!run.some((line) => line.includes("--plan")));
+	assert.ok(run.some((line) => line.includes("doctor chain")));
+});
+
+test("a sponsorship plan (GIANO_PLAN=1) runs its checks, shows the rules, and installs nothing", () => {
+	const planned = sponsorshipWrapper({
+		GIANO_PLAN: "1",
+		SPONSOR_ALLOWLIST: ADDRESS,
+	});
+	assert.equal(planned.code, 0, planned.out);
+	assert.match(planned.out, new RegExp(`allowlisted: ${ADDRESS}`));
+	assert.match(planned.out, /Plan complete: no rule installed/);
+	// The checks still run in a plan.
+	assert.match(
+		sponsorshipWrapper({ GIANO_PLAN: "1" }).out,
+		/set SPONSOR_ALLOWLIST/,
+	);
 });
