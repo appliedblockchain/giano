@@ -14,9 +14,12 @@ const CLAIM_PARAM = "claim";
 /** A claim code as a link may carry it: letters, digits and the display hyphen. */
 const CLAIM_CODE = /^[0-9A-Za-z-]{4,32}$/;
 
-/** The pairing link for a claim code, on the given wallet origin. */
+/**
+ * The pairing link for a claim code, on the given wallet origin. Only the origin is kept: the link
+ * opens the wallet's root page, whatever path the argument carries.
+ */
 export function pairingUrl(walletOrigin: string, claimCode: string): string {
-	return `${walletOrigin.replace(/\/+$/, "")}/#${CLAIM_PARAM}=${encodeURIComponent(claimCode)}`;
+	return `${new URL(walletOrigin).origin}/#${CLAIM_PARAM}=${encodeURIComponent(claimCode)}`;
 }
 
 /** The claim code a pairing link carries, or null when the URL carries none. */
