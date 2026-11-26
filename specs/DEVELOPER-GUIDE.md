@@ -975,7 +975,8 @@ P-256 passkey).
   `giano_userop_relay_seconds{tenant}`, and **`giano_cross_tenant_rejections_total{kind,tenant}`**
   (kind ∈ `credential|challenge|session`) — **alert on any increase**: it means RP resolution is
   broken or someone is probing across tenant boundaries. Other suggested alerts: policy-rejection
-  spikes (probing), ceremony-failure spikes (broken RP config/attack), relay `failed` ratio, low
+  spikes (probing), any `rule="tenant-policy"` rejection (a stored tenant policy no longer parses, so
+  that tenant's relay is down), fee-cap rejections (`rule=~"max-fee-cap|priority-fee-cap"`, by chain), ceremony-failure spikes (broken RP config/attack), relay `failed` ratio, low
   bundler-executor balance.
 - **Related Origin Requests (ROR):** share passkeys across multiple app origins under one tenant's
   RP ID via `GET /.well-known/webauthn` (Host-scoped — each wallet origin serves only its own
@@ -999,6 +1000,8 @@ P-256 passkey).
       ([`INTEGRATION.md` §6](./INTEGRATION.md#6-tenants)).
 - [ ] **UserOp policy** tuned: deployment defaults (`USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`,
       `USEROP_ALLOWED_PAYMASTERS`) plus per-tenant `policy` overrides; paymasters pinned per tenant.
+      A production deployment refuses to start until every chain states both allowlists (`"any"`
+      or addresses) and has a fee cap wallet-api knows or you set (wallet-api README, "Relay policy").
 - [ ] **Origins locked down:** each tenant's `expectedOrigins`, `allowedDappOrigins` /
       `GIANO_ALLOWED_DAPP_ORIGINS` and `corsOrigins` to its real hosts only. dApp does **not**
       send `COOP: same-origin`.
