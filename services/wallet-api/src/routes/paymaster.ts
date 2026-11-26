@@ -335,11 +335,15 @@ export default async function paymasterRoutes(
 			// fees from the chain. "Gasless" is decided by `chargesNoGas`, the check giano-bundler makes:
 			// a gas price of 0 and, on an OP Stack chain, an L1 fee of 0. On such a chain the cap and the
 			// balance still apply, to the fee alone, and the EntryPoint charges the paymaster at most
-			// maxFeePerGas, so a later base fee cannot cost more.
+			// maxFeePerGas, so a later base fee cannot cost more. Whether the chain is OP Stack is decided
+			// once per chain, from the bundler's configured `chainType` (`chainTypeOnce`), and only asked
+			// once the gas price is 0: a chain that charges gas is refused without it.
 			if (maxFeePerGas === 0n && method === "pm_getPaymasterData") {
 				let gasless: boolean;
 				try {
-					gasless = await chargesNoGas(chain.publicClient);
+					gasless = await chargesNoGas(chain.publicClient, {
+						opStack: async () => (await chain.chainType()) === "op-stack",
+					});
 				} catch (err) {
 					request.log.warn(
 						{ err, chainId: chain.chainId },

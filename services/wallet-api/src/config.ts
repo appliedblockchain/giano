@@ -1,9 +1,12 @@
 import { isIP } from "node:net";
 import {
+	bundlerChainSectionSchema,
 	type ChainPolicy,
+	type ChainType,
 	defaultChainName,
 	type GianoDeployment,
 	gianoAddresses,
+	proxyDeployBlock,
 	validateChainList,
 	walletApiChainSchema,
 } from "@appliedblockchain/giano-contracts";
@@ -60,6 +63,15 @@ export type ResolvedChain = {
 	 * walk through the proxy's `Upgraded` logs starts here instead of at block 0.
 	 */
 	sponsorshipPaymasterDeployBlock?: bigint;
+	/**
+	 * The chain's type as giano-bundler is configured for it: the entry's `bundler.chainType`, read
+	 * from the same GIANO_CHAINS document. A configured `default` or `op-stack` is the answer for both
+	 * services. With `auto`, each service checks the GasPriceOracle code through its own RPC:
+	 * wallet-api through `rpcUrl`, giano-bundler through `bundler.rpcUrl` when it is set. Set
+	 * `chainType` explicitly when the two URLs differ. Unset (the single-chain shorthand, or a chain
+	 * with no `bundler` section) means `auto`.
+	 */
+	chainType?: ChainType | "auto";
 	/**
 	 * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
 	 * address denotes different contracts on different chains, so a chain-agnostic address
@@ -815,7 +827,7 @@ const envSchema = z
 				sponsorshipPaymaster: (env.SPONSORSHIP_PAYMASTER_ADDRESS ??
 					deployment?.sponsorshipPaymaster) as `0x${string}` | undefined,
 				sponsorshipPaymasterDeployBlock: registryDeployBlock(
-					env.SPONSORSHIP_PAYMASTER_ADDRESS,
+					env.SPONSORSHIP_PAYMASTER_ADDRESS as `0x${string}` | undefined,
 					deployment,
 				),
 				policy: resolvePolicy({
@@ -860,6 +872,7 @@ const envSchema = z
 							descriptor.sponsorshipPaymaster,
 							registry,
 						),
+						chainType: bundlerChainType(descriptor.bundler),
 						policy: resolvePolicy(walletApi.policy),
 					};
 				})
@@ -874,24 +887,35 @@ const envSchema = z
 
 /**
  * The registry's deployment block for its sponsorship paymaster, when the chain uses that paymaster:
- * `configured` is unset, or names the same address. Undefined otherwise: a block that belongs to
- * another proxy would start the log walk past that proxy's upgrades.
+ * `configured` is unset, or names the same address. Undefined otherwise. The rule is
+ * `proxyDeployBlock`'s: a block that belongs to another proxy would start the log walk past that
+ * proxy's upgrades.
  */
 function registryDeployBlock(
-	configured: string | undefined,
+	configured: `0x${string}` | undefined,
 	registry: GianoDeployment | undefined,
 ): bigint | undefined {
-	if (
-		registry?.sponsorshipPaymaster === undefined ||
-		registry.sponsorshipPaymasterDeployBlock === undefined
-	)
-		return undefined;
-	if (
-		configured !== undefined &&
-		configured.toLowerCase() !== registry.sponsorshipPaymaster.toLowerCase()
-	)
-		return undefined;
-	return BigInt(registry.sponsorshipPaymasterDeployBlock);
+	return proxyDeployBlock(configured ?? registry?.sponsorshipPaymaster, {
+		address: registry?.sponsorshipPaymaster,
+		blockNumber: registry?.sponsorshipPaymasterDeployBlock,
+	});
+}
+
+/**
+ * The entry's `bundler.chainType`, for wallet-api's gasless check. wallet-api holds the bundler's
+ * section as-is, unvalidated: giano-bundler validates it strictly and refuses to boot on a bad value,
+ * so a value wallet-api cannot read is left to `auto` rather than refused here. With
+ * `bundler.enabled: false`, giano-bundler does not serve the chain and never checks the value, so it
+ * is not trusted either: wallet-api detects the type.
+ */
+function bundlerChainType(
+	section: Record<string, unknown> | undefined,
+): ChainType | "auto" {
+	if (section?.enabled === false) return "auto";
+	const parsed = bundlerChainSectionSchema.shape.chainType.safeParse(
+		section?.chainType,
+	);
+	return parsed.success ? parsed.data : "auto";
 }
 
 export type AppConfig = z.infer<typeof envSchema>;

@@ -1,3 +1,4 @@
+import { GAS_PRICE_ORACLE } from "@appliedblockchain/giano-contracts";
 import {
 	createPublicClient,
 	custom,
@@ -8,7 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { RpcError } from "../src/errors.js";
 import { createEstimator } from "../src/estimator.js";
-import { GAS_PRICE_ORACLE, scale } from "../src/pvg.js";
+import { scale } from "../src/pvg.js";
 import type { UserOp } from "../src/userop.js";
 
 const entryPoint = "0x433709009B8330FDa32311DF1C2AFA402eD8D009";

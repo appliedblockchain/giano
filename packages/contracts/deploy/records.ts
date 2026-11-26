@@ -4,7 +4,8 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type Address, getAddress, type Hex } from "viem";
+import { type Address, type Hex, isAddress } from "viem";
+import { proxyDeployBlock } from "../erc1967";
 import {
 	type LabelKey,
 	type NetworkClass,
@@ -111,17 +112,20 @@ export type DeploymentRecord = {
 /**
  * The block the record says deployed the paymaster proxy at `proxy`: where a walk through its
  * `Upgraded` logs can start. Undefined when the record names another proxy or has no block, and the
- * walk then starts at block 0.
+ * walk then starts at block 0. The rule is {@link proxyDeployBlock}'s. The record is data this tooling
+ * wrote, so a malformed address in it is a corrupt record: it throws, and does not count as another
+ * proxy.
  */
 export function paymasterProxyDeployBlock(
 	record: DeploymentRecord | undefined,
 	proxy: Address,
 ): bigint | undefined {
 	const entry = record?.contracts.paymasterProxy;
-	return entry?.blockNumber !== undefined &&
-		getAddress(entry.address) === getAddress(proxy)
-		? BigInt(entry.blockNumber)
-		: undefined;
+	if (entry && !isAddress(entry.address, { strict: false }))
+		throw new Error(
+			`the chain ${record?.chainId} deployment record's paymasterProxy.address is not an address: ${entry.address}`,
+		);
+	return proxyDeployBlock(proxy, entry);
 }
 
 export function recordPath(chainId: number, dir = deploymentsDir()): string {

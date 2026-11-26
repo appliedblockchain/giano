@@ -1,6 +1,7 @@
 import {
 	isCanonicalEntryPointCode,
 	isEntryPointAddress,
+	resolveChainType,
 } from "@appliedblockchain/giano-contracts";
 import type { Logger } from "pino";
 import { createPublicClient, formatEther, http, type PublicClient } from "viem";
@@ -9,7 +10,6 @@ import type { ChainConfig, ChainType } from "./config.js";
 import { createEstimator, type Estimator } from "./estimator.js";
 import { createLookup, type Lookup } from "./lookup.js";
 import type { Metrics } from "./metrics.js";
-import { GAS_PRICE_ORACLE } from "./pvg.js";
 import { createSubmitter, type Submitter } from "./submitter.js";
 
 /**
@@ -85,11 +85,7 @@ export function createChainRegistry(options: {
 					isEntryPointAddress(config.entryPoint) &&
 					isCanonicalEntryPointCode(code, config.chainId)
 				) {
-					let chainType = config.chainType;
-					if (chainType === "auto") {
-						const oracle = await client.getCode({ address: GAS_PRICE_ORACLE });
-						chainType = oracle && oracle !== "0x" ? "op-stack" : "default";
-					}
+					const chainType = await resolveChainType(client, config.chainType);
 					entry.services = await build(config, client, chainType, chainLog);
 					entry.status = "ready";
 					entry.waitingFor = undefined;

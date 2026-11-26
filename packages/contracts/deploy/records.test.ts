@@ -92,4 +92,22 @@ test("the paymaster proxy's deployment block applies to that proxy only", () => 
 		),
 		undefined,
 	);
+	// A malformed address in the record is a corrupt record, not another proxy.
+	assert.throws(
+		() =>
+			paymasterProxyDeployBlock(
+				{
+					...record,
+					contracts: {
+						paymasterProxy: {
+							...withoutBlock,
+							address: "0x1234" as `0x${string}`,
+							blockNumber: 42,
+						},
+					},
+				},
+				proxy,
+			),
+		/paymasterProxy\.address is not an address: 0x1234/,
+	);
 });
