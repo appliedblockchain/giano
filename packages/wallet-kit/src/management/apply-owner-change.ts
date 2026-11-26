@@ -77,7 +77,7 @@ export type ApplyOwnerChangeOptions = {
  */
 export const isChainScopedRefusal = (
 	refusal: Extract<SponsorshipPreflight, { state: "refused" }>,
-) =>
+): boolean =>
 	refusal.ruleResults.some(
 		(rule) => rule.rule === "paymaster-tenant" && !rule.passed,
 	);
