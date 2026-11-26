@@ -46,7 +46,10 @@ export type ChainProgress = {
 export type OwnerChangeOutcome = {
 	/** True when every chain that was not skipped confirmed. */
 	ok: boolean;
-	/** Set when a sponsorship refusal aborted the run — shown with the WM-48/WM-49 copy. */
+	/**
+	 * The first sponsorship refusal — shown with the WM-48/WM-49 copy. A tenant-wide refusal stops
+	 * the run; a chain-scoped one (see {@link isChainScopedRefusal}) refuses only its own chain.
+	 */
 	refusal?: Extract<SponsorshipPreflight, { state: "refused" }>;
 	progress: ChainProgress[];
 	/** The chains the change actually confirmed on. */
@@ -66,6 +69,18 @@ export type ApplyOwnerChangeOptions = {
 	buildData: (runtime: WalletRuntime) => Promise<Hex | null>;
 	onProgress: (progress: ChainProgress[]) => void;
 };
+
+/**
+ * A refusal that holds for one chain only: the tenant is not registered, or is disabled, on that
+ * chain's paymaster (wallet-api's `paymaster-tenant` rule). The other chains are still asked.
+ * Every other refusal is about the tenant's switch or the platform rule, which no chain changes.
+ */
+export const isChainScopedRefusal = (
+	refusal: Extract<SponsorshipPreflight, { state: "refused" }>,
+) =>
+	refusal.ruleResults.some(
+		(rule) => rule.rule === "paymaster-tenant" && !rule.passed,
+	);
 
 const log = (label: string, data: unknown) =>
 	console.log(`[giano-wallet-kit:manage] ${label}`, data);
@@ -97,15 +112,17 @@ export async function applyOwnerChange(
 	};
 
 	let refusal: OwnerChangeOutcome["refusal"];
+	/** Set by a tenant-wide refusal: no later chain is asked. */
+	let stopped = false;
 	const appliedChainIds: number[] = [];
 
 	for (const chainId of runtimes.servedChainIds) {
 		const runtime = runtimes.runtimeFor(chainId);
 		update(chainId, { state: "checking" });
 
-		// A refusal on an earlier chain is tenant-level (the platform rule and the tenant's
-		// switch are not per-chain concepts the user can act on differently) — stop asking.
-		if (refusal) {
+		// A tenant-wide refusal on an earlier chain (the platform rule and the tenant's switch are
+		// not per-chain concepts the user can act on differently) — stop asking.
+		if (stopped) {
 			update(chainId, {
 				state: "refused",
 				detail: "not attempted — sponsorship was refused",
@@ -149,12 +166,15 @@ export async function applyOwnerChange(
 				data,
 			});
 			if (preflight.state === "refused") {
-				refusal = preflight;
+				refusal ??= preflight;
+				const chainScoped = isChainScopedRefusal(preflight);
+				if (!chainScoped) stopped = true;
 				update(chainId, { state: "refused", detail: preflight.message });
 				log(`${label}: sponsorship refused`, {
 					chainId,
 					reason: preflight.reason,
 					message: preflight.message,
+					chainScoped,
 				});
 				continue;
 			}
