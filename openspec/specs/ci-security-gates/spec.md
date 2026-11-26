@@ -141,8 +141,11 @@ failed scan SHALL leave nothing pushed, tagged or signed for that image.
 - **THEN** the scan does not fail on it, and the report lists it
 
 ### Requirement: Security checks gate releases and promotion
-Every security check that runs on pull requests SHALL run on pull requests into `main` and into `production`, and in
-the CI run that the release workflow calls before it publishes packages. The image scan SHALL gate image publishing.
+Every security check that runs on pull requests SHALL run on pull requests into `main` and into `production`. In the
+CI run that the release workflow calls before it publishes packages, the Solidity analysis, the dependency audit and
+the register check SHALL run in full. The secret scan SHALL check only the register there, because every commit on
+`main` arrived through a pull request that ran it. CodeQL SHALL run on every push to `main` instead. The image scan
+SHALL gate image publishing.
 Each security check SHALL report a stable check name on every pull request, with no path filter. `ci.yml` SHALL report
 one summary check that fails when any of its jobs fails.
 
@@ -164,7 +167,7 @@ latest published image of each repository image, list register entries that expi
 dismissed CodeQL alerts without a register entry. It SHALL report its result in one tracking issue.
 
 #### Scenario: New advisory between PRs
-- **WHEN** a critical advisory is published for an image's package and no PR runs that week
+- **WHEN** a critical advisory with a fixed version is published for an image's package, and no PR runs that week
 - **THEN** the weekly scan opens or updates the tracking issue and names the image and the advisory
 
 #### Scenario: Entry close to expiry
