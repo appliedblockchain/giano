@@ -7,9 +7,10 @@ import type { AppConfig } from "../config.js";
 import type { Db } from "../db/index.js";
 import { sponsorshipDecisions, useropLog } from "../db/schema.js";
 import { BundlerRpcError } from "./bundler.js";
+import type { ChainPolicyService } from "./chain-policy.js";
 import type { ChainServices } from "./chains.js";
 import type { SessionContext } from "./sessions.js";
-import { mergePolicy, type Tenant } from "./tenants.js";
+import { mergePolicy, type Tenant, tenantRelayRateLimit } from "./tenants.js";
 import { UpstreamLimitError } from "./upstream-fetch.js";
 import { evaluatePolicy, type PolicyRuleResult } from "./userop-policy.js";
 
@@ -110,16 +111,8 @@ export type RelayCaller = {
 export type UseropRelayOptions = {
 	db: Db;
 	config: AppConfig;
-	/** Deployment-wide numeric caps. Address-valued defaults live on each chain descriptor (MC-61). */
-	defaultPolicy: {
-		maxCallGas: bigint;
-		maxVerificationGas: bigint;
-		maxPreVerificationGas: bigint;
-		maxPaymasterVerificationGas: bigint;
-		maxPaymasterPostOpGas: bigint;
-		maxFeePerGas: bigint;
-		maxPriorityFeePerGas: bigint;
-	};
+	/** Each chain's relay policy: stored, seeded, overridden by GIANO_CHAINS and USEROP_* (chain-policy.ts). */
+	chainPolicies: Pick<ChainPolicyService, "resolveFor">;
 	metrics: FastifyInstance["metrics"];
 };
 
@@ -132,37 +125,24 @@ export type UseropRelayOptions = {
 export function createUseropRelay({
 	db,
 	config,
-	defaultPolicy,
+	chainPolicies,
 	metrics,
 }: UseropRelayOptions) {
 	/**
-	 * Policy for one (tenant, chain), per §9.5: env caps ← the chain descriptor's own policy
-	 * ← the tenant's overrides for THAT chain. Address-valued fields never cross chains.
+	 * Policy for one (tenant, chain), per §9.5: the chain's policy (overrides, else stored, read for
+	 * each operation so an edit applies at once on every replica) ← the tenant's overrides for THAT
+	 * chain. Address-valued fields never cross chains.
 	 */
-	const tenantPolicy = (
+	const tenantPolicy = async (
 		caller: Pick<RelayCaller, "session" | "tenant" | "chain">,
 	) => {
 		const { chain } = caller;
-		const own = chain.descriptor.policy;
-		const chainDefaults = {
-			maxCallGas: own.maxCallGas ?? defaultPolicy.maxCallGas,
-			maxVerificationGas:
-				own.maxVerificationGas ?? defaultPolicy.maxVerificationGas,
-			maxPreVerificationGas:
-				own.maxPreVerificationGas ?? defaultPolicy.maxPreVerificationGas,
-			maxPaymasterVerificationGas:
-				own.maxPaymasterVerificationGas ??
-				defaultPolicy.maxPaymasterVerificationGas,
-			maxPaymasterPostOpGas:
-				own.maxPaymasterPostOpGas ?? defaultPolicy.maxPaymasterPostOpGas,
-			maxFeePerGas: own.maxFeePerGas ?? defaultPolicy.maxFeePerGas,
-			maxPriorityFeePerGas:
-				own.maxPriorityFeePerGas ?? defaultPolicy.maxPriorityFeePerGas,
-			allowedTargets: own.allowedTargets,
-			allowedPaymasters: own.allowedPaymasters,
-		};
+		const resolved = await chainPolicies.resolveFor(chain.descriptor);
 		return {
-			...mergePolicy(chainDefaults, caller.tenant?.policy, chain.chainId),
+			...mergePolicy(resolved.policy, caller.tenant?.policy, chain.chainId),
+			...(resolved.problems.length > 0
+				? { chainPolicyError: resolved.problems.join("; ") }
+				: {}),
 			// The 16-byte id the paymaster bills, so `sponsored-tenant-match` can cross-check a sponsored
 			// operation against the session that submitted it.
 			sponsorshipTenantId:
@@ -187,7 +167,7 @@ export function createUseropRelay({
 		caller: Pick<RelayCaller, "session" | "tenant" | "chain">,
 	): { ok: true } | { ok: false; max: number } => {
 		const max =
-			tenantPolicy(caller).relayRateLimitPerMinute ??
+			tenantRelayRateLimit(caller.tenant?.policy) ??
 			config.USEROP_RATE_LIMIT_PER_MINUTE;
 		const now = Date.now();
 		const window = relayWindows.get(caller.session.tenantId);
@@ -230,7 +210,19 @@ export function createUseropRelay({
 			});
 
 			// Per-(tenant, chain) policy: tenant jsonb overrides merged over the chain's defaults.
-			const policy = tenantPolicy(caller);
+			const policy = await tenantPolicy(caller);
+			if (policy.chainPolicyError !== undefined) {
+				// The chain's policy is broken or, in production, undecided: a platform admin has to fix it
+				// in the console. Until then every operation on the chain is refused by `chain-policy`.
+				log.error(
+					{
+						tenant: tenantSlug,
+						chainId: chain.chainId,
+						problems: policy.chainPolicyError,
+					},
+					"chain relay policy has a problem; refusing the chain's operations",
+				);
+			}
 			if (policy.tenantPolicyError !== undefined) {
 				// A stored row no longer matches the schema: an operator has to fix it. Until then every
 				// relay for this tenant is refused by the `tenant-policy` rule below (fail closed).

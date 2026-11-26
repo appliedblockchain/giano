@@ -488,7 +488,8 @@ Full schema in `services/wallet-api/src/config.ts`. Required and notable vars:
 | `GIANO_CHAINS`, `BUNDLER_BASE_URL` | instead of the three above | several chains: the backend chain document the bundler reads too (shared fields, then a `walletApi` section with `factory`, `policy`, `bundlerUrl`); each chain submits to `<BUNDLER_BASE_URL>/<chainId>` unless `walletApi.bundlerUrl` is set. Mutually exclusive with the shorthand |
 | `ENTRYPOINT_ADDRESS`, `FACTORY_ADDRESS` | conditional | default from the registry; **required when `CHAIN_ID` is not in the registry** |
 | `IMPLEMENTATION_ADDRESS` | optional | the wallet implementation the factory must clone; default from the registry. Unset outside the registry: the comparison is skipped with a warning |
-| `USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS`, `USEROP_RATE_LIMIT_PER_MINUTE` | — | relay policy **defaults** — each tenant's `policy` jsonb overrides per field (gas as integers, fees in wei) |
+| `USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS` | — | relay policy **overrides**: each chain's policy lives in the database and is edited in the console (*Relay policy*); a variable set here overrides that field (gas as integers, fees in wei). Each tenant's `policy` jsonb applies on top |
+| `USEROP_RATE_LIMIT_PER_MINUTE` | — | relay submissions per tenant per minute; a tenant's `policy` overrides it |
 | `CHALLENGE_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `CEREMONY_RATE_LIMIT_PER_MINUTE` | — | TTLs / rate limit |
 | `METRICS_BEARER_TOKEN` | conditional | bearer token for `GET /metrics`, at least 16 characters; **required when `GIANO_DEPLOYMENT_CLASS` is `testnet` or `production`** |
 | `SESSION_IDLE_TIMEOUT_SECONDS`, `SESSION_MAX_PER_USER` | — | wallet session idle timeout (default 3600, 300 to `SESSION_TTL_SECONDS`) and live sessions per user (default 10) |
@@ -998,10 +999,10 @@ P-256 passkey).
       were all removed. For a user who holds an active passkey, wallet-api returns
       `409 already-registered`: that user adds a device through a pending addition
       ([`INTEGRATION.md` §6](./INTEGRATION.md#6-tenants)).
-- [ ] **UserOp policy** tuned: deployment defaults (`USEROP_MAX_*`, `USEROP_ALLOWED_TARGETS`,
-      `USEROP_ALLOWED_PAYMASTERS`) plus per-tenant `policy` overrides; paymasters pinned per tenant.
-      A production deployment refuses to start until every chain states both allowlists (`"any"`
-      or addresses) and has a fee cap wallet-api knows or you set (wallet-api README, "Relay policy").
+- [ ] **UserOp policy** reviewed: each chain's relay policy in the console (*Relay policy*) shows no
+      problems, fee caps set for every chain wallet-api has no default for, plus per-tenant `policy`
+      overrides; paymasters pinned per tenant. In production a chain with a field nothing decides
+      has its operations refused (wallet-api README, "Relay policy").
 - [ ] **Origins locked down:** each tenant's `expectedOrigins`, `allowedDappOrigins` /
       `GIANO_ALLOWED_DAPP_ORIGINS` and `corsOrigins` to its real hosts only. dApp does **not**
       send `COOP: same-origin`.

@@ -39,9 +39,10 @@ creates the `TENANT_FIXTURES` tenants (insert-only). Anywhere else it refuses `T
   against the configured EntryPoint/chain and submits only to the configured bundler.
 - **Every relayed op passes a policy pipeline** (see [Relay policy](#relay-policy)) — sender
   must match the session credential's wallet, gas/fee caps, target and paymaster allowlists —
-  and every rule's verdict is persisted as an audit row, accepted or rejected. The `USEROP_*` env
-  values are deployment defaults; each tenant's `policy` jsonb overrides them per field, and each
-  tenant has its own relay rate limit.
+  and every rule's verdict is persisted as an audit row, accepted or rejected. Each chain's caps and
+  allowlists live in the database and are edited in the console; `GIANO_CHAINS` and the `USEROP_*`
+  env vars override them per field; each tenant's `policy` jsonb applies on top, and each tenant has
+  its own relay rate limit.
 - **Registration is closed by default** (per-tenant `openRegistration: false`): the client
   project's backend requests ceremony options server-to-server with one of the TENANT'S OWN
   `adminKeys` bearers (stored sha256-hashed), binding wallet registration to its own
@@ -64,6 +65,7 @@ which decides whether a tenant pays.
 
 | Rule | Threat it addresses |
 | --- | --- |
+| `chain-policy` | A chain whose stored policy no longer parses, or (production) has a field nothing decides, would otherwise be relayed under fallbacks nobody chose. Fails closed: every operation on that chain is refused, and the relay logs an error, until a platform admin fixes it in the console (*Relay policy*). Other chains are unaffected |
 | `tenant-policy` | A stored tenant policy that no longer parses would otherwise fall back to the deployment defaults and open the tenant's allowlists. Fails closed: every operation of that tenant is refused, and the relay logs an error, until the row is fixed |
 | `sender-binding` | Operator liability: relaying, under a session, an operation for a wallet that is not the session's |
 | `call-gas-cap` | Bundler griefing and tenant cost: an execution limit large enough to tie up an executor or be charged the unused-gas penalty |
@@ -86,26 +88,43 @@ and no gas, bounded by `verification-gas-cap`; `factoryData`'s size is bounded b
 `pre-verification-gas-cap` and the request body limit. EIP-7702 initCode (`0x7702…`) is refused by
 the request schema.
 
-**Where the caps come from.** Per (tenant, chain): the deployment default (`USEROP_MAX_*`) ← the
-chain descriptor's `walletApi.policy` ← the tenant's `policy` ← the tenant's `policy.perChain[chainId]`;
-later wins. The fee caps are per chain: the descriptor's, else `USEROP_MAX_FEE_PER_GAS` /
-`USEROP_MAX_PRIORITY_FEE_PER_GAS` when set, else wallet-api's default for the chain
-(`src/services/chain-fee-caps.ts`: 300/20 gwei on Ethereum, 500/50 on Sepolia, 10/1 on OP Mainnet,
-Base and Base Sepolia), else 500/500 gwei.
+**Each chain's policy is in the database.** The table `chain_relay_policy` holds one row per chain:
+its caps and allowlists, a version and who changed it last. Platform admins edit it in the console's
+*Relay policy* tab, or with `PUT /v1/platform/chain-policies/:chainId` (`If-Match` on the version);
+every write is in `chain_relay_policy_history`. The relay reads the row for each operation, so an
+edit applies at once on every replica.
 
-**Allowlists are decisions.** Each is `"any"` or a non-empty list of addresses, per chain only
-(MC-61): in a tenant's `policy.perChain[chainId]`, in a chain descriptor's `walletApi.policy`, or
-`USEROP_ALLOWED_TARGETS` / `USEROP_ALLOWED_PAYMASTERS` for the single-chain shorthand. A tenant with
-no entry for a chain inherits the chain's. The tenant API refuses an empty list (it reads as "none"
-but meant "any"); a list stored before that reads as `"any"`.
+**Seeded with safe defaults.** When wallet-api starts it writes a row for every served chain that has
+none, and never touches an existing one:
 
-**Production refuses to start** (`GIANO_DEPLOYMENT_CLASS=production`) when a served chain does not
-state both allowlists, or would get the 500 gwei fallback fee cap. It never refuses to start because
-of a tenant row: tenants are runtime data, and one bad row must not stop every tenant's relay (that
-tenant fails closed instead, `tenant-policy`).
+| Field | Seed |
+| --- | --- |
+| `maxCallGas`, `maxVerificationGas` | 5,000,000 |
+| `maxPreVerificationGas` | 10,000,000 (on OP Stack chains it also carries the L1 data fee) |
+| `maxPaymasterVerificationGas`, `maxPaymasterPostOpGas` | 1,000,000 |
+| `maxFeePerGas`, `maxPriorityFeePerGas` | wallet-api's value for the chain (`src/services/chain-fee-caps.ts`: 300/20 gwei on Ethereum, 500/50 on Sepolia, 10/1 on OP Mainnet, Base and Base Sepolia); not set for any other chain |
+| `allowedTargets` | `"any"` |
+| `allowedPaymasters` | the chain's own Giano sponsorship paymaster; not set for a chain without one. An operation with no paymaster always passes this rule |
 
-**Suggested alerts:** any increase of `giano_userop_policy_rejections_total{rule="tenant-policy"}`
-(a tenant's relay is down); `{rule=~"max-fee-cap|priority-fee-cap"}` by chain (a cap below the
+If the seed cannot be written, wallet-api does not start.
+
+**Where each value comes from.** Per chain and field: the chain descriptor's `walletApi.policy`
+(`GIANO_CHAINS`), else the matching `USEROP_*` env var when set, else the stored row. Then the
+tenant's `policy`, then its `policy.perChain[chainId]`; later wins. Allowlists are per chain only
+(MC-61): a tenant with no `perChain` entry for a chain inherits the chain's.
+
+**Allowlists are decisions.** Each is `"any"` or a non-empty list of addresses. The tenant and chain
+policy APIs refuse an empty list (it reads as "none" but meant "any"); a list stored before that,
+or written in a `GIANO_CHAINS` descriptor, reads as `"any"`.
+
+**A field nothing decides.** Outside production it falls back to what wallet-api did before: the
+seed's gas caps, a 500 gwei fee cap, any address. The console shows it as a fallback. In production
+every operation on that chain is refused under `chain-policy`, naming the field and where to set it,
+and wallet-api logs the problem at error level when it starts. wallet-api never refuses to start
+because of a chain policy or a tenant row: one chain's or tenant's gap must not stop the others.
+
+**Suggested alerts:** any increase of `giano_userop_policy_rejections_total{rule=~"chain-policy|tenant-policy"}`
+(a chain's or a tenant's relay is down); `{rule=~"max-fee-cap|priority-fee-cap"}` by chain (a cap below the
 market, or a client bug); a spike of any other rule (probing).
 
 ## API
@@ -157,9 +176,9 @@ example). Highlights:
 | `CHAIN_ID` / `RPC_URL` / `BUNDLER_URL` | single-chain shorthand, mutually exclusive with `GIANO_CHAINS`; `BUNDLER_URL` is the exact endpoint. The shorthand has no `chainType`: wallet-api checks the GasPriceOracle code through `RPC_URL` to decide OP Stack. If giano-bundler sets `bundler.chainType` for this chain, use `GIANO_CHAINS` instead, so both services take the same type |
 | `ENTRYPOINT_ADDRESS` / `FACTORY_ADDRESS` | default from the `@appliedblockchain/giano-contracts` registry for `CHAIN_ID` |
 | `IMPLEMENTATION_ADDRESS` | the wallet implementation `FACTORY_ADDRESS` must clone; default from the registry only when the factory also comes from the registry. Without either, the comparison is skipped with a warning (`walletApi.implementation` in `GIANO_CHAINS`) |
-| `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS` (5000000), `USEROP_MAX_PRE_VERIFICATION_GAS` (10000000), `USEROP_MAX_PAYMASTER_VERIFICATION_GAS`, `USEROP_MAX_PAYMASTER_POST_OP_GAS` (1000000), `USEROP_RATE_LIMIT_PER_MINUTE` | relay policy **defaults** (chain descriptor and tenant `policy` override per field) |
-| `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS` | no default: unset, each chain uses wallet-api's known cap for it ([Relay policy](#relay-policy)); set, they apply to every chain without a descriptor cap |
-| `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS` | single-chain shorthand only: `any`, or comma-separated addresses. Required when `GIANO_DEPLOYMENT_CLASS=production`; unset elsewhere means any |
+| `USEROP_MAX_CALL_GAS`, `USEROP_MAX_VERIFICATION_GAS`, `USEROP_MAX_PRE_VERIFICATION_GAS`, `USEROP_MAX_PAYMASTER_VERIFICATION_GAS`, `USEROP_MAX_PAYMASTER_POST_OP_GAS`, `USEROP_MAX_FEE_PER_GAS`, `USEROP_MAX_PRIORITY_FEE_PER_GAS` | **overrides**, no default: set, each overrides that field of every chain's stored relay policy whose `GIANO_CHAINS` descriptor does not set it ([Relay policy](#relay-policy)); unset or empty, the stored policy applies. Prefer the console |
+| `USEROP_ALLOWED_TARGETS`, `USEROP_ALLOWED_PAYMASTERS` | single-chain shorthand only, **overrides**: `any`, or comma-separated addresses. Unset, the stored policy applies |
+| `USEROP_RATE_LIMIT_PER_MINUTE` | relay submissions per tenant per minute; a tenant's `policy` overrides it |
 | `CHALLENGE_TTL_SECONDS` / `SESSION_TTL_SECONDS` / `CEREMONY_RATE_LIMIT_PER_MINUTE` | tuning |
 | `METRICS_BEARER_TOKEN` | bearer token for `GET /metrics`, at least 16 characters; required when `GIANO_DEPLOYMENT_CLASS` is `testnet` or `production` |
 | `SESSION_IDLE_TIMEOUT_SECONDS` / `SESSION_MAX_PER_USER` | wallet session idle timeout (3600; at least 300, at most `SESSION_TTL_SECONDS`), live sessions per user before the ones used longest ago are revoked (10) |

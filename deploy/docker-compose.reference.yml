@@ -77,23 +77,25 @@ services:
       # paymaster console's Platform area; the service boots with none. rpId is IRREVERSIBLE per
       # tenant (passkeys bind to it).
 
-      # --- userop relay policy DEFAULTS (integers; fees in wei) — a tenant's policy
-      #     jsonb may override any field per tenant ---
-      #     What each cap and allowlist protects: services/wallet-api/README.md, "Relay policy".
-      USEROP_MAX_CALL_GAS: ${USEROP_MAX_CALL_GAS:-5000000}
-      USEROP_MAX_VERIFICATION_GAS: ${USEROP_MAX_VERIFICATION_GAS:-5000000}
-      USEROP_MAX_PRE_VERIFICATION_GAS: ${USEROP_MAX_PRE_VERIFICATION_GAS:-10000000}
-      USEROP_MAX_PAYMASTER_VERIFICATION_GAS: ${USEROP_MAX_PAYMASTER_VERIFICATION_GAS:-1000000}
-      USEROP_MAX_PAYMASTER_POST_OP_GAS: ${USEROP_MAX_PAYMASTER_POST_OP_GAS:-1000000}
-      # Fee caps in wei. Empty = wallet-api's default for CHAIN_ID (e.g. 10 gwei on Base, 300 gwei on
-      # Ethereum). A chain wallet-api has no default for needs both set in production, or it refuses
-      # to start.
+      # --- userop relay policy OVERRIDES (integers; fees in wei) ---
+      #     The chain's relay policy lives in wallet-api's database: seeded with safe defaults on first
+      #     start, then edited in the console (Relay policy). Leave these empty to use it; a value set
+      #     here overrides that field. What each cap and allowlist protects:
+      #     services/wallet-api/README.md, "Relay policy".
+      USEROP_MAX_CALL_GAS: ${USEROP_MAX_CALL_GAS:-}
+      USEROP_MAX_VERIFICATION_GAS: ${USEROP_MAX_VERIFICATION_GAS:-}
+      USEROP_MAX_PRE_VERIFICATION_GAS: ${USEROP_MAX_PRE_VERIFICATION_GAS:-}
+      USEROP_MAX_PAYMASTER_VERIFICATION_GAS: ${USEROP_MAX_PAYMASTER_VERIFICATION_GAS:-}
+      USEROP_MAX_PAYMASTER_POST_OP_GAS: ${USEROP_MAX_PAYMASTER_POST_OP_GAS:-}
+      # The seed has fee caps for the public chains wallet-api knows (e.g. 10 gwei on Base). For any
+      # other chain set them in the console or here: in production its operations are refused until
+      # they are set.
       USEROP_MAX_FEE_PER_GAS: ${USEROP_MAX_FEE_PER_GAS:-}
       USEROP_MAX_PRIORITY_FEE_PER_GAS: ${USEROP_MAX_PRIORITY_FEE_PER_GAS:-}
-      # `any`, or comma-separated contract addresses. A decision, not a default: a production
-      # deployment refuses to start without both (a tenant's policy may still narrow them per chain).
-      USEROP_ALLOWED_TARGETS: ${USEROP_ALLOWED_TARGETS:?set to "any" or comma-separated target addresses}
-      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:?set to "any" or comma-separated paymaster addresses}
+      # `any`, or comma-separated addresses. The seed allows any target and only the chain's own
+      # Giano paymaster.
+      USEROP_ALLOWED_TARGETS: ${USEROP_ALLOWED_TARGETS:-}
+      USEROP_ALLOWED_PAYMASTERS: ${USEROP_ALLOWED_PAYMASTERS:-}
       # per-tenant relay rate limit default (tenant policy.relayRateLimitPerMinute overrides)
       USEROP_RATE_LIMIT_PER_MINUTE: ${USEROP_RATE_LIMIT_PER_MINUTE:-60}
       # public receipt lookup, per client IP per minute (see TRUST_PROXY below). The thin SDK

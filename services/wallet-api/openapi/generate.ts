@@ -34,9 +34,6 @@ const config = loadConfig({
 	FACTORY_ADDRESS: "0x0000000000000000000000000000000000000002",
 	RPC_URL: "http://localhost:8545",
 	BUNDLER_URL: "http://localhost:4337",
-	// a production deployment states its relay allowlists (G6); the document does not depend on them
-	USEROP_ALLOWED_TARGETS: "any",
-	USEROP_ALLOWED_PAYMASTERS: "any",
 	SPONSORSHIP_ENABLED: "true",
 	SPONSORSHIP_PAYMASTER_ADDRESS: "0x0000000000000000000000000000000000000001",
 	// `local` is refused for a production deployment class, which is the point — so the document is
@@ -56,6 +53,8 @@ const { db, pool } = createDb(config.DATABASE_URL);
 const app = await buildApp({
 	config,
 	db,
+	// No database behind `db`: generating the document touches no route handler and seeds nothing.
+	seedChainPolicies: false,
 	// Never called: generating the document touches no route handler.
 	hsmSignerAdapter: {
 		keyId: "openapi-codegen",

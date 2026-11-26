@@ -70,8 +70,10 @@ describe("evaluatePolicy", () => {
 	it("accepts a compliant op and records every rule as an audit row", () => {
 		const decision = evaluatePolicy(baseOp, WALLET, baseConfig);
 		expect(decision.allowed).toBe(true);
-		// Twelve since G6 added tenant-policy and the pre-verification and paymaster gas caps.
+		// Thirteen: G6 added tenant-policy and the pre-verification and paymaster gas caps, and
+		// chain-relay-policy-console added chain-policy.
 		expect(decision.results.map((r) => r.rule)).toEqual([
+			"chain-policy",
 			"tenant-policy",
 			"sender-binding",
 			"call-gas-cap",

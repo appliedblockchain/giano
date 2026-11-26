@@ -57,6 +57,11 @@ export type PolicyConfig = {
 	 */
 	sponsorshipTenantId?: Hex;
 	/**
+	 * Set when the chain's relay policy has a problem: its stored row does not parse, or (production)
+	 * a field nothing decides. The `chain-policy` rule then refuses the operation (chain-policy.ts).
+	 */
+	chainPolicyError?: string;
+	/**
 	 * Set when the tenant's stored policy could not be parsed. The `tenant-policy` rule then refuses
 	 * the operation: a broken policy must never loosen the relay to the deployment defaults.
 	 */
@@ -111,7 +116,15 @@ export function evaluatePolicy(
 	const pass = (rule: string, detail?: string) =>
 		results.push({ rule, passed: true, detail });
 
-	// 0. the tenant's own policy must be readable. If it is not, no cap or allowlist below is the
+	// 0. the chain's policy must be decided and readable. If it is not, the caps and allowlists below
+	//    are fallbacks nobody chose, so the operation is refused rather than checked against them.
+	if (config.chainPolicyError !== undefined) {
+		fail("chain-policy", config.chainPolicyError);
+	} else {
+		pass("chain-policy");
+	}
+
+	// 0b. the tenant's own policy must be readable. If it is not, no cap or allowlist below is the
 	//    tenant's, so the operation is refused rather than checked against the deployment defaults.
 	if (config.tenantPolicyError !== undefined) {
 		fail(
