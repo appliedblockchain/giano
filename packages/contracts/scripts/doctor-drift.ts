@@ -13,6 +13,8 @@ export type DriftChain =
 				unknown
 			>)[];
 			unchecked: string[];
+			/** Tenants waiting for registerTenant on this chain; absent from a wallet-api older than it. */
+			unregistered?: { tenantId: string; slug: string }[];
 	  }
 	| { chainId: number; error: string; message: string };
 
@@ -78,6 +80,15 @@ export function driftLines(chain: DriftChain, now = Date.now()): DriftLine[] {
 			level: "warn",
 			label: "drift: not compared",
 			detail: `${chain.unchecked.length} tenant(s) not compared (not yet synced, or unreadable at the ledger's block): ${chain.unchecked.join(", ")}`,
+		});
+	// Not drift: a tenant with sponsorship switched on that nobody has registered on chain yet, so
+	// every one of its sponsorship requests is refused until someone does.
+	const unregistered = chain.unregistered ?? [];
+	if (unregistered.length > 0)
+		lines.push({
+			level: "warn",
+			label: "not yet sponsorable",
+			detail: `${unregistered.length} active tenant(s) have sponsorship on and are not registered on chain ${chain.chainId}'s paymaster (registerTenant): ${unregistered.map((tenant) => tenant.slug).join(", ")}`,
 		});
 	if (
 		!chain.entries.some((entry) => entry.kind !== "unknown-tenant") &&

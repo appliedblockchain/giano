@@ -64,6 +64,8 @@ declare module "fastify" {
 			/** Tenants whose registry, ledger and paymaster disagree, per chain (B5); reported, not a health failure. */
 			paymasterDriftedTenants: Gauge<"chain">;
 			paymasterUnknownTenants: Gauge<"chain">;
+			/** Active tenants with sponsorship on for a chain, not registered on its paymaster: not yet sponsorable, not drift. */
+			paymasterUnregisteredTenants: Gauge<"chain">;
 			/** 0/1 per served chain — drives the chain-unavailable alert (MC-54, MC-103). */
 			chainAvailable: Gauge<"chain">;
 		};
@@ -263,6 +265,12 @@ export default fp(
 			paymasterUnknownTenants: new Gauge({
 				name: "giano_paymaster_unknown_tenants",
 				help: "Tenants on the paymaster with no registry row (another deployment's, on a shared paymaster), from the watcher's last drift pass",
+				labelNames: ["chain"] as const,
+				registers: [registry],
+			}),
+			paymasterUnregisteredTenants: new Gauge({
+				name: "giano_paymaster_unregistered_tenants",
+				help: "Active tenants with sponsorship switched on for the chain that its paymaster has not registered, so not yet sponsorable, from the watcher's last drift pass; absent while no current pass stands",
 				labelNames: ["chain"] as const,
 				registers: [registry],
 			}),

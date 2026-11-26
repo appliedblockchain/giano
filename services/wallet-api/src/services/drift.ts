@@ -1,7 +1,12 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Address, Hex } from "viem";
 import type { Db } from "../db/index.js";
-import { paymasterState, paymasterTenants, tenants } from "../db/schema.js";
+import {
+	paymasterState,
+	paymasterTenants,
+	tenantSponsorship,
+	tenants,
+} from "../db/schema.js";
 import type { PaymasterReader } from "./paymaster-contract.js";
 
 /**
@@ -64,6 +69,12 @@ export type ChainDrift = {
 	entries: DriftEntry[];
 	/** Tenants the chain could not be read for at the ledger's block, so were not compared. */
 	unchecked: string[];
+	/**
+	 * Active tenants with sponsorship switched on for this chain that its paymaster has not
+	 * registered: waiting for `registerTenant`, so not yet sponsorable. A step not yet taken, never
+	 * drift (openspec tenant-chain-readiness D4).
+	 */
+	unregistered: { tenantId: string; slug: string }[];
 };
 
 type RegistryRow = { slug: string; status: string };
@@ -197,7 +208,7 @@ export async function computeDrift(options: {
 	const { db, chainId, paymaster } = options;
 	const roster = await paymaster.roster();
 	const uuids = roster.map((entry) => toUuid(entry.tenantId));
-	const [registry, ledger, [state]] = await Promise.all([
+	const [registry, ledger, [state], sponsoring] = await Promise.all([
 		uuids.length > 0
 			? db
 					.select({
@@ -216,6 +227,19 @@ export async function computeDrift(options: {
 			.select({ cursor: paymasterState.lastSyncedBlock })
 			.from(paymasterState)
 			.where(eq(paymasterState.chainId, chainId)),
+		// The config is validated on every write; a row whose `enabled` is not true does not sponsor.
+		db
+			.select({ id: tenants.id, slug: tenants.slug })
+			.from(tenantSponsorship)
+			.innerJoin(tenants, eq(tenants.id, tenantSponsorship.tenantId))
+			.where(
+				and(
+					eq(tenantSponsorship.chainId, chainId),
+					eq(tenants.status, "active"),
+					sql`(${tenantSponsorship.config}->>'enabled') = 'true'`,
+				),
+			)
+			.orderBy(tenants.slug),
 	]);
 	const registryById = new Map(registry.map((row) => [row.id, row]));
 	const ledgerById = new Map(ledger.map((row) => [row.tenantId, row]));
@@ -274,11 +298,17 @@ export async function computeDrift(options: {
 			},
 		),
 	);
+	const registered = new Set(
+		uuids.filter((_, index) => roster[index].registered),
+	);
 	return {
 		chainId,
 		checkedAt: new Date(),
 		entries: perTenant.flatMap((tenant) => tenant.entries),
 		unchecked: uuids.filter((_, index) => perTenant[index].unchecked),
+		unregistered: sponsoring
+			.filter((row) => !registered.has(row.id))
+			.map((row) => ({ tenantId: row.id, slug: row.slug })),
 	};
 }
 
