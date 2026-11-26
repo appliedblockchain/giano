@@ -75,6 +75,7 @@ import {
 import {
 	activateRehearsal,
 	classDeployer,
+	flaggedRpcUrls,
 	forbidsPermissivePaymaster,
 	isMainnetChain,
 	type NetworkClass,
@@ -1461,10 +1462,8 @@ async function main() {
 
 void main().catch((error) => {
 	// The last line of defence: any RPC URL this run could have used, whatever threw.
-	const argv = process.argv;
-	const flagged = argv[argv.indexOf("--rpc") + 1];
 	console.error(
-		`doctor: ${redactRpcUrls((error as Error).message, [rpcInUse, process.env.RPC_URL, argv.includes("--rpc") ? flagged : undefined])}`,
+		`doctor: ${redactRpcUrls((error as Error).message, [rpcInUse, process.env.RPC_URL, ...flaggedRpcUrls(process.argv)])}`,
 	);
 	process.exit(1);
 });

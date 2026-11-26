@@ -318,6 +318,41 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 			nonce,
 		);
 
+		// A repeated signer is authorised once, so the plan counts one addSigner, as the run sends it.
+		const twoSigners = provision({
+			extra: ["--signer", SIGNER.toLowerCase(), "--plan"],
+		});
+		assert.equal(
+			twoSigners.status,
+			0,
+			`${twoSigners.stdout}\n${twoSigners.stderr}`,
+		);
+		assert.equal(
+			twoSigners.stdout.match(/→ would authorise sponsorship signer/g)?.length,
+			1,
+		);
+
+		// A repeated tenant id is refused before anything is sent, in a plan and in a run: the run
+		// would register it once and fund it once per entry.
+		for (const mode of [["--plan"], []]) {
+			const twice = provision({
+				extra: [
+					"--tenant",
+					`${TENANT.toUpperCase()}:${holder("withdraw")}:provision-again:0.02`,
+					...mode,
+				],
+			});
+			assert.notEqual(twice.status, 0, twice.stdout);
+			assert.match(
+				twice.stderr,
+				new RegExp(`tenant id ${TENANT.toUpperCase()} is given more than once`),
+			);
+		}
+		assert.equal(
+			await client.getTransactionCount({ address: operator }),
+			nonce,
+		);
+
 		// A plan for more ETH than the key holds fails, where a run would fail part-way (S8).
 		const plannedShort = provision({
 			tenant: `${TENANT}:${holder("withdraw")}:provision-test:1000000`,

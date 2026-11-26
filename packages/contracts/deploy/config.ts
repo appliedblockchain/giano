@@ -332,3 +332,13 @@ export function redactRpcUrls(
 		if (url) redacted = redacted.replaceAll(url, redactRpcUrl(url));
 	return redacted;
 }
+
+/**
+ * Every value given to `--rpc` in `argv`. A command can repeat the flag, and the last value is the
+ * one used, so an error handler redacts all of them rather than the first.
+ */
+export function flaggedRpcUrls(argv: readonly string[]): string[] {
+	return argv.flatMap((token, i) =>
+		token === "--rpc" && argv[i + 1] ? [argv[i + 1]] : [],
+	);
+}

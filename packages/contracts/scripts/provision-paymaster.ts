@@ -62,7 +62,7 @@ import {
 } from "ethers";
 import { getGianoDeployment } from "../addresses";
 import { LOCAL_CHAIN_IDS } from "../chains";
-import { redactRpcUrls } from "../deploy/config";
+import { flaggedRpcUrls, redactRpcUrls } from "../deploy/config";
 import { GAS_PRICE_HEADROOM } from "../deploy/funding";
 import {
 	LOW_DEPOSIT_WEI,
@@ -103,11 +103,10 @@ type Args = {
  * URL in an error, and a Silent Data URL carries a write token (G48).
  */
 function redact(text: string): string {
-	const argv = process.argv;
-	const flagged = argv.includes("--rpc")
-		? argv[argv.indexOf("--rpc") + 1]
-		: undefined;
-	return redactRpcUrls(text, [flagged, process.env.RPC_URL]);
+	return redactRpcUrls(text, [
+		...flaggedRpcUrls(process.argv),
+		process.env.RPC_URL,
+	]);
 }
 
 /**
@@ -509,6 +508,16 @@ async function main(): Promise<void> {
 			);
 	}
 	const tenants = (repeated.tenant ?? []).map(parseTenant);
+	// A repeated id is a mistake: the run would register it once, with the first withdrawal address,
+	// and fund it once per entry.
+	const seenTenantIds = new Set<string>();
+	for (const tenant of tenants) {
+		if (seenTenantIds.has(tenant.id))
+			throw new Error(
+				`tenant id ${tenant.raw} is given more than once. Pass each tenant once, with its full funding.`,
+			);
+		seenTenantIds.add(tenant.id);
+	}
 	for (const tenant of tenants)
 		ether(`tenant ${tenant.slug}'s funding`, tenant.fundEth);
 
@@ -530,7 +539,10 @@ async function main(): Promise<void> {
 		log("Plan only: the transactions a run would send now. Nothing is sent.");
 	}
 
-	const namedSigners = (repeated.signer ?? []).map((s) => getAddress(s));
+	// Each signer once: a run skips a repeated one (isSigner), and a plan must count it once too.
+	const namedSigners = [
+		...new Set((repeated.signer ?? []).map((s) => getAddress(s))),
+	];
 	const upgrader = getAddress(flags["role-holder-upgrader"] ?? wallet.address);
 	/** The addresses that hold `roleName` now. */
 	const holdersOf = async (roleName: string): Promise<string[]> => {
@@ -730,17 +742,17 @@ async function main(): Promise<void> {
 		}
 
 		// --- signing keys ------------------------------------------------------------------------
-		for (const signer of repeated.signer ?? []) {
+		for (const signer of namedSigners) {
 			if (await paymaster.isSigner(signer)) {
-				log(`  • signer already authorised: ${getAddress(signer)}`);
+				log(`  • signer already authorised: ${signer}`);
 				continue;
 			}
 			if (
-				await send(`authorise sponsorship signer ${getAddress(signer)}`, () =>
-					paymaster.addSigner(getAddress(signer)),
+				await send(`authorise sponsorship signer ${signer}`, () =>
+					paymaster.addSigner(signer),
 				)
 			)
-				log(`  ✓ authorised sponsorship signer ${getAddress(signer)}`);
+				log(`  ✓ authorised sponsorship signer ${signer}`);
 		}
 
 		// --- stake -------------------------------------------------------------------------------
