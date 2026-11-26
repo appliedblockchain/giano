@@ -18,6 +18,18 @@
 # runtime has no shell, no tini and no curl; it runs as node (1000:1000), and serve.mjs handles
 # SIGTERM itself — which is all tini was for.
 
+# esbuild, compiled from source with a current Go (G25). The prebuilt esbuild 0.25.4 binary on npm
+# is built with Go 1.23.8, whose standard library has High and Critical advisories that fail the
+# image scan. Newer esbuild releases are no help: their Go is still behind, and Trivy cannot read
+# their Go version, so they hide findings rather than fix them. The version is the e2e workspace's
+# esbuild, because the JS API refuses a binary whose --version differs. `go install` fetches the
+# module through the Go module proxy and checks it against the Go checksum database, so a tampered
+# source fails the build. CGO is off, so the binary is static and runs on the musl runtime.
+FROM dhi.io/golang:1.27.4-alpine3.23-dev@sha256:2b2a66be9b985f883ea4b660062897ca8d59aa0412c3f4cf8338caa846de6ac6 AS esbuild
+ENV CGO_ENABLED=0
+RUN go install -trimpath github.com/evanw/esbuild/cmd/esbuild@v0.25.4 \
+ && /go/bin/esbuild --version
+
 FROM dhi.io/node:24-alpine3.23-dev@sha256:93960e52ba08d91ed90a09d26c112752fa6b1ee64e5471716923d125c61c509f AS build
 RUN corepack enable
 WORKDIR /repo
@@ -45,6 +57,8 @@ COPY e2e/wallet-byo e2e/wallet-byo
 # runtime, and its native compiler (a Go binary) carries Go stdlib advisories that fail the image
 # scan (G25), so it is removed after the build. serve.mjs needs only esbuild. The links to it then
 # point to nothing, so code that imports typescript at runtime fails with ENOENT.
+# The prebuilt esbuild binaries (@esbuild/<platform>) are removed for the same reason. The runtime
+# stage replaces them with the esbuild stage's binary, through ESBUILD_BINARY_PATH.
 # Only the workspace packages need compiling — the SPA itself is bundled at container start.
 # The order is a dependency order, not alphabetical: wallet-core depends on contracts, and the
 # kit on both wallet-core and wallet-transport.
@@ -53,13 +67,17 @@ RUN pnpm --filter @appliedblockchain/giano-contracts build:ts \
  && pnpm --filter @appliedblockchain/giano-wallet-core build \
  && pnpm --filter @appliedblockchain/giano-tx-describe build \
  && pnpm --filter @appliedblockchain/giano-wallet-kit build \
- && rm -rf /repo/node_modules/.pnpm/typescript@* /repo/node_modules/.pnpm/@typescript+*
+ && rm -rf /repo/node_modules/.pnpm/typescript@* /repo/node_modules/.pnpm/@typescript+* \
+   /repo/node_modules/.pnpm/@esbuild+*
 
 FROM dhi.io/node:24-alpine3.23@sha256:ea44fbd46a8e11a9ffb9b2bd5c6e4722fa507fb86fef0ee8d92a020ce7c850a5
 # The whole tree, so pnpm's symlinks into node_modules/.pnpm stay internally consistent, apart
 # from the links to the removed TypeScript. The pnpm store itself lives outside /repo and is left
 # behind here.
 COPY --from=build --chown=1000:1000 /repo /repo
+# The esbuild JS package finds its binary here instead of in the removed @esbuild/<platform> package.
+COPY --from=esbuild /go/bin/esbuild /usr/local/bin/esbuild
+ENV ESBUILD_BINARY_PATH=/usr/local/bin/esbuild
 WORKDIR /repo/e2e/wallet-byo
 # Matches var.container_port, and means the image runs correctly with no environment at all
 # beyond the endpoints it cannot guess.
