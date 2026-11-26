@@ -59,7 +59,7 @@ Concretely, six deliverables:
 | **D2** | Tenant lifecycle columns, an append-only `tenant_history`, platform admin challenge and session tables, migration `0007_tenant_lifecycle.sql` | `wallet-api` — [§5](#5-tenant-lifecycle-and-data-model) |
 | **D3** | One validation path for every tenant write, with the cross-tenant origin check the retired seed never did | `services/tenants.ts` — [§6](#6-keeping-the-invariant-under-runtime-writes) |
 | **D4** | `/v1/platform/tenants/*` routes, and every tenant resolver made lifecycle-aware | `wallet-api` — [§7](#7-platform-api), [§8](#8-resolution-under-the-lifecycle) |
-| **D5** | `/v1/platform/chains`, a server-side status read per served chain. *Not in H5 (H-k); delivered as B3 of `openspec/changes/redesign-paymaster-console`, with drift (§10.3) and usage (§10.4).* | `wallet-api` — [§10](#10-blockchain-status) |
+| **D5** | `/v1/platform/chains`, a server-side status read per served chain. *Not in H5 (H-k); delivered as B3 of `openspec/changes/archive/2026-11-26-redesign-paymaster-console`, with drift (§10.3) and usage (§10.4).* | `wallet-api` — [§10](#10-blockchain-status) |
 | **D6** | A *Platform* area in the existing console: wallet sign-in, tenant registry, create/edit/suspend/delete, key issue/revoke, chain status | `services/paymaster-admin` — [§11](#11-the-console) |
 
 D1–D4 and D6's tenant half satisfy R1. D5 and D6's chain half are the provisional answer to the
@@ -691,7 +691,7 @@ resets the fixtures. On any environment that is not a local stack, init refuses 
 
 ## 10. Blockchain status
 
-**Delivered as B3** of `openspec/changes/redesign-paymaster-console` (it was not part of H5, H-k).
+**Delivered as B3** of `openspec/changes/archive/2026-11-26-redesign-paymaster-console` (it was not part of H5, H-k).
 It is specified at the size of the data `wallet-api` already has: `src/routes/platform-chains.ts`,
 and the prober in `src/services/chain-probe.ts`.
 
@@ -883,7 +883,7 @@ counts more than the decisions half. Dating them by their block's time is a foll
 
 ### 11.2 Layout
 
-One tab bar, each tab a page with its own path (`openspec/changes/redesign-paymaster-console`):
+One tab bar, each tab a page with its own path (`openspec/changes/archive/2026-11-26-redesign-paymaster-console`):
 Overview, Tenants, Paymaster, Roles, Timelock, Activity, Health, and Admins where the platform API
 is configured. The earlier split into a Paymaster area and a Platform area is gone: it put one
 tenant in two places. The selected deployment is chosen in the header and is not part of the path.
