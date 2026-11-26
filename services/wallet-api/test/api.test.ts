@@ -459,7 +459,9 @@ describe("registration ceremony", () => {
 			adminKey,
 		);
 		// With no active passkey, a closed tenant lets the user register again (registrationRefusal
-		// returns null), so only the challenge binding stops a challenge issued for another id.
+		// returns null). The challenge binding is the first check that stops a challenge issued for
+		// another id, and the message assertion pins that check: the create-only insert further
+		// down would also refuse it, with the same code and a different message.
 		await removeCredentials("victim-unbound-removed", TENANT_B);
 		const options = await getOptions(
 			"attacker-fresh-id-removed",
@@ -524,11 +526,12 @@ describe("registration ceremony", () => {
 			},
 		});
 		expect(slot.statusCode).toBe(200);
+		const { claimCode } = slot.json() as { claimCode: string };
 		const claimed = await ctx.app.inject({
 			method: "POST",
 			url: "/v1/wallet/pending-additions/claim",
 			headers: { origin: TENANT_B.walletOrigin },
-			payload: { claimCode: (slot.json() as { claimCode: string }).claimCode },
+			payload: { claimCode },
 		});
 		expect(claimed.statusCode).toBe(200);
 		const { challenge } = claimed.json() as { challenge: string };
@@ -558,6 +561,22 @@ describe("registration ceremony", () => {
 				)
 			).credentialIds,
 		).toEqual([victim.credentialId]);
+		// The refusal must not burn the challenge: if it were consumed before the kind check,
+		// anyone who saw it could break the victim's pending addition.
+		const filled = await ctx.app.inject({
+			method: "POST",
+			url: "/v1/wallet/pending-additions/claim/fill",
+			headers: { origin: TENANT_B.walletOrigin },
+			payload: {
+				claimCode,
+				response: makeRegistrationResponse(createAuthenticator(), {
+					challenge,
+					origin: TENANT_B.walletOrigin,
+					rpId: TENANT_B.rpId,
+				}),
+			},
+		});
+		expect(filled.statusCode).toBe(200);
 	});
 
 	it("refuses a challenge issued for a new id once that user has registered", async () => {
