@@ -1,7 +1,9 @@
+import path from "node:path";
 import {
 	type Browser,
 	type BrowserContext,
 	expect,
+	type Locator,
 	type Page,
 	test,
 } from "@playwright/test";
@@ -158,6 +160,47 @@ async function pairDeviceB(a: DeviceA, browser: Browser): Promise<DeviceB> {
 async function signInDeviceB(b: DeviceB) {
 	await b.wallet.getByTestId("manage-flow-done").click();
 	await b.wallet.getByTestId("manage-sign-in").click();
+}
+
+/**
+ * Reads a QR code the way a phone camera would: from the rendered pixels, not from the markup. The
+ * element's screenshot is decoded by jsQR inside a blank page of the same browser.
+ */
+async function scanQr(qr: Locator, browser: Browser): Promise<string> {
+	const png = (await qr.screenshot()).toString("base64");
+	const context = await browser.newContext();
+	try {
+		const scanner = await context.newPage();
+		await scanner.addScriptTag({
+			path: path.resolve("node_modules/jsqr/dist/jsQR.js"),
+		});
+		const decoded = await scanner.evaluate(async (data) => {
+			const image = new Image();
+			image.src = `data:image/png;base64,${data}`;
+			await image.decode();
+			const canvas = document.createElement("canvas");
+			canvas.width = image.width;
+			canvas.height = image.height;
+			const context2d = canvas.getContext("2d");
+			if (!context2d) return null;
+			context2d.drawImage(image, 0, 0);
+			const pixels = context2d.getImageData(0, 0, canvas.width, canvas.height);
+			const jsQR = (
+				window as unknown as {
+					jsQR: (
+						data: Uint8ClampedArray,
+						width: number,
+						height: number,
+					) => { data: string } | null;
+				}
+			).jsQR;
+			return jsQR(pixels.data, pixels.width, pixels.height)?.data ?? null;
+		}, png);
+		expect(decoded, "the QR code decodes").not.toBeNull();
+		return decoded as string;
+	} finally {
+		await context.close();
+	}
 }
 
 /** A CDP credential id (base64) as wallet-api writes it (base64url, no padding). */
@@ -707,5 +750,79 @@ test.describe("one wallet, two devices", () => {
 		);
 		// The raw transports are gone from the subtitle.
 		await expect(rowA).not.toContainText("internal");
+	});
+
+	test("device B joins by scanning device A's QR code: the link opens the claim with the code filled in (PS-2)", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		await a.popup.getByTestId("manage-add-device").click();
+		const shown = (
+			await a.popup.getByTestId("manage-claim-code").textContent({
+				timeout: 30_000,
+			})
+		)
+			?.trim()
+			.replace("-", "") as string;
+
+		// The QR code carries the wallet origin with the same claim code, in the fragment.
+		const link = await scanQr(a.popup.getByTestId("manage-claim-qr"), browser);
+		expect(link).toBe(`${tenant.walletUrl}/#claim=${shown}`);
+
+		// Device B "scans" it: opening the link lands on the claim with the code filled in.
+		const context = await browser.newContext();
+		deviceB = context;
+		const wallet = await context.newPage();
+		await wallet.goto(link);
+		const { cdp } = await addVirtualAuthenticator(wallet, { synced: true });
+		const credentials = trackResidentCredentials(cdp);
+		await expect(wallet.getByTestId("manage-claim-input")).toHaveValue(shown, {
+			timeout: 30_000,
+		});
+		// The code has left the address bar.
+		expect(new URL(wallet.url()).hash).toBe("");
+		// No passkey before the user continues.
+		expect(credentials).toHaveLength(0);
+
+		await wallet.getByTestId("manage-claim-continue").click();
+		const onB = wallet.getByTestId("manage-claim-fingerprint");
+		await expect(onB).toHaveText(FINGERPRINT, { timeout: 30_000 });
+		await expect(a.popup.getByTestId("manage-consent-fingerprint")).toHaveText(
+			(await onB.textContent()) as string,
+			{ timeout: 30_000 },
+		);
+		await a.popup.getByTestId("manage-fingerprint-approve").click();
+		await expect(
+			a.popup.getByText("Passkey added", { exact: true }),
+		).toBeVisible({ timeout: 120_000 });
+		expect((await readOnChainOwners(a.address)).owners).toHaveLength(2);
+	});
+
+	test("an expired or used pairing link is refused with a reason, like a typed code (PS-2, WM-23)", async ({
+		page,
+		browser,
+	}) => {
+		const a = await startDeviceA(page);
+		const { b, code } = await offerDeviceB(a, browser);
+		deviceB = b.context;
+		await a.popup.getByTestId("manage-fingerprint-approve").click();
+		await expect(
+			a.popup.getByText("Passkey added", { exact: true }),
+		).toBeVisible({ timeout: 120_000 });
+
+		// The same link opened again, on a fresh device: the slot is consumed.
+		const other = await browser.newContext();
+		try {
+			const wallet = await other.newPage();
+			await wallet.goto(`${tenant.walletUrl}/#claim=${code.replace("-", "")}`);
+			await addVirtualAuthenticator(wallet);
+			await wallet.getByTestId("manage-claim-continue").click();
+			const error = wallet.getByTestId("manage-claim-error");
+			await expect(error).toBeVisible({ timeout: 30_000 });
+			await expect(error).toHaveAttribute("data-code", "pending-consumed");
+		} finally {
+			await other.close();
+		}
 	});
 });
