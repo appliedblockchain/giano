@@ -322,14 +322,19 @@ export function redactRpcUrl(url: string): string {
 /**
  * `text` with each of `urls` cut down to its origin. viem and ethers quote the request URL in their
  * errors, so any error or child output that reaches a terminal or a log file goes through this.
+ * The longest URL goes first: a shorter URL that starts the same would cut into it, and leave its
+ * token unmatched.
  */
 export function redactRpcUrls(
 	text: string,
 	urls: readonly (string | undefined)[],
 ): string {
 	let redacted = text;
-	for (const url of urls)
-		if (url) redacted = redacted.replaceAll(url, redactRpcUrl(url));
+	const longestFirst = urls
+		.filter((url): url is string => !!url)
+		.sort((a, b) => b.length - a.length);
+	for (const url of longestFirst)
+		redacted = redacted.replaceAll(url, redactRpcUrl(url));
 	return redacted;
 }
 

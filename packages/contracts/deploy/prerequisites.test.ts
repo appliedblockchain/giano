@@ -290,6 +290,14 @@ test("every repeated --rpc value is redacted, not only the first", () => {
 		flaggedRpcUrls(argv),
 	);
 	assert.doesNotMatch(redacted, /last-secret/);
+
+	// A shorter URL that starts the same, given first, must not cut into the keyed one.
+	const origin = "https://node.example.com/";
+	const keyed = `${origin}v1/write-token`;
+	assert.equal(
+		redactRpcUrls(`request to ${keyed} failed`, [origin, keyed]),
+		"request to https://node.example.com failed",
+	);
 });
 
 test("deploy:cli never prints a keyed RPC URL, not even in a provider error", () => {
