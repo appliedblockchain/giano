@@ -78,6 +78,13 @@ const allowlisted = [
 			.filter(Boolean),
 	),
 ];
+// The wallet-api refuses the rules when an entry is not an address. Checked here, before any request,
+// so a plan fails as the run's PUT would, also when this runner is called without its wrapper.
+for (const contract of allowlisted)
+	if (!/^0x[0-9a-f]{40}$/.test(contract))
+		throw new Error(
+			`The allowlist entry '${contract}' is not a contract address. Check SPONSOR_ALLOWLIST and SPONSOR_ERC20.`,
+		);
 if (allowlisted.length === 0) {
 	throw new Error(
 		"No contract to sponsor: no demo ERC-20 and no SPONSOR_ALLOWLIST. The wallet-api sponsors nothing, " +

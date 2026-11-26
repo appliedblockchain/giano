@@ -250,6 +250,12 @@ test("one holder per immediate role: the bootstrap key keeps none of them, even 
 				{ tenant: `${TENANT}:${zeroAddress}:provision-test:0.01` },
 				/withdraw address is the zero address/,
 			],
+			[
+				{
+					tenant: `00000000-0000-0000-0000-000000000000:${holder("withdraw")}:provision-test:0.01`,
+				},
+				/tenant id is zero: 00000000-0000-0000-0000-000000000000/,
+			],
 		];
 		for (const [overrides, message] of zeros) {
 			const zero = provision(overrides);

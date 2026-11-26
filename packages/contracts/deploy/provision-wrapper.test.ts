@@ -402,3 +402,36 @@ test("a sponsorship plan (GIANO_PLAN=1) makes the reads of a run against the wal
 		/set SPONSOR_ALLOWLIST/,
 	);
 });
+
+test("the sponsorship runner refuses an allowlist entry that is not an address, before any request, also without its wrapper", () => {
+	for (const env of [
+		{ SPONSOR_ALLOWLIST: `${ADDRESS},not-an-address` },
+		{ SPONSOR_ERC20: "0x123" },
+	]) {
+		const run = spawnSync(
+			process.execPath,
+			[join(REPO_ROOT, "e2e/devnet/provision-sponsorship.mjs")],
+			{
+				cwd: REPO_ROOT,
+				env: {
+					PATH: process.env.PATH,
+					SPONSOR_PLAN: "1",
+					SPONSOR_TENANTS: JSON.stringify([
+						{ slug: "demo", adminKey: "demo-admin-key" },
+					]),
+					SPONSOR_CHAIN_IDS: "84532",
+					// Nothing answers here: the check must fail before the first request.
+					WALLET_API_URL: "http://127.0.0.1:1",
+					...env,
+				},
+				encoding: "utf8",
+			},
+		);
+		assert.notEqual(run.status, 0);
+		assert.match(
+			run.stderr,
+			/The allowlist entry '(not-an-address|0x123)' is not a contract address/,
+		);
+		assert.doesNotMatch(run.stderr, /ECONNREFUSED|readyz|fetch failed/);
+	}
+});

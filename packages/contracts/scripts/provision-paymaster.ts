@@ -225,8 +225,11 @@ function parseTenant(spec: string): TenantSpec {
 		);
 	}
 	checkAddress(`tenant ${rawId}: withdraw address`, withdrawAddress);
+	const id = tenantIdToBytes16(rawId);
+	// registerTenant reverts on it (UnknownTenant), after the run's earlier transactions went out.
+	if (/^0x0{32}$/.test(id)) throw new Error(`tenant id is zero: ${rawId}`);
 	return {
-		id: tenantIdToBytes16(rawId),
+		id,
 		raw: rawId,
 		withdrawAddress: getAddress(withdrawAddress),
 		slug,
