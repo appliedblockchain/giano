@@ -313,7 +313,7 @@ interface ManagementController {
   startAddSecondDevice(): void                  // WM-18…WM-23
   startAddAddress(): void                       // WM-24…WM-26
   startRemove(owner: OwnerRow): void            // WM-27…WM-32
-  startClaimOnThisDevice(): void                // the NEW device's side of a handoff
+  startClaimOnThisDevice(code?): void           // the NEW device's side of a handoff
 
   // ── act within the active flow ──
   readonly flow: ManagementFlow | null

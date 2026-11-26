@@ -5,6 +5,7 @@ import type {
 	SponsorshipRefusalReason,
 } from "@appliedblockchain/giano-wallet-kit";
 import type { ReactNode } from "react";
+import { renderSVG } from "uqr";
 import { refusalCopy } from "../sponsorship-copy";
 
 /** The WM-48/WM-49 copy: who can act on the refusal, keyed off the machine-readable reason. */
@@ -119,4 +120,38 @@ export function addedFromLabel(row: {
 		(part): part is string => !!part,
 	);
 	return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/**
+ * The pairing link as a QR code (PS-2), for a phone to scan. Black on white with a quiet border,
+ * whatever the theme, because camera apps read dark-on-light codes most reliably. The SVG is
+ * generated here from the link, so it holds nothing but the code's own markup.
+ */
+/** The QR code's displayed size, in CSS pixels: large enough for a phone camera at arm's length. */
+const QR_SIZE = 200;
+
+export function PairingQr({ url }: { url: string }) {
+	// uqr's SVG has a viewBox and no size; give it one, or a shrink-to-fit box may squeeze it.
+	const svg = renderSVG(url, {
+		ecc: "M",
+		border: 2,
+		pixelSize: 6,
+		whiteColor: "#ffffff",
+		blackColor: "#000000",
+	}).replace("<svg ", `<svg width="${QR_SIZE}" height="${QR_SIZE}" `);
+	return (
+		<div
+			style={{
+				background: "#ffffff",
+				borderRadius: 8,
+				padding: 8,
+				width: "fit-content",
+				margin: "8px auto",
+				lineHeight: 0,
+			}}
+			data-testid="manage-claim-qr"
+			// biome-ignore lint/security/noDangerouslySetInnerHtml: uqr builds this SVG locally from the pairing link; no outside markup reaches it.
+			dangerouslySetInnerHTML={{ __html: svg }}
+		/>
+	);
 }

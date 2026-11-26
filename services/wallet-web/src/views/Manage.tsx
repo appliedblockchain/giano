@@ -3,8 +3,9 @@ import type {
 	ManagementNotice,
 	OwnerRow,
 } from "@appliedblockchain/giano-wallet-kit";
+import { claimCodeFromUrl } from "@appliedblockchain/giano-wallet-kit";
 import { useManagement } from "@appliedblockchain/giano-wallet-kit/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AddFlow, type AddVariant } from "./manage/AddFlow";
 import { AddressFlow } from "./manage/AddressFlow";
 import { ClaimFlow } from "./manage/ClaimFlow";
@@ -27,6 +28,24 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 	const { state, flow, actions } = useManagement();
 	// Which entry point started the add flow is a copy decision, so it lives in the view.
 	const [addVariant, setAddVariant] = useState<AddVariant>("this-device");
+
+	// PS-2: a pairing link (a scanned QR code) opens the wallet origin with the claim code in its
+	// fragment. Start the claim with it filled in; the user still continues before a passkey is made.
+	// Only on the wallet origin's own page, never in an application's popup.
+	const claimedFromLink = useRef(false);
+	useEffect(() => {
+		if (claimedFromLink.current || onClose) return;
+		const code = claimCodeFromUrl(window.location.href);
+		if (!code) return;
+		claimedFromLink.current = true;
+		// The code has done its job: keep it out of the address bar and the history.
+		window.history.replaceState(
+			null,
+			"",
+			window.location.pathname + window.location.search,
+		);
+		actions.startClaimOnThisDevice(code);
+	}, [actions, onClose]);
 
 	// ── Active flow ──────────────────────────────────────────────────────────────────
 	if (flow) {
