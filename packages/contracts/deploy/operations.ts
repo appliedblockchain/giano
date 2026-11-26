@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { createPublicClient, getAddress, http } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import {
 	delayPolicyProblems,
 	formatDuration,
@@ -12,7 +11,11 @@ import {
 	type TimelockDelays,
 } from "../timelock";
 import { activateRehearsal, classDeployer, ENTRY_POINT_V09 } from "./config";
-import { SIGNED_RPC_COMMANDS, timelockCommand } from "./operator-commands";
+import {
+	operatorInputProblems,
+	SIGNED_RPC_COMMANDS,
+	timelockCommand,
+} from "./operator-commands";
 import { type Plan, planCore } from "./plan";
 import { inspectDeployment } from "./preflight";
 import {
@@ -48,7 +51,7 @@ async function main() {
 	const [command] = positionals;
 	if (values.help) {
 		console.log(
-			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation] [--signed-rpc]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc makes provision, timelock and handoff sign every request with the key they send from.",
+			"pnpm contracts:funding|contracts:provision|contracts:sponsorship|contracts:doctor|contracts:timelock|contracts:handoff --chain <profile> [--env-file <dotenv-file>] [--plan] [--accept-unverified-implementation] [--signed-rpc]\n--config <file> selects a custom chain profile. Provisioning/policy/timelock writes require interactive confirmation.\n--plan on provision and sponsorship runs the checks a real run makes before it sends anything, shows what it would send, and sends nothing.\nOn an RPC that refuses eth_getStorageAt, the paymaster implementation can only be read from the proxy's Upgraded logs, which is not verified: provision and sponsorship refuse it unless --accept-unverified-implementation.\nOn an RPC that replaces `from` on unsigned calls (Silent Data), --signed-rpc makes provision, timelock and handoff sign every request with the key they send from.",
 		);
 		return;
 	}
@@ -144,11 +147,24 @@ async function main() {
 				(await rl.question(`Type '${phrase}' to continue: `)).trim() === phrase
 			);
 		};
-		if (values.plan) {
+		// provision and sponsorship plan by running the checks a real run makes before it sends anything,
+		// then their workflow in plan mode, which sends nothing (G48 R3). The other commands stop here.
+		const writes = command === "provision" || command === "sponsorship";
+		if (values.plan && !writes) {
 			console.log(
 				"Read-only plan; no operation invoked. Provide operator credentials through --env-file or the environment. See deploy/contracts/README.md.",
 			);
 			return;
+		}
+		// A blank PAYMASTER_ROLE_ADMIN= line in an operator file means "not set", not "no admin".
+		const admin = process.env.PAYMASTER_ROLE_ADMIN?.trim() || profile.roleAdmin;
+		if (writes) {
+			// Before any chain read, and every missing setting at once.
+			const problems = operatorInputProblems(command, process.env, admin);
+			if (problems.length)
+				throw new OperatorError(
+					`Correct the selected operator environment. No action was performed.\n  - ${problems.join("\n  - ")}`,
+				);
 		}
 		if (command === "timelock" || command === "handoff") {
 			await timelockWorkflow(
@@ -177,58 +193,17 @@ async function main() {
 		}
 		const at = (key: "factory" | "paymasterProxy") =>
 			plan.contracts.find((c) => c.key === key)?.actual ?? "";
-		if (["provision", "sponsorship"].includes(command)) {
+		if (writes) {
 			if (!classDeployer(profile.network))
 				throw new OperatorError(
 					`The ${profile.network} canonical deployer is not configured. Configure it and deploy core before provisioning or enabling sponsorship.`,
-				);
-			if (command === "provision") {
-				const admin = process.env.PAYMASTER_ROLE_ADMIN ?? profile.roleAdmin;
-				try {
-					if (
-						!admin ||
-						getAddress(
-							privateKeyToAccount(
-								process.env.DEPLOYER_PRIVATE_KEY as `0x${string}`,
-							).address,
-						) !== getAddress(admin)
-					)
-						throw new OperatorError();
-				} catch {
-					throw new OperatorError(
-						"Provide the ROLE_ADMIN operator key as DEPLOYER_PRIVATE_KEY and its public address in the profile (or PAYMASTER_ROLE_ADMIN). This provisioning workflow requires an EOA admin.",
-					);
-				}
-			}
-			const needed =
-				command === "provision"
-					? ["PAYMASTER_TENANTS"]
-					: ["ADMIN_API_KEY", "TENANT_SLUG", "WALLET_API_URL"];
-			// The sponsorship signer by address: a production signer's key never leaves its HSM.
-			if (
-				command === "provision" &&
-				!process.env.SPONSORSHIP_SIGNER_ADDRESS?.trim() &&
-				!process.env.SPONSORSHIP_SIGNER_KEY?.trim()
-			)
-				throw new OperatorError(
-					"Provide SPONSORSHIP_SIGNER_ADDRESS (the address wallet-api signs sponsorships with) in the selected operator environment before continuing.",
-				);
-			for (const name of needed)
-				if (!process.env[name]?.trim())
-					throw new OperatorError(
-						`Provide ${name} in the selected operator environment before continuing.`,
-					);
-			const admin = process.env.PAYMASTER_ROLE_ADMIN ?? profile.roleAdmin;
-			if (!admin)
-				throw new OperatorError(
-					"Persist ROLE_ADMIN in the chain profile or provide PAYMASTER_ROLE_ADMIN before operator writes.",
 				);
 			const checkClient = createPublicClient({ transport: http(rpc) });
 			const { checks } = await inspectDeployment(
 				checkClient,
 				profile,
 				profile.release,
-				getAddress(admin),
+				getAddress(admin as string),
 				{
 					signer: null,
 					record: readRecord(profile.chainId),
@@ -256,21 +231,28 @@ async function main() {
 					? "Provisioning sends transactions. Each rerun ADDS the configured tenant funding again; review amounts and existing balances."
 					: "This updates tenant sponsorship policies through the configured wallet-api.",
 			);
-			if (!(await confirm(`${command} ${profile.chainId}`))) {
-				console.log("Cancelled. No operation invoked.");
-				return;
-			}
-			// Recheck after review, before handing credentials to the write workflow.
-			try {
-				if (
-					(await createPublicClient({ transport: http(rpc) }).getChainId()) !==
-					profile.chainId
-				)
-					throw new OperatorError();
-			} catch {
-				throw new OperatorError(
-					"RPC identity changed during review. No operation invoked.",
+			if (values.plan) {
+				console.log(
+					"Plan: the checks above passed. The workflow runs its own checks next, and sends nothing.",
 				);
+			} else {
+				if (!(await confirm(`${command} ${profile.chainId}`))) {
+					console.log("Cancelled. No operation invoked.");
+					return;
+				}
+				// Recheck after review, before handing credentials to the write workflow.
+				try {
+					if (
+						(await createPublicClient({
+							transport: http(rpc),
+						}).getChainId()) !== profile.chainId
+					)
+						throw new OperatorError();
+				} catch {
+					throw new OperatorError(
+						"RPC identity changed during review. No operation invoked.",
+					);
+				}
 			}
 		}
 		const env = {
@@ -284,8 +266,7 @@ async function main() {
 			RPC_URL: rpc,
 			DEPLOY_RPC_URL: rpc,
 			DEPLOYER_MIN_ETH: profile.minDeployerBalanceEth,
-			PAYMASTER_ROLE_ADMIN:
-				process.env.PAYMASTER_ROLE_ADMIN ?? profile.roleAdmin ?? "",
+			PAYMASTER_ROLE_ADMIN: admin ?? "",
 			// The published timelock (G9), so doctor asserts the topology and delays (R4).
 			PAYMASTER_TIMELOCK:
 				process.env.PAYMASTER_TIMELOCK ?? profile.timelock?.address ?? "",
@@ -304,6 +285,9 @@ async function main() {
 			// provision-paymaster.sh passes --signed-rpc on when this is "1"; never taken from the
 			// operator environment.
 			GIANO_SIGNED_RPC: values["signed-rpc"] ? "1" : "",
+			// The workflow checks and lists, and sends nothing, when this is "1" (--plan). Never taken
+			// from the operator environment either.
+			GIANO_PLAN: values.plan ? "1" : "",
 		};
 		const scripts: Record<string, string> = {
 			funding: "print-funding.sh",

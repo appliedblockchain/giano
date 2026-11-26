@@ -11,7 +11,9 @@
 # Deliberately a wrapper rather than a copy: the work is done by the same script the e2e devnet
 # uses, parameterised through SPONSOR_TENANTS / SPONSOR_ERC20 / SPONSOR_ALLOWLIST / SPONSOR_CHAIN_IDS.
 #
-# Usage: pnpm contracts:sponsorship --chain <profile> --env-file <file>
+# Usage: pnpm contracts:sponsorship --chain <profile> --env-file <file> [--plan]
+#   --plan runs the checks in this script and shows the rules it would install, but installs
+#   nothing. It does not contact wallet-api.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,6 +65,12 @@ for contract in ${SPONSOR_ALLOWLIST//,/ }; do
   echo "    allowlisted: $contract (SPONSOR_ALLOWLIST, all functions)"
 done
 echo
+
+# --plan (GIANO_PLAN=1 from the launcher): every check above ran; install nothing.
+if [ -n "${GIANO_PLAN:-}" ]; then
+  echo "==> Plan complete: no rule installed. Rerun without --plan to install these rules."
+  exit 0
+fi
 
 WALLET_API_URL="$WALLET_API_URL" \
 SPONSOR_CHAIN_IDS="$CHAIN_ID" \

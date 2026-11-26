@@ -23,6 +23,7 @@ import { entryPointRuntimeCode } from "../entrypoint";
 import {
 	assertNetworkClass,
 	ENTRY_POINT_V09,
+	flaggedRpcUrls,
 	isMainnetChain,
 	isProductionChain,
 	MAINNET_CHAIN_IDS,
@@ -276,6 +277,27 @@ test("every given RPC URL is cut to its origin wherever an error quotes it", () 
 		2,
 	);
 	assert.equal(redactRpcUrls("no URL here", [keyed]), "no URL here");
+});
+
+test("every repeated --rpc value is redacted, not only the first", () => {
+	const first = "https://node.example.com/v1/first-secret";
+	const last = "https://node.example.com/v1/last-secret";
+	const argv = ["node", "script.ts", "--rpc", first, "--plan", "--rpc", last];
+	assert.deepEqual(flaggedRpcUrls(argv), [first, last]);
+	assert.deepEqual(flaggedRpcUrls(["node", "script.ts", "--rpc"]), []);
+	const redacted = redactRpcUrls(
+		`request to ${last} failed`,
+		flaggedRpcUrls(argv),
+	);
+	assert.doesNotMatch(redacted, /last-secret/);
+
+	// A shorter URL that starts the same, given first, must not cut into the keyed one.
+	const origin = "https://node.example.com/";
+	const keyed = `${origin}v1/write-token`;
+	assert.equal(
+		redactRpcUrls(`request to ${keyed} failed`, [origin, keyed]),
+		"request to https://node.example.com failed",
+	);
 });
 
 test("deploy:cli never prints a keyed RPC URL, not even in a provider error", () => {

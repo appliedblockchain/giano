@@ -15,9 +15,12 @@
 #
 # ⚠ Costs real testnet ETH: the stake, the tenant's funded balance, and gas for ~10 transactions.
 #
-# Usage: pnpm contracts:provision --chain <profile> --env-file <file> [--signed-rpc]
+# Usage: pnpm contracts:provision --chain <profile> --env-file <file> [--signed-rpc] [--plan]
 #   --signed-rpc signs every request with DEPLOYER_PRIVATE_KEY, for an RPC that replaces `from` on
 #   unsigned calls (Silent Data). The launcher passes it here as GIANO_SIGNED_RPC=1.
+#   --plan runs the checks below that come before the first transaction and lists the transactions
+#   provisioning would send, but sends nothing. It skips the checks after the transactions. The
+#   launcher passes it here as GIANO_PLAN=1.
 #   Idempotent for roles, signer and stake. NOT for funding: re-running adds TENANT_FUND_ETH to
 #   each tenant's balance again rather than topping it up to that figure.
 set -euo pipefail
@@ -164,6 +167,9 @@ echo
 
 # ROLE_ADMIN stays on the bootstrap key until contracts:handoff moves it, with the other timelocked
 # roles, to the timelock (G9).
+#
+# The RPC URL goes to both commands below through the environment, never as an argument: pnpm prints
+# the command line it runs, and a Silent Data URL carries the write token (G48 R1).
 DEPLOYER_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY" RPC_URL="$RPC_URL" \
   pnpm --filter @appliedblockchain/giano-contracts provision:paymaster -- \
     --paymaster "$SPONSORSHIP_PAYMASTER_ADDRESS" \
@@ -172,12 +178,19 @@ DEPLOYER_PRIVATE_KEY="$DEPLOYER_PRIVATE_KEY" RPC_URL="$RPC_URL" \
     --stake-eth "$STAKE_ETH" \
     --unstake-delay "$UNSTAKE_DELAY" \
     "${TENANT_ARGS[@]}" \
-    ${GIANO_SIGNED_RPC:+--signed-rpc}
+    ${GIANO_SIGNED_RPC:+--signed-rpc} \
+    ${GIANO_PLAN:+--plan}
+
+# A plan sent nothing, so there is nothing to verify yet.
+if [ -n "${GIANO_PLAN:-}" ]; then
+  echo
+  echo "==> Plan complete. Rerun without --plan to provision."
+  exit 0
+fi
 
 echo
 echo "==> Verifying on-chain (adoption checklist step 8)"
-pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
-  --rpc "$RPC_URL" \
+RPC_URL="$RPC_URL" pnpm --filter @appliedblockchain/giano-contracts run doctor chain \
   --chain-id "$CHAIN_ID" \
   --factory "${FACTORY_ADDRESS:?not set — run pnpm contracts:deploy first}" \
   --sponsorship-paymaster "$SPONSORSHIP_PAYMASTER_ADDRESS" \
