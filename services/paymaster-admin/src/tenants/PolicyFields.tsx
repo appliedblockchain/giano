@@ -262,18 +262,20 @@ export function PolicyView({ policy }: { policy: Record<string, unknown> }) {
 								/>
 							),
 						)}
-						{LIST_FIELDS.filter((field) => Array.isArray(entry[field])).map(
-							(field) => {
-								const list = entry[field] as string[];
-								return (
-									<Entry
-										key={field}
-										label={LIST_LABELS[field]}
-										value={list.length === 0 ? "any address" : list.join("\n")}
-									/>
-								);
-							},
-						)}
+						{LIST_FIELDS.filter(
+							(field) => entry[field] === "any" || Array.isArray(entry[field]),
+						).map((field) => {
+							// `"any"`, or an empty list stored before wallet-api refused it (G6)
+							const list =
+								entry[field] === "any" ? [] : (entry[field] as string[]);
+							return (
+								<Entry
+									key={field}
+									label={LIST_LABELS[field]}
+									value={list.length === 0 ? "any address" : list.join("\n")}
+								/>
+							);
+						})}
 					</DataList.Root>
 				</Box>
 			))}

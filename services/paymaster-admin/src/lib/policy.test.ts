@@ -17,7 +17,7 @@ describe("policy form", () => {
 				"84532": {
 					maxFeePerGas: "1000",
 					allowedTargets: [TARGET],
-					allowedPaymasters: [],
+					allowedPaymasters: "any",
 				},
 				"31337": {},
 			},
@@ -38,6 +38,27 @@ describe("policy form", () => {
 			text: "",
 		});
 		expect(formToPolicy(form)).toEqual(policy);
+	});
+
+	it('reads a stored empty list as "any" and sends "any", which wallet-api requires (G6)', () => {
+		const form = policyToForm({ perChain: { "1": { allowedTargets: [] } } });
+		expect(form.perChain[0].allowedTargets).toEqual({ mode: "any", text: "" });
+		expect(formToPolicy(form)).toEqual({
+			perChain: { "1": { allowedTargets: "any" } },
+		});
+	});
+
+	it("carries the paymaster and pre-verification gas caps", () => {
+		const policy = {
+			maxPreVerificationGas: "2000000",
+			perChain: {
+				"8453": {
+					maxPaymasterVerificationGas: "300000",
+					maxPaymasterPostOpGas: "200000",
+				},
+			},
+		};
+		expect(formToPolicy(policyToForm(policy))).toEqual(policy);
 	});
 
 	it("leaves empty fields out, so they inherit the deployment default", () => {
@@ -62,7 +83,7 @@ describe("policy form", () => {
 });
 
 describe("policyProblems", () => {
-	it("refuses Only these with no address, which would be sent as any address", () => {
+	it("refuses Only these with no address, which wallet-api would refuse", () => {
 		const form = policyToForm({});
 		form.perChain.push({
 			...emptyChain("1"),
@@ -85,7 +106,7 @@ describe("policyProblems", () => {
 	it("is empty for a well-formed policy", () => {
 		expect(
 			policyProblems(
-				policyToForm({ perChain: { "1": { allowedTargets: [] } } }),
+				policyToForm({ perChain: { "1": { allowedTargets: "any" } } }),
 			),
 		).toEqual([]);
 	});
