@@ -1,5 +1,15 @@
 # @appliedblockchain/giano-wallet-kit
 
+## 7.2.2
+
+### Patch Changes
+
+- Updated dependencies [edf86f9]
+  - @appliedblockchain/giano-contracts@7.2.2
+  - @appliedblockchain/giano-wallet-core@7.2.2
+  - @appliedblockchain/giano-wallet-transport@7.2.2
+  - @appliedblockchain/giano-tx-describe@7.2.2
+
 ## 7.2.1
 
 ### Patch Changes
