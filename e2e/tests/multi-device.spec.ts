@@ -34,15 +34,6 @@ import {
 
 const tenant = TENANTS.stock;
 
-/**
- * Known bugs these tests expose. A test marked with one of them is expected to fail until the
- * bug is fixed; remove the mark in the change that fixes it.
- */
-const KNOWN_BUG = {
-	/** ClaimFlow maps `pending-declined` to the "connection problem" copy (WM-23). */
-	declinedCopy: "a declined claim code reads as a network failure",
-};
-
 /** Anvil account #1, a checksummed address used as an owner (no transaction is sent from it). */
 const EOA = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
@@ -365,7 +356,6 @@ test.describe("one wallet, two devices", () => {
 		page,
 		browser,
 	}) => {
-		test.fail(true, KNOWN_BUG.declinedCopy);
 		const a = await startDeviceA(page);
 		const { b, code } = await offerDeviceB(a, browser);
 		deviceB = b.context;
