@@ -3,7 +3,6 @@ import type {
 	ManagementFlow,
 	ManagementState,
 } from "@appliedblockchain/giano-wallet-kit";
-import { useEffect, useRef } from "react";
 import { PasskeyDeviceGuidance } from "../PasskeyDeviceGuidance";
 import {
 	addedFromLabel,
@@ -38,24 +37,6 @@ export function AddFlow({
 		variant === "this-device"
 			? "Add a passkey on this device"
 			: "Add a passkey on another device";
-
-	// Seed the default credential name once per confirm step — the copy is the wallet's, not
-	// the kit's, so the default lives here.
-	const seeded = useRef(false);
-	useEffect(() => {
-		if (flow.step === "confirm-fingerprint" && !seeded.current) {
-			seeded.current = true;
-			// The device the passkey was created on names it best ("iPhone · Safari"); without it,
-			// fall back to the date.
-			const from = addedFromLabel(flow);
-			flow.setName(
-				from ??
-					(variant === "this-device"
-						? `Backup passkey · ${new Date().toLocaleDateString()}`
-						: `Another device · ${new Date().toLocaleDateString()}`),
-			);
-		}
-	}, [flow, variant]);
 
 	if (flow.step === "preparing") {
 		return (
@@ -113,12 +94,15 @@ export function AddFlow({
 		// WM-17/WM-20/WM-21: the consent screen shows the fingerprint of the key it is about
 		// to sign for — recomputed by the kit from the key as received — BEFORE the
 		// authorising signature's passkey prompt is raised.
+		// A name is stored only when the user types one. Without it, the list shows the passkey by
+		// its device and browser, like every other unnamed passkey, so the placeholder shows that.
 		const nameInput = (
 			<label style={{ fontSize: 13 }}>
-				Name it (you can rename later)
+				Name it (optional, you can rename later)
 				<input
 					value={flow.name}
 					onChange={(event) => flow.setName(event.target.value)}
+					placeholder={addedFromLabel(flow) ?? "e.g. My phone"}
 					style={inputStyle}
 					data-testid="manage-add-name"
 				/>
