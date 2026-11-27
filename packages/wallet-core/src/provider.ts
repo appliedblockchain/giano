@@ -316,6 +316,20 @@ export const createGianoProvider = (
 			}
 		});
 
+	// The request's fees, estimated only when one is missing: a request that prices itself must
+	// not fail because the chain's fee estimate could not be read. An explicit 0 is a value.
+	const feesFor = async (requested: Partial<FeeValues>): Promise<FeeValues> =>
+		requested.maxFeePerGas != null && requested.maxPriorityFeePerGas != null
+			? {
+					maxFeePerGas: requested.maxFeePerGas,
+					maxPriorityFeePerGas: requested.maxPriorityFeePerGas,
+				}
+			: resolveUserOpFees(
+					requested,
+					{},
+					await estimateFeesPerGas(requireChain().id),
+				);
+
 	let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
 	let chain: Chain | undefined;
 	let transport: Transport | undefined;
@@ -390,11 +404,7 @@ export const createGianoProvider = (
 		 * Doing it first is also simply more correct for the unsponsored path: the gas estimate is
 		 * computed against the fees the operation will actually carry.
 		 */
-		const fees = resolveUserOpFees(
-			userOpRequest,
-			{},
-			await estimateFeesPerGas(requireChain().id),
-		);
+		const fees = await feesFor(userOpRequest);
 		const requestWithFees = { ...userOpRequest, ...fees };
 
 		/*
@@ -1003,11 +1013,7 @@ export const createGianoProvider = (
 				...options,
 			};
 
-			const fees = resolveUserOpFees(
-				options,
-				{},
-				await estimateFeesPerGas(requireChain().id),
-			);
+			const fees = await feesFor(options);
 			const prepared = await requireBundler().prepareUserOperation({
 				account: smartAccount,
 				...op,
