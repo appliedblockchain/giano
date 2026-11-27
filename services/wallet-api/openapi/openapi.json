@@ -3230,6 +3230,33 @@
         "tags": [
           "wallet-management"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "default": "fingerprint-mismatch",
+                        "type": "string",
+                        "enum": [
+                          "fingerprint-mismatch",
+                          "cancelled"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {

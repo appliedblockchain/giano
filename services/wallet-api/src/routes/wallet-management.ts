@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { decodeClientDataJSON } from "@simplewebauthn/server/helpers";
-import { and, count, eq, gt, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -123,10 +123,16 @@ export default async function walletManagementRoutes(
 			(slot.status === "open" || slot.status === "filled") &&
 			slot.expiresAt.getTime() <= Date.now()
 		) {
+			// Guarded: a request that consumed or declined the slot meanwhile keeps its status.
 			await db
 				.update(pendingAdditions)
 				.set({ status: "expired" })
-				.where(eq(pendingAdditions.id, slot.id));
+				.where(
+					and(
+						eq(pendingAdditions.id, slot.id),
+						inArray(pendingAdditions.status, ["open", "filled"]),
+					),
+				);
 			await audit(
 				{ tenantId: slot.tenantId, userId: slot.userId, sessionId: null },
 				slot.walletAddress,
@@ -324,6 +330,19 @@ export default async function walletManagementRoutes(
 				tags: ["wallet-management"],
 				security: [{ session: [] }],
 				params: z.object({ id: z.string().uuid() }),
+				/**
+				 * Why the slot is declined. Only "fingerprint-mismatch" is the alertable event (WM-52): a
+				 * key the user refused to confirm is a bug or an attempted substitution. "cancelled" is
+				 * the user leaving the flow, or dismissing a failed one, and is recorded apart. Omitted,
+				 * it is a mismatch, as before this field existed.
+				 */
+				body: z
+					.object({
+						reason: z
+							.enum(["fingerprint-mismatch", "cancelled"])
+							.default("fingerprint-mismatch"),
+					})
+					.nullish(),
 				response: {
 					200: z.object({ ok: z.literal(true) }),
 					404: errorResponseSchema,
@@ -338,15 +357,23 @@ export default async function walletManagementRoutes(
 			await db
 				.update(pendingAdditions)
 				.set({ status: "declined" })
-				.where(eq(pendingAdditions.id, slot.id));
+				.where(
+					and(
+						eq(pendingAdditions.id, slot.id),
+						inArray(pendingAdditions.status, ["open", "filled"]),
+					),
+				);
+			const reason = request.body?.reason ?? "fingerprint-mismatch";
+			const cancelled = reason === "cancelled";
 			await audit(
 				requireSessionOf(request),
 				slot.walletAddress,
-				"pending-declined",
+				cancelled ? "pending-cancelled" : "pending-declined",
 				"ok",
 				{
 					pendingAdditionId: slot.id,
 					hadCredential: !!slot.credentialId,
+					reason,
 				},
 			);
 			return { ok: true as const };
@@ -398,7 +425,13 @@ export default async function walletManagementRoutes(
 					"no credential has been deposited into this pending addition yet",
 				);
 			}
-			if (slot.status !== "filled") refuseDead(slot);
+			// A filled slot that expired while the owner change was being signed and confirmed can
+			// still be bound: the expiry stops a NEW authorisation (WM-22), and this one already
+			// happened on-chain, which the owner check below requires. Refusing it would leave an
+			// owner the registry never knows, so the new device could not sign in.
+			const filledThenExpired =
+				slot.status === "expired" && slot.credentialId !== null;
+			if (slot.status !== "filled" && !filledThenExpired) refuseDead(slot);
 			const deposited = depositedKeyOf(slot);
 
 			const served = registry.servedChainIds();
@@ -473,7 +506,12 @@ export default async function walletManagementRoutes(
 				await tx
 					.update(pendingAdditions)
 					.set({ status: "consumed", consumedAt: sql`now()` })
-					.where(eq(pendingAdditions.id, slot.id));
+					.where(
+						and(
+							eq(pendingAdditions.id, slot.id),
+							inArray(pendingAdditions.status, ["filled", "expired"]),
+						),
+					);
 				return inserted;
 			});
 
@@ -677,6 +715,22 @@ export default async function walletManagementRoutes(
 			}
 
 			const info = verification.registrationInfo;
+			// A credential this tenant already registered cannot be deposited again: binding it would
+			// fail on the unique key, after the authorising device has signed for it.
+			const existing = await db.query.credentials.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(credentials.tenantId, tenant.id),
+					eq(credentials.credentialId, info.credential.id),
+				),
+			});
+			if (existing) {
+				throw new ApiError(
+					409,
+					"credential-already-registered",
+					"this passkey is already registered — create a new passkey on this device and try again",
+				);
+			}
 			const { x, y } = coseToXY(info.credential.publicKey);
 			const updated = await db
 				.update(pendingAdditions)
