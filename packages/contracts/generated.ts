@@ -557,6 +557,12 @@ export const basePaymasterAbi = [
 export const callContextCheckerAbi = [{ type: 'error', inputs: [], name: 'UnauthorizedCallContext' }] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Clones
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const clonesAbi = [{ type: 'error', inputs: [], name: 'CloneArgumentsTooLong' }] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ContextUpgradeable
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -565,6 +571,12 @@ export const contextUpgradeableAbi = [
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
 ] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Create2
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const create2Abi = [{ type: 'error', inputs: [], name: 'Create2EmptyBytecode' }] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ECDSA
@@ -1901,6 +1913,74 @@ export const gianoSmartWalletFactoryAbi = [
   },
   { type: 'error', inputs: [], name: 'ImplementationUndeployed' },
   { type: 'error', inputs: [], name: 'OwnerRequired' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// GianoTestEscrow
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const gianoTestEscrowAbi = [
+  { type: 'function', inputs: [], name: 'confirm', outputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'confirmed',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  { type: 'function', inputs: [{ name: 'payer_', internalType: 'address', type: 'address' }], name: 'initialize', outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', inputs: [], name: 'payer', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
+  { type: 'function', inputs: [], name: 'release', outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', inputs: [], name: 'released', outputs: [{ name: '', internalType: 'bool', type: 'bool' }], stateMutability: 'view' },
+  { type: 'event', anonymous: false, inputs: [{ name: 'party', internalType: 'address', type: 'address', indexed: true }], name: 'Confirmed' },
+  { type: 'event', anonymous: false, inputs: [], name: 'Released' },
+  { type: 'error', inputs: [], name: 'AlreadyInitialized' },
+  { type: 'error', inputs: [{ name: 'account', internalType: 'address', type: 'address' }], name: 'NotThePayer' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// GianoTestEscrowFactory
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const gianoTestEscrowFactoryAbi = [
+  { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
+  {
+    type: 'function',
+    inputs: [{ name: 'salt', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'createEscrow',
+    outputs: [{ name: 'escrow', internalType: 'address', type: 'address' }],
+    stateMutability: 'nonpayable',
+  },
+  { type: 'function', inputs: [], name: 'implementation', outputs: [{ name: '', internalType: 'address', type: 'address' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'payer', internalType: 'address', type: 'address' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'predictEscrowAddress',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'escrow', internalType: 'address', type: 'address', indexed: true },
+      { name: 'payer', internalType: 'address', type: 'address', indexed: true },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32', indexed: false },
+    ],
+    name: 'EscrowCloneCreated',
+  },
+  { type: 'error', inputs: [], name: 'FailedDeployment' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'balance', internalType: 'uint256', type: 'uint256' },
+      { name: 'needed', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InsufficientBalance',
+  },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
