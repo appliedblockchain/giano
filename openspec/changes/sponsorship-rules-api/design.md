@@ -167,7 +167,7 @@ The e2e test:
 
    It leaves `config.allowlist` in place as the D8 mirror.
 2. Deploy wallet-api with the migration. It is additive, so the previous release still runs against the migrated database.
-3. Move `e2e/devnet/provision-sponsorship.mjs`, `deploy/contracts/provision-sponsorship.sh` and `packages/contracts/scripts/rehearse.ts` to the rules API, with `If-Match`.
+3. The provisioning scripts (`services/wallet-api/src/provision-sponsorship.ts`, `deploy/contracts/provision-sponsorship.sh`, `e2e/devnet/provision-sponsorship.mjs` and `packages/contracts/scripts/rehearse.ts`) stay on the deprecated `allowlist` field. It replaces exactly the legacy rules they install, including removing a contract they no longer list. The rules API has no such replace, so moving them needs either additive-only provisioning or a list, compare and update step in each script. They move in the change that removes the field.
 4. Rollback: deploy the previous release and leave the database as it is. See D8 for what keeps working. Re-deploying the new release needs no data fix-up.
 
 ## Open Questions

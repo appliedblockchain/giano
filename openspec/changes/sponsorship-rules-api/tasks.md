@@ -49,7 +49,7 @@
 
 ## 4. Callers and end-to-end coverage
 
-- [ ] 4.1 Move `e2e/devnet/provision-sponsorship.mjs`, `deploy/contracts/provision-sponsorship.sh` and `packages/contracts/scripts/rehearse.ts` to the rules API, writing settings with `If-Match`.
+- [x] 4.1 Keep `services/wallet-api/src/provision-sponsorship.ts`, `deploy/contracts/provision-sponsorship.sh`, `e2e/devnet/provision-sponsorship.mjs` and `packages/contracts/scripts/rehearse.ts` on the deprecated `allowlist` field, which still replaces the legacy rules they install. They move to the rules API in the change that removes the field, because a move needs either additive-only provisioning or a sync step in each script (decided 2026-11-27).
 - [x] 4.2 Move `withConfig` in `e2e/tests/sponsorship.spec.ts` (and `e2e/tests/demo/operations.spec.ts` if it writes the allowlist) to the rules API.
 - [x] 4.3 Extend `e2e/tests/deployed-contracts.spec.ts` to the escrow pattern:
   - predict the address;
