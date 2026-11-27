@@ -18,10 +18,12 @@ import {
 	type SponsorshipConfig,
 } from "./sponsorship-config.js";
 import type { LedgerService } from "./sponsorship-ledger.js";
+import { readActiveRules } from "./sponsorship-rule-store.js";
 import {
 	type CandidateOperation,
 	computeMaxCost,
 	computeOverheadBound,
+	decodeInnerCalls,
 	evaluateSponsorship,
 	type SponsorshipRefusalReason,
 	type SponsorshipRuleResult,
@@ -165,6 +167,8 @@ export function createSponsorshipService(
 		feeWei?: bigint;
 		reservationId?: string;
 		useropHash?: string;
+		/** The rules that allowed the operation's application calls. */
+		ruleIds?: string[];
 	}): Promise<string> {
 		const [row] = await db
 			.insert(sponsorshipDecisions)
@@ -178,6 +182,7 @@ export function createSponsorshipService(
 				outcome: args.outcome,
 				reason: args.reason,
 				ruleResults: args.ruleResults,
+				ruleIds: args.ruleIds ?? [],
 				feeWei: args.feeWei?.toString(),
 				reservationId: args.reservationId,
 				useropHash: args.useropHash,
@@ -201,6 +206,7 @@ export function createSponsorshipService(
 		message: string;
 		ruleResults: SponsorshipRuleResult[];
 		feeWei?: bigint;
+		ruleIds?: string[];
 	}): Promise<SponsorshipRefusal> {
 		const decisionId = await recordDecision({ ...args, outcome: "refused" });
 		return {
@@ -273,12 +279,28 @@ export function createSponsorshipService(
 				});
 			}
 
-			const { config, unparseable } = await getConfig(session.tenantId);
-			const balance = await ledger.getBalanceView(session.tenantId, chainId);
+			// Only the rules for the operation's own targets: evaluation must not depend on how many
+			// rules a tenant has. An undecodable operation has no targets, and the engine refuses it.
+			const targets = (decodeInnerCalls(candidate.callData) ?? []).map(
+				(call) => call.target,
+			);
+			const [{ config, unparseable }, balance, { rules, hasActiveRules }] =
+				await Promise.all([
+					getConfig(session.tenantId),
+					ledger.getBalanceView(session.tenantId, chainId),
+					readActiveRules(db, {
+						tenantId: session.tenantId,
+						chainId,
+						contracts: targets,
+						now: new Date(now()),
+					}),
+				]);
 
 			const decision = evaluateSponsorship({
 				candidate,
 				config,
+				rules,
+				hasActiveRules,
 				balance,
 				feeWei,
 				overhead: onChain,
@@ -296,6 +318,7 @@ export function createSponsorshipService(
 					message: decision.detail ?? "sponsorship refused",
 					ruleResults: decision.results,
 					feeWei,
+					ruleIds: decision.ruleIds,
 				});
 			}
 
@@ -313,6 +336,7 @@ export function createSponsorshipService(
 					outcome: "allowed",
 					ruleResults: decision.results,
 					feeWei,
+					ruleIds: decision.ruleIds,
 				});
 				return {
 					outcome: "allowed",
@@ -367,6 +391,7 @@ export function createSponsorshipService(
 						{ rule: "reserve", passed: false, detail: cause },
 					],
 					feeWei,
+					ruleIds: decision.ruleIds,
 				});
 			}
 
@@ -408,6 +433,7 @@ export function createSponsorshipService(
 						{ rule: "sign", passed: false, detail: "signer unavailable" },
 					],
 					feeWei,
+					ruleIds: decision.ruleIds,
 				});
 			}
 
@@ -460,6 +486,7 @@ export function createSponsorshipService(
 				feeWei,
 				reservationId: reservation.id,
 				useropHash,
+				ruleIds: decision.ruleIds,
 			});
 
 			options.onDecision?.({

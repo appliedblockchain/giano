@@ -19,8 +19,8 @@ The escrow addresses are deterministic: the factory can predict them before it d
 - A cap on the number of active rules per tenant and chain (`SPONSORSHIP_MAX_RULES_PER_CHAIN`). A create over the cap is refused with `409`.
 - Every sponsorship decision records the IDs of the rules that allowed its calls.
 - Compatibility for one minor release:
-  - `PUT` and `PATCH` still accept `allowlist` and replace the rules that have no `clientReference` with it;
-  - `GET` still returns `allowlist`, built from the active rules;
+  - `PUT` and `PATCH` still accept `allowlist` and replace the legacy rules (no `clientReference` and no `expiresAt`) with it;
+  - `GET` still returns `allowlist`, built from the legacy rules;
   - a write without `If-Match` is still accepted.
 
   These are deprecated, and the README says so.

@@ -128,15 +128,16 @@ The settings (`enabled`, `maxCostPerTxWei`, `walletManagement` and `lowBalanceTh
 - **THEN** the write succeeds, and operations are refused with `no-sponsorship-config` until a rule is active
 
 ### Requirement: The allowlist field keeps working for one minor release
-For compatibility, and as deprecated behaviour:
-- `GET /v1/admin/sponsorship` SHALL return `config.allowlist`, built from the active rules that have no `clientReference`;
-- a `PUT` or `PATCH` whose body has `allowlist` SHALL replace the rules that have no `clientReference` with its entries, in the same transaction as the settings, and record each change as a rule event;
-- such a write SHALL be refused with `400` when one of its contracts already has a rule with a `clientReference`, or when it would exceed the rule limit;
-- rules with a `clientReference` SHALL NOT be changed by it.
+For compatibility, and as deprecated behaviour, the legacy rules are the rules with neither a `clientReference` nor an `expiresAt`, because the `allowlist` field cannot express either:
+- `GET /v1/admin/sponsorship` SHALL return `config.allowlist`, built from the legacy rules;
+- a `PUT` or `PATCH` whose body has `allowlist` SHALL replace the legacy rules with its entries, in the same transaction as the settings, and record each change as a rule event;
+- such a write SHALL be refused with `400` when one of its contracts already has a rule that is not a legacy rule, or when it would exceed the rule limit;
+- a settings write without `allowlist` SHALL NOT change any rule;
+- rules that are not legacy rules SHALL NOT be changed by it.
 
 #### Scenario: An existing script
 - **WHEN** a script reads the configuration, adds an entry to `allowlist` and writes it back with `PUT`
-- **THEN** the new contract has a rule, and the rules created with a `clientReference` are unchanged
+- **THEN** the new contract has a rule, and the rules created with a `clientReference` or an `expiresAt` are unchanged
 
 #### Scenario: Existing allowlists survive the upgrade
 - **WHEN** wallet-api starts on a database whose settings hold an `allowlist`

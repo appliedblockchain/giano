@@ -1183,6 +1183,12 @@
                             ]
                           },
                           "ruleResults": {},
+                          "ruleIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "feeWei": {
                             "type": [
                               "string",
@@ -1200,6 +1206,7 @@
                           "outcome",
                           "reason",
                           "ruleResults",
+                          "ruleIds",
                           "feeWei",
                           "createdAt"
                         ],

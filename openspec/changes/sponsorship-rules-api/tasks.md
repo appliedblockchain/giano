@@ -9,24 +9,24 @@
 
 ## 2. Storage and evaluation (wallet-api)
 
-- [ ] 2.1 Migration:
+- [x] 2.1 Migration:
   - create `tenant_sponsorship_rules` and `tenant_sponsorship_rule_events`;
   - add `tenant_sponsorship.version` (existing rows set to 1) and `sponsorship_decisions.rule_ids`;
   - copy every stored `allowlist` entry into a rule, with a `created` event.
-- [ ] 2.2 Add the tables and columns to `src/db/schema.ts`.
-- [ ] 2.3 In `sponsorship-config.ts`:
+- [x] 2.2 Add the tables and columns to `src/db/schema.ts`.
+- [x] 2.3 In `sponsorship-config.ts`:
   - split the settings schema from a rule schema (contract, functions, clientReference, expiresAt);
   - settings no longer require a non-empty allowlist, and still accept `allowlist` as a deprecated input;
   - add `SPONSORSHIP_MAX_RULES_PER_CHAIN` to `config.ts`.
-- [ ] 2.4 In `sponsorship-rules.ts`:
+- [x] 2.4 In `sponsorship-rules.ts`:
   - evaluate against `rules` (with IDs) and `hasActiveRules` instead of `config.allowlist`;
   - return `ruleIds`;
   - update the unit tests, including wallet management with no rules and `no-sponsorship-config` with no active rule.
-- [ ] 2.5 In `sponsorship-service.ts`:
+- [x] 2.5 In `sponsorship-service.ts`:
   - read the active rules for the operation's targets and the `EXISTS` check before evaluation;
   - store `rule_ids` on the decision;
   - test that an expired rule is ignored.
-- [ ] 2.6 Return `ruleIds` from `GET /v1/admin/sponsorship/decisions`.
+- [x] 2.6 Return `ruleIds` from `GET /v1/admin/sponsorship/decisions`.
 
 ## 3. Rules API and versioned settings (wallet-api)
 

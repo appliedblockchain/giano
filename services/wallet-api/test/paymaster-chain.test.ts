@@ -33,6 +33,7 @@ import {
 	sponsorshipReservations,
 	sponsorshipSettlements,
 	tenantSponsorship,
+	tenantSponsorshipRules,
 	tenants,
 	users,
 } from "../src/db/schema.js";
@@ -390,6 +391,13 @@ describe.skipIf(!hasState)("sponsorship against a real chain", () => {
 					{ contract: devnet.testErc20.toLowerCase(), functions: "all" },
 				],
 			},
+		});
+		// The rule evaluation reads; the allowlist above is only its mirror (sponsorship-rules-api).
+		await db.insert(tenantSponsorshipRules).values({
+			tenantId,
+			chainId: CHAIN_ID,
+			contract: devnet.testErc20.toLowerCase(),
+			functions: "all",
 		});
 		// The first reconciliation is what makes the ledger know the on-chain balance — proving the
 		// cache converges from the contract rather than depending on an event lookback window.

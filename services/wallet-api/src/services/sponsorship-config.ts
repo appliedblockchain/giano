@@ -3,7 +3,13 @@ import { isAddress, toFunctionSelector } from "viem";
 import { z } from "zod";
 
 /**
- * A tenant's sponsorship rules.
+ * A tenant's sponsorship settings, and the shape of its rules.
+ *
+ * The settings (`enabled`, the caps, wallet management) are one value per tenant and chain. The
+ * rules that name contracts are records of their own (`tenant_sponsorship_rules`, openspec
+ * sponsorship-rules-api), so a tenant can add one without rewriting the others. `allowlist` is
+ * still accepted in the settings for one minor release, as a deprecated way to write the rules
+ * that have no client reference, and is stored as their mirror.
  *
  * Deny-by-default is enforced in three places, on purpose: the defaults here, the
  * `sponsorship-enabled` rule in the engine, and the absence of a row in the database. A tenant
@@ -56,18 +62,77 @@ const functionSchema = z
 		}
 	});
 
+/** 'all' allows every function on the contract; an array restricts to those selectors. */
+export const ruleFunctionsSchema = z.union([
+	z.literal("all"),
+	z.array(functionSchema).min(1),
+]);
+
 const allowlistEntrySchema = z.object({
 	contract: addressSchema,
-	/** 'all' allows every function on the contract; an array restricts to those selectors. */
-	functions: z.union([z.literal("all"), z.array(functionSchema).min(1)]),
+	functions: ruleFunctionsSchema,
 });
+
+/** A tenant's own reference for a rule: what it calls the payment or deployment the rule is for. */
+const clientReferenceSchema = z
+	.string()
+	.regex(
+		/^[A-Za-z0-9._:-]{1,128}$/,
+		"must be 1 to 128 characters from A-Z a-z 0-9 . _ : -",
+	);
+
+const expiresAtSchema = z
+	.string()
+	.datetime({ offset: true })
+	.transform((value) => new Date(value));
+
+/** The body of `POST /v1/admin/sponsorship/rules`. */
+export const ruleCreateSchema = z
+	.object({
+		contract: addressSchema,
+		functions: ruleFunctionsSchema,
+		clientReference: clientReferenceSchema.optional(),
+		expiresAt: expiresAtSchema.optional(),
+	})
+	.strict();
+
+export type RuleCreate = z.infer<typeof ruleCreateSchema>;
+
+/**
+ * The body of `PATCH /v1/admin/sponsorship/rules/:id`. The contract and the client reference name
+ * what the rule is for, so they cannot change: a different contract is a different rule.
+ */
+export const rulePatchSchema = z
+	.object({
+		functions: ruleFunctionsSchema.optional(),
+		/** `null` removes the expiry. */
+		expiresAt: expiresAtSchema.nullable().optional(),
+	})
+	.strict()
+	.refine(
+		(patch) => patch.functions !== undefined || patch.expiresAt !== undefined,
+		"must change functions or expiresAt",
+	);
+
+export type RulePatch = z.infer<typeof rulePatchSchema>;
+
+/** What the rules engine needs of a rule: which contract, which functions, and its id to record. */
+export type SponsorshipRule = {
+	id: string;
+	contract: Address;
+	functions: "all" | Hex[];
+};
 
 export const sponsorshipConfigSchema = z
 	.object({
 		/** A new tenant sponsors nothing until it says otherwise. */
 		enabled: z.boolean().default(false),
 		maxCostPerTxWei: weiSchema.optional(),
-		allowlist: z.array(allowlistEntrySchema).default([]),
+		/**
+		 * Deprecated. The rules that have no client reference, written as one array. A write that
+		 * carries it replaces those rules; the stored value mirrors them. Evaluation never reads it.
+		 */
+		allowlist: z.array(allowlistEntrySchema).optional(),
 		/**
 		 * Adding a passkey or recovering an account is precisely the moment a user is least likely to
 		 * hold a native token: a new device has no native token on it and no way to acquire any, so an
@@ -99,17 +164,10 @@ export const sponsorshipConfigSchema = z
 					"required when sponsorship is enabled — an uncapped transaction cost is not a rule set",
 			});
 		}
-		if (config.allowlist.length === 0) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ["allowlist"],
-				message:
-					'must list at least one contract when sponsorship is enabled — there is no way to allow "any contract"',
-			});
-		}
-
+	})
+	.superRefine((config, ctx) => {
 		const seen = new Set<string>();
-		for (const [index, entry] of config.allowlist.entries()) {
+		for (const [index, entry] of (config.allowlist ?? []).entries()) {
 			if (seen.has(entry.contract)) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -126,7 +184,6 @@ export type SponsorshipConfig = z.infer<typeof sponsorshipConfigSchema>;
 /** The configuration a tenant with no row (or an unparseable one) gets: nothing. */
 export const DENY_ALL_SPONSORSHIP: SponsorshipConfig = {
 	enabled: false,
-	allowlist: [],
 };
 
 /** True unless the tenant has explicitly said otherwise. Absent config means sponsored. */

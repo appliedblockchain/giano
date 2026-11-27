@@ -9,6 +9,7 @@ import {
 } from "viem";
 import {
 	type SponsorshipConfig,
+	type SponsorshipRule,
 	walletManagementEnabled,
 } from "./sponsorship-config.js";
 
@@ -67,6 +68,11 @@ export type SponsorshipDecision = (
 	 * `classifyCall`). Not every operation with this flag changes the owner set.
 	 */
 	isWalletManagement: boolean;
+	/**
+	 * The rules that allowed one of the operation's application calls, in call order, each once.
+	 * Empty when the operation has no application call, such as wallet management alone.
+	 */
+	ruleIds: string[];
 };
 
 export type CandidateOperation = {
@@ -99,7 +105,15 @@ export type OverheadParams = {
 
 export type EvaluationInput = {
 	candidate: CandidateOperation;
+	/** The tenant's settings. Its deprecated `allowlist` mirror is never read here. */
 	config: SponsorshipConfig;
+	/**
+	 * The tenant's active rules on this chain. The service reads only the rules for the operation's
+	 * targets, so this need not be all of them; a target with no rule here is not allowed.
+	 */
+	rules: SponsorshipRule[];
+	/** True when the tenant has at least one active rule on this chain, whatever its contract. */
+	hasActiveRules: boolean;
 	balance: BalanceView;
 	/** The fee in force for this tenant, read from the contract so what is pinned is what is charged. */
 	feeWei: bigint;
@@ -312,11 +326,11 @@ export function evaluateSponsorship(
 			"sponsorship-disabled",
 			"sponsorship is switched off for this tenant",
 		);
-	} else if (config.allowlist.length === 0) {
+	} else if (!input.hasActiveRules) {
 		refuse(
 			"sponsorship-enabled",
 			"no-sponsorship-config",
-			"no contracts are allow-listed",
+			"no contracts are allow-listed: the tenant has no active sponsorship rule",
 		);
 	} else {
 		pass("sponsorship-enabled");
@@ -450,10 +464,14 @@ export function evaluateSponsorship(
 	//        not something the chain can express, so one disallowed call refuses the whole
 	//        operation.
 	const byContract = new Map(
-		config.allowlist.map((entry) => [entry.contract, entry.functions]),
+		input.rules.map((rule) => [rule.contract.toLowerCase(), rule]),
 	);
 	const contractFailures: string[] = [];
 	const functionFailures: string[] = [];
+	const ruleIds: string[] = [];
+	const allowedBy = (rule: SponsorshipRule) => {
+		if (!ruleIds.includes(rule.id)) ruleIds.push(rule.id);
+	};
 
 	for (const { call, kind } of classified) {
 		// Wallet management is governed by rule 4, not by the allowlist — a tenant should not have
@@ -461,21 +479,26 @@ export function evaluateSponsorship(
 		// self-call is not skipped, so it also fails here if rule 3b is ever changed.
 		if (kind === "wallet-management") continue;
 
-		const allowed = byContract.get(call.target.toLowerCase() as Address);
-		if (!allowed) {
+		const rule = byContract.get(call.target.toLowerCase());
+		if (!rule) {
 			contractFailures.push(call.target);
 			continue;
 		}
-		if (allowed === "all") continue;
+		if (rule.functions === "all") {
+			allowedBy(rule);
+			continue;
+		}
 		if (call.selector === null) {
 			functionFailures.push(
 				`${call.target}: a bare value transfer with no selector`,
 			);
 			continue;
 		}
-		if (!allowed.includes(call.selector)) {
+		if (!rule.functions.includes(call.selector)) {
 			functionFailures.push(`${call.target}.${call.selector}`);
+			continue;
 		}
+		allowedBy(rule);
 	}
 
 	if (contractFailures.length > 0) {
@@ -553,6 +576,7 @@ export function evaluateSponsorship(
 		capWei,
 		capSource,
 		isWalletManagement,
+		ruleIds,
 	};
 }
 
