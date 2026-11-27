@@ -5673,6 +5673,18 @@
                         "type": "string",
                         "pattern": "^\\d+$"
                       },
+                      "maxPreVerificationGas": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      },
+                      "maxPaymasterVerificationGas": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      },
+                      "maxPaymasterPostOpGas": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      },
                       "maxFeePerGas": {
                         "type": "string",
                         "pattern": "^\\d+$"
@@ -5703,6 +5715,18 @@
                               "type": "string",
                               "pattern": "^\\d+$"
                             },
+                            "maxPreVerificationGas": {
+                              "type": "string",
+                              "pattern": "^\\d+$"
+                            },
+                            "maxPaymasterVerificationGas": {
+                              "type": "string",
+                              "pattern": "^\\d+$"
+                            },
+                            "maxPaymasterPostOpGas": {
+                              "type": "string",
+                              "pattern": "^\\d+$"
+                            },
                             "maxFeePerGas": {
                               "type": "string",
                               "pattern": "^\\d+$"
@@ -5712,18 +5736,40 @@
                               "pattern": "^\\d+$"
                             },
                             "allowedTargets": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "pattern": "^0x[0-9a-fA-F]{40}$"
-                              }
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "any"
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                                  }
+                                }
+                              ]
                             },
                             "allowedPaymasters": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "pattern": "^0x[0-9a-fA-F]{40}$"
-                              }
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "any"
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                                  }
+                                }
+                              ]
                             }
                           },
                           "additionalProperties": false
@@ -6516,6 +6562,18 @@
                         "type": "string",
                         "pattern": "^\\d+$"
                       },
+                      "maxPreVerificationGas": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      },
+                      "maxPaymasterVerificationGas": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      },
+                      "maxPaymasterPostOpGas": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      },
                       "maxFeePerGas": {
                         "type": "string",
                         "pattern": "^\\d+$"
@@ -6546,6 +6604,18 @@
                               "type": "string",
                               "pattern": "^\\d+$"
                             },
+                            "maxPreVerificationGas": {
+                              "type": "string",
+                              "pattern": "^\\d+$"
+                            },
+                            "maxPaymasterVerificationGas": {
+                              "type": "string",
+                              "pattern": "^\\d+$"
+                            },
+                            "maxPaymasterPostOpGas": {
+                              "type": "string",
+                              "pattern": "^\\d+$"
+                            },
                             "maxFeePerGas": {
                               "type": "string",
                               "pattern": "^\\d+$"
@@ -6555,18 +6625,40 @@
                               "pattern": "^\\d+$"
                             },
                             "allowedTargets": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "pattern": "^0x[0-9a-fA-F]{40}$"
-                              }
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "any"
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                                  }
+                                }
+                              ]
                             },
                             "allowedPaymasters": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "pattern": "^0x[0-9a-fA-F]{40}$"
-                              }
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "any"
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                                  }
+                                }
+                              ]
                             }
                           },
                           "additionalProperties": false

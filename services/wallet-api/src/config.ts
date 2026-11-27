@@ -12,6 +12,7 @@ import {
 } from "@appliedblockchain/giano-contracts";
 import { z } from "zod";
 import { ENVIRONMENT_NAMES, resolveEnvironment } from "./environments.js";
+import { KNOWN_CHAIN_FEE_CAPS } from "./services/chain-fee-caps.js";
 
 const addressSchema = z
 	.string()
@@ -22,6 +23,33 @@ const csv = (value: string) =>
 		.split(",")
 		.map((entry) => entry.trim())
 		.filter(Boolean);
+
+/** An optional positive bigint env var; an empty string counts as unset. */
+const optionalPositiveBigint = z.preprocess(
+	(value) => (value === "" ? undefined : value),
+	z.coerce.bigint().positive().optional(),
+);
+
+/**
+ * A single-chain relay allowlist: `any`, or comma-separated addresses. Unset (or empty) is
+ * `undefined` — no recorded choice — which only a non-production deployment accepts.
+ */
+const envAllowlist = z
+	.string()
+	.optional()
+	.transform((value): "any" | `0x${string}`[] | undefined => {
+		if (!value?.trim()) return undefined;
+		if (value.trim() === "any") return "any";
+		return csv(value).map((a) => a.toLowerCase() as `0x${string}`);
+	})
+	.refine(
+		// A separator-only value (`,`) is a typo, not a choice: only "any" means unrestricted.
+		(value) =>
+			value === undefined ||
+			value === "any" ||
+			(value.length > 0 && value.every((a) => /^0x[0-9a-f]{40}$/.test(a))),
+		'must be "any" or comma-separated 0x addresses',
+	);
 
 /** The named address ranges Fastify's trustProxy (proxy-addr) accepts in place of a CIDR. */
 const TRUST_PROXY_RANGES = new Set(["loopback", "linklocal", "uniquelocal"]);
@@ -80,9 +108,17 @@ export type ResolvedChain = {
 	policy: {
 		maxCallGas?: bigint;
 		maxVerificationGas?: bigint;
+		maxPreVerificationGas?: bigint;
+		maxPaymasterVerificationGas?: bigint;
+		maxPaymasterPostOpGas?: bigint;
+		/**
+		 * The descriptor's cap, else `USEROP_MAX_FEE_PER_GAS`, else the chain's known default
+		 * (chain-fee-caps.ts). Unset only for a chain none of them covers; the relay then uses the
+		 * fallback, which a production deployment refuses to boot with.
+		 */
 		maxFeePerGas?: bigint;
 		maxPriorityFeePerGas?: bigint;
-		/** lowercase; empty = no restriction */
+		/** lowercase; empty = no restriction (`"any"`, or no recorded choice outside production) */
 		allowedTargets: string[];
 		/** lowercase; empty = no restriction */
 		allowedPaymasters: string[];
@@ -302,30 +338,38 @@ const envSchema = z
 			.positive()
 			.default(3),
 
-		/** UserOp policy caps — deployment defaults, overridable per tenant via policy jsonb. */
+		/**
+		 * UserOp policy caps — deployment defaults, overridable per chain descriptor and per tenant
+		 * via policy jsonb. What each one protects: README, "Relay policy".
+		 */
 		USEROP_MAX_CALL_GAS: z.coerce.bigint().positive().default(5_000_000n),
 		USEROP_MAX_VERIFICATION_GAS: z.coerce
 			.bigint()
 			.positive()
 			.default(5_000_000n),
-		USEROP_MAX_FEE_PER_GAS: z.coerce
+		/** Generous: on OP Stack chains it carries the L1 data fee in L2 gas. */
+		USEROP_MAX_PRE_VERIFICATION_GAS: z.coerce
 			.bigint()
 			.positive()
-			.default(500_000_000_000n),
-		USEROP_MAX_PRIORITY_FEE_PER_GAS: z.coerce
+			.default(10_000_000n),
+		USEROP_MAX_PAYMASTER_VERIFICATION_GAS: z.coerce
 			.bigint()
 			.positive()
-			.default(500_000_000_000n),
-		/** Comma-separated addresses; empty/unset = any target allowed. */
-		USEROP_ALLOWED_TARGETS: z
-			.string()
-			.optional()
-			.transform((v) => (v ? csv(v).map((a) => a.toLowerCase()) : [])),
-		/** Comma-separated addresses; empty/unset = any paymaster allowed. */
-		USEROP_ALLOWED_PAYMASTERS: z
-			.string()
-			.optional()
-			.transform((v) => (v ? csv(v).map((a) => a.toLowerCase()) : [])),
+			.default(1_000_000n),
+		USEROP_MAX_PAYMASTER_POST_OP_GAS: z.coerce
+			.bigint()
+			.positive()
+			.default(1_000_000n),
+		/**
+		 * Fee caps for every chain without its own descriptor cap. No default, so "unset" can be told
+		 * apart: unset, a chain falls back to its known default (src/services/chain-fee-caps.ts).
+		 */
+		USEROP_MAX_FEE_PER_GAS: optionalPositiveBigint,
+		USEROP_MAX_PRIORITY_FEE_PER_GAS: optionalPositiveBigint,
+		/** `any`, or comma-separated addresses. Unset is no recorded choice: any target outside production. */
+		USEROP_ALLOWED_TARGETS: envAllowlist,
+		/** `any`, or comma-separated addresses. Unset is no recorded choice: any paymaster outside production. */
+		USEROP_ALLOWED_PAYMASTERS: envAllowlist,
 
 		// ── Gas sponsorship ─────────────────────────────────────────────────────────────
 		//
@@ -607,8 +651,11 @@ const envSchema = z
 					"SPONSORSHIP_PAYMASTER_ADDRESS",
 					env.SPONSORSHIP_PAYMASTER_ADDRESS !== undefined,
 				],
-				["USEROP_ALLOWED_TARGETS", env.USEROP_ALLOWED_TARGETS.length > 0],
-				["USEROP_ALLOWED_PAYMASTERS", env.USEROP_ALLOWED_PAYMASTERS.length > 0],
+				["USEROP_ALLOWED_TARGETS", env.USEROP_ALLOWED_TARGETS !== undefined],
+				[
+					"USEROP_ALLOWED_PAYMASTERS",
+					env.USEROP_ALLOWED_PAYMASTERS !== undefined,
+				],
 			] as const) {
 				if (present) {
 					ctx.addIssue({
@@ -683,6 +730,70 @@ const envSchema = z
 					path: ["FACTORY_ADDRESS"],
 					message: `required: chain ${env.CHAIN_ID} is not in the giano-contracts address registry`,
 				});
+			}
+		}
+
+		// A production relay policy is decided, not defaulted (G6). Each served chain must state both
+		// allowlists — `"any"` is a valid statement — so that a tenant with no entry of its own for the
+		// chain inherits a recorded choice; and each must get its fee caps from somewhere that knows the
+		// chain, not from the chain-agnostic fallback, which never fires on an L2. Tenant rows are
+		// deliberately not checked here: they are runtime data, the service boots with none, and one bad
+		// row must not stop every tenant's relay (it fails closed on its own: the `tenant-policy` rule).
+		if (env.GIANO_DEPLOYMENT_CLASS === "production") {
+			const served: { chainId: number; policy: ChainPolicy | undefined }[] =
+				env.GIANO_CHAINS
+					? env.GIANO_CHAINS.map((d) => ({
+							chainId: d.chainId,
+							policy: d.walletApi.policy,
+						}))
+					: env.CHAIN_ID !== undefined
+						? [
+								{
+									chainId: env.CHAIN_ID,
+									policy: {
+										allowedTargets: env.USEROP_ALLOWED_TARGETS,
+										allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS,
+									},
+								},
+							]
+						: [];
+			const where = env.GIANO_CHAINS
+				? (field: string) => `walletApi.policy.${field} in GIANO_CHAINS`
+				: (field: string) =>
+						field === "allowedTargets"
+							? "USEROP_ALLOWED_TARGETS"
+							: "USEROP_ALLOWED_PAYMASTERS";
+			for (const { chainId, policy } of served) {
+				for (const field of ["allowedTargets", "allowedPaymasters"] as const) {
+					if (policy?.[field] === undefined) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							path: [env.GIANO_CHAINS ? "GIANO_CHAINS" : where(field)],
+							message: `chain ${chainId}: ${where(field)} must be stated when GIANO_DEPLOYMENT_CLASS=production — "any", or the addresses allowed`,
+						});
+					}
+				}
+				const known = KNOWN_CHAIN_FEE_CAPS[chainId];
+				for (const [field, envValue, envName] of [
+					[
+						"maxFeePerGas",
+						env.USEROP_MAX_FEE_PER_GAS,
+						"USEROP_MAX_FEE_PER_GAS",
+					],
+					[
+						"maxPriorityFeePerGas",
+						env.USEROP_MAX_PRIORITY_FEE_PER_GAS,
+						"USEROP_MAX_PRIORITY_FEE_PER_GAS",
+					],
+				] as const) {
+					if (!policy?.[field] && envValue === undefined && !known) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							path: [env.GIANO_CHAINS ? "GIANO_CHAINS" : envName],
+							message: `chain ${chainId}: no ${field} cap is known for this chain — set walletApi.policy.${field} for it, or ${envName}, when GIANO_DEPLOYMENT_CLASS=production`,
+						});
+					}
+				}
 			}
 		}
 
@@ -771,25 +882,33 @@ const envSchema = z
 		}
 	})
 	.transform((env) => {
+		const big = (value: string | undefined) =>
+			value ? BigInt(value) : undefined;
+		// `"any"`, an empty list and (outside production) no statement at all resolve to "no restriction".
+		const allowlist = (value: ChainPolicy["allowedTargets"]) =>
+			value === undefined || value === "any"
+				? []
+				: value.map((a) => a.toLowerCase());
 		const resolvePolicy = (
+			chainId: number,
 			policy: ChainPolicy | undefined,
 		): ResolvedChain["policy"] => ({
-			maxCallGas: policy?.maxCallGas ? BigInt(policy.maxCallGas) : undefined,
-			maxVerificationGas: policy?.maxVerificationGas
-				? BigInt(policy.maxVerificationGas)
-				: undefined,
-			maxFeePerGas: policy?.maxFeePerGas
-				? BigInt(policy.maxFeePerGas)
-				: undefined,
-			maxPriorityFeePerGas: policy?.maxPriorityFeePerGas
-				? BigInt(policy.maxPriorityFeePerGas)
-				: undefined,
-			allowedTargets: (policy?.allowedTargets ?? []).map((a) =>
-				a.toLowerCase(),
-			),
-			allowedPaymasters: (policy?.allowedPaymasters ?? []).map((a) =>
-				a.toLowerCase(),
-			),
+			maxCallGas: big(policy?.maxCallGas),
+			maxVerificationGas: big(policy?.maxVerificationGas),
+			maxPreVerificationGas: big(policy?.maxPreVerificationGas),
+			maxPaymasterVerificationGas: big(policy?.maxPaymasterVerificationGas),
+			maxPaymasterPostOpGas: big(policy?.maxPaymasterPostOpGas),
+			// descriptor > env when set > the chain's known default (chain-fee-caps.ts, design D2)
+			maxFeePerGas:
+				big(policy?.maxFeePerGas) ??
+				env.USEROP_MAX_FEE_PER_GAS ??
+				KNOWN_CHAIN_FEE_CAPS[chainId]?.maxFeePerGas,
+			maxPriorityFeePerGas:
+				big(policy?.maxPriorityFeePerGas) ??
+				env.USEROP_MAX_PRIORITY_FEE_PER_GAS ??
+				KNOWN_CHAIN_FEE_CAPS[chainId]?.maxPriorityFeePerGas,
+			allowedTargets: allowlist(policy?.allowedTargets),
+			allowedPaymasters: allowlist(policy?.allowedPaymasters),
 		});
 
 		// The single-chain shorthand as one chain. The validation above guarantees every field it reads.
@@ -830,9 +949,9 @@ const envSchema = z
 					env.SPONSORSHIP_PAYMASTER_ADDRESS as `0x${string}` | undefined,
 					deployment,
 				),
-				policy: resolvePolicy({
-					allowedTargets: env.USEROP_ALLOWED_TARGETS as `0x${string}`[],
-					allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS as `0x${string}`[],
+				policy: resolvePolicy(CHAIN_ID, {
+					allowedTargets: env.USEROP_ALLOWED_TARGETS,
+					allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS,
 				}),
 			};
 		};
@@ -873,7 +992,7 @@ const envSchema = z
 							registry,
 						),
 						chainType: bundlerChainType(descriptor.bundler),
-						policy: resolvePolicy(walletApi.policy),
+						policy: resolvePolicy(descriptor.chainId, walletApi.policy),
 					};
 				})
 			: [singleChain()];

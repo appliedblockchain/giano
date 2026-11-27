@@ -6,8 +6,9 @@
  * the same caps plus address allowlists. wallet-api validates on save; this only converts.
  *
  * An allowlist has three meanings, and the form keeps them apart: absent inherits the deployment's
- * default, an empty list allows any address, and a list allows only those. A textarea alone would
- * fold the first two together and silently change one into the other on save.
+ * default, `"any"` allows any address, and a list allows only those. A textarea alone would fold
+ * the first two together and silently change one into the other on save. wallet-api refuses an
+ * empty list (G6); one stored before that is read here as `"any"`, as wallet-api reads it.
  */
 
 import { linesToList } from "./format";
@@ -15,6 +16,9 @@ import { linesToList } from "./format";
 export const CAP_FIELDS = [
 	"maxCallGas",
 	"maxVerificationGas",
+	"maxPreVerificationGas",
+	"maxPaymasterVerificationGas",
+	"maxPaymasterPostOpGas",
 	"maxFeePerGas",
 	"maxPriorityFeePerGas",
 ] as const;
@@ -24,6 +28,9 @@ export type CapField = (typeof CAP_FIELDS)[number];
 export const CAP_LABELS: Record<CapField, string> = {
 	maxCallGas: "Max call gas",
 	maxVerificationGas: "Max verification gas",
+	maxPreVerificationGas: "Max pre-verification gas",
+	maxPaymasterVerificationGas: "Max paymaster verification gas",
+	maxPaymasterPostOpGas: "Max paymaster postOp gas",
 	maxFeePerGas: "Max fee per gas (wei)",
 	maxPriorityFeePerGas: "Max priority fee per gas (wei)",
 };
@@ -50,12 +57,8 @@ export type PolicyForm = Caps & {
 	perChain: PerChainForm[];
 };
 
-const emptyCaps = (): Caps => ({
-	maxCallGas: "",
-	maxVerificationGas: "",
-	maxFeePerGas: "",
-	maxPriorityFeePerGas: "",
-});
+const emptyCaps = (): Caps =>
+	Object.fromEntries(CAP_FIELDS.map((field) => [field, ""])) as Caps;
 
 export function emptyChain(chainId = ""): PerChainForm {
 	return {
@@ -76,6 +79,7 @@ function capsFrom(source: Record<string, unknown>): Caps {
 }
 
 function listFrom(value: unknown): ListForm {
+	if (value === "any") return { mode: "any", text: "" };
 	if (!Array.isArray(value)) return { mode: "default", text: "" };
 	if (value.length === 0) return { mode: "any", text: "" };
 	return { mode: "only", text: value.join("\n") };
@@ -107,18 +111,18 @@ function capsTo(caps: Caps): Record<string, string> {
 	return out;
 }
 
-function listTo(list: ListForm): string[] | undefined {
+function listTo(list: ListForm): "any" | string[] | undefined {
 	if (list.mode === "default") return undefined;
-	if (list.mode === "any") return [];
+	if (list.mode === "any") return "any";
 	return linesToList(list.text);
 }
 
 /**
  * What is wrong with a policy form before it is sent, one sentence each; empty when nothing is.
  *
- * "Only these" with no address would otherwise be sent as an empty list — which wallet-api reads as
- * *any* address, the most permissive allowlist there is, while the form looked locked down. And two
- * sections for one chain would silently merge, the second overwriting the first.
+ * "Only these" with no address would otherwise be sent as an empty list, which wallet-api refuses
+ * (it used to read it as *any* address while the form looked locked down). And two sections for one
+ * chain would silently merge, the second overwriting the first.
  */
 export function policyProblems(form: PolicyForm): string[] {
 	const problems: string[] = [];

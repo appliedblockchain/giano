@@ -294,6 +294,59 @@ describe("one validator for every tenant write (admin-tenant-lifecycle)", () => 
 		]);
 	});
 
+	it('refuses an empty allowlist on every write path: "any" is the recorded choice (G6 R5)', () => {
+		const policy = { perChain: { "8453": { allowedTargets: [] } } };
+		for (const parsed of [
+			tenantCreateSchema.safeParse({ ...base, policy }),
+			tenantPatchSchema.safeParse({ policy }),
+		]) {
+			expect(parsed.success).toBe(false);
+			expect(parsed.error?.issues.map((i) => i.message).join(" ")).toMatch(
+				/send "any"/,
+			);
+		}
+		expect(() => validateTenantFixture({ ...base, policy })).toThrow(
+			/send "any"/,
+		);
+		const any = tenantPatchSchema.parse({
+			policy: {
+				perChain: {
+					"8453": {
+						allowedTargets: "any",
+						allowedPaymasters: ["0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],
+					},
+				},
+			},
+		});
+		expect(any.policy?.perChain?.["8453"]).toEqual({
+			allowedTargets: "any",
+			allowedPaymasters: ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+		});
+	});
+
+	it("a patch that leaves the policy alone is not refused for a stored pre-G6 empty allowlist", () => {
+		const stored = {
+			...base,
+			id: "00000000-0000-4000-8000-000000000001",
+			rpId: "wallet.acme.app",
+			expectedOrigins: ["https://wallet.acme.app"],
+			allowedDappOrigins: [],
+			corsOrigins: [],
+			policy: { perChain: { "8453": { allowedPaymasters: [] } } },
+			branding: {},
+		} as unknown as Tenant;
+		const renamed = validateTenantUpdate(
+			stored,
+			{ rpName: "Acme" },
+			{ adminKeyCount: 0 },
+		);
+		expect(renamed.ok).toBe(true);
+		// and the next write stores the explicit choice it meant
+		expect(renamed.ok && renamed.fields.policy.perChain?.["8453"]).toEqual({
+			allowedPaymasters: "any",
+		});
+	});
+
 	it("refuses fixtures in which one entry claims an origin another entry claims", () => {
 		const other = {
 			...base,
@@ -330,6 +383,9 @@ describe("mergePolicy", () => {
 	const defaults = {
 		maxCallGas: 5_000_000n,
 		maxVerificationGas: 5_000_000n,
+		maxPreVerificationGas: 10_000_000n,
+		maxPaymasterVerificationGas: 1_000_000n,
+		maxPaymasterPostOpGas: 1_000_000n,
 		maxFeePerGas: 500_000_000_000n,
 		maxPriorityFeePerGas: 500_000_000_000n,
 		allowedTargets: [] as string[],
@@ -377,18 +433,84 @@ describe("mergePolicy", () => {
 			{ allowedTargets: ["0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"] },
 			31337,
 		);
-		expect(merged.allowedTargets).toEqual([]); // unparseable → fail safe to defaults
+		// unparseable → fails closed (G6): the tenant-policy rule refuses every operation
+		expect(merged.tenantPolicyError).toMatch(/allowedTargets/);
 	});
 
-	it("falls back to the defaults for an empty or unparseable stored policy", () => {
-		expect(mergePolicy(defaults, {}, 31337)).toMatchObject({
-			maxCallGas: 5_000_000n,
-		});
-		expect(mergePolicy(defaults, { maxCallGas: 12345 }, 31337)).toMatchObject({
-			maxCallGas: 5_000_000n,
-		}); // wrong type → fail safe
-		expect(mergePolicy(defaults, null, 31337)).toMatchObject({
-			maxCallGas: 5_000_000n,
+	it("uses the defaults for an empty stored policy", () => {
+		const empty = mergePolicy(defaults, {}, 31337);
+		expect(empty).toMatchObject({ maxCallGas: 5_000_000n });
+		expect(empty.tenantPolicyError).toBeUndefined();
+		expect(
+			mergePolicy(defaults, null, 31337).tenantPolicyError,
+		).toBeUndefined();
+	});
+
+	it("fails closed for an unparseable stored policy instead of applying the defaults (G6 R4)", () => {
+		for (const broken of [
+			{ maxCallGas: 12345 }, // wrong type
+			{ totallyUnknown: true },
+			{ perChain: { "31337": { allowedTargets: ["not-an-address"] } } },
+			"not an object",
+		]) {
+			const merged = mergePolicy(defaults, broken, 31337);
+			expect(merged.tenantPolicyError, JSON.stringify(broken)).toBeTruthy();
+		}
+		expect(
+			mergePolicy(defaults, { maxCallGas: 12345 }, 31337).tenantPolicyError,
+		).toMatch(/^maxCallGas: /);
+	});
+
+	it('resolves "any" as no restriction, and still inherits an absent allowlist', () => {
+		const chainDefaults = {
+			...defaults,
+			allowedTargets: ["0xcccccccccccccccccccccccccccccccccccccccc"],
+			allowedPaymasters: ["0xdddddddddddddddddddddddddddddddddddddddd"],
+		};
+		const merged = mergePolicy(
+			chainDefaults,
+			{ perChain: { "8453": { allowedTargets: "any" } } },
+			8453,
+		);
+		expect(merged.allowedTargets).toEqual([]);
+		expect(merged.allowedPaymasters).toEqual(chainDefaults.allowedPaymasters);
+	});
+
+	it('reads a stored empty allowlist, written before G6, as "any"', () => {
+		const merged = mergePolicy(
+			{
+				...defaults,
+				allowedTargets: ["0xcccccccccccccccccccccccccccccccccccccccc"],
+			},
+			{ perChain: { "8453": { allowedTargets: [] } } },
+			8453,
+		);
+		expect(merged.tenantPolicyError).toBeUndefined();
+		expect(merged.allowedTargets).toEqual([]);
+	});
+
+	it("fails closed on a stored perChain array or array entry instead of reading it as {}", () => {
+		for (const broken of [{ perChain: [] }, { perChain: { "8453": [] } }]) {
+			expect(
+				mergePolicy(defaults, broken, 8453).tenantPolicyError,
+			).toBeDefined();
+		}
+	});
+
+	it("resolves the new gas caps like the others: perChain over base over defaults", () => {
+		const merged = mergePolicy(
+			defaults,
+			{
+				maxPreVerificationGas: "200000",
+				maxPaymasterPostOpGas: "300000",
+				perChain: { "8453": { maxPreVerificationGas: "400000" } },
+			},
+			8453,
+		);
+		expect(merged).toMatchObject({
+			maxPreVerificationGas: 400_000n,
+			maxPaymasterVerificationGas: 1_000_000n,
+			maxPaymasterPostOpGas: 300_000n,
 		});
 	});
 

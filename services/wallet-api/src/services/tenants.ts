@@ -34,9 +34,39 @@ const bigintString = z
 	.string()
 	.regex(/^\d+$/, "expected a decimal string (bigints are stored as strings)");
 
-const addressArray = z
-	.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected a 0x address"))
-	.transform((addrs) => addrs.map((a) => a.toLowerCase()));
+/**
+ * A relay allowlist is a recorded choice: `"any"`, or the addresses allowed. An empty list is
+ * refused: it reads as "nothing allowed" but has always meant "any address", and the two must
+ * not be confused (G6). A row stored before `"any"` existed is upgraded on read
+ * ({@link upgradeStoredPolicy}).
+ */
+const allowlist = z
+	.union(
+		[
+			z.literal("any"),
+			z
+				.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected a 0x address"))
+				.min(
+					1,
+					'an empty list is not a choice: send "any" to allow any address, or the addresses allowed',
+				),
+		],
+		{ error: 'expected "any" or a non-empty list of 0x addresses' },
+	)
+	.transform((value) =>
+		value === "any" ? value : value.map((a) => a.toLowerCase()),
+	);
+
+/** The gas caps a tenant may override, once for every chain or per chain. */
+const gasAndFeeCaps = {
+	maxCallGas: bigintString.optional(),
+	maxVerificationGas: bigintString.optional(),
+	maxPreVerificationGas: bigintString.optional(),
+	maxPaymasterVerificationGas: bigintString.optional(),
+	maxPaymasterPostOpGas: bigintString.optional(),
+	maxFeePerGas: bigintString.optional(),
+	maxPriorityFeePerGas: bigintString.optional(),
+};
 
 /**
  * Chain-agnostic overrides: gas and fee caps and the rate limit are safe to state once for
@@ -44,10 +74,7 @@ const addressArray = z
  * see below.
  */
 const tenantPolicyBaseSchema = z.object({
-	maxCallGas: bigintString.optional(),
-	maxVerificationGas: bigintString.optional(),
-	maxFeePerGas: bigintString.optional(),
-	maxPriorityFeePerGas: bigintString.optional(),
+	...gasAndFeeCaps,
 	/** Per-tenant override of USEROP_RATE_LIMIT_PER_MINUTE — shared across chains (MC-63). */
 	relayRateLimitPerMinute: z.number().int().positive().optional(),
 });
@@ -57,18 +84,15 @@ const tenantPolicyBaseSchema = z.object({
  * ONLY here, keyed by chain id — the same address denotes different contracts on different
  * chains, so a chain-agnostic address allowlist is deliberately not expressible (MC-61, S6):
  * the violation is unrepresentable rather than prevented by a resolution rule someone could
- * misread. The existing sense of an empty array — any value allowed — is preserved WITHIN
- * an entry.
+ * misread. An absent allowlist inherits the chain's own (a deployment choice that production
+ * must state); `"any"` records the choice to allow any address.
  */
 const tenantPolicyPerChainSchema = z
 	.object({
 		// no relayRateLimitPerMinute here: the relay limit is shared across chains (MC-63)
-		maxCallGas: bigintString.optional(),
-		maxVerificationGas: bigintString.optional(),
-		maxFeePerGas: bigintString.optional(),
-		maxPriorityFeePerGas: bigintString.optional(),
-		allowedTargets: addressArray.optional(),
-		allowedPaymasters: addressArray.optional(),
+		...gasAndFeeCaps,
+		allowedTargets: allowlist.optional(),
+		allowedPaymasters: allowlist.optional(),
 	})
 	.strict();
 
@@ -88,6 +112,42 @@ export const tenantPolicySchema = tenantPolicyBaseSchema
 	.strict();
 
 export type TenantPolicy = z.infer<typeof tenantPolicySchema>;
+
+/**
+ * A stored policy in today's shape. Before G6 an empty allowlist was how "any address" was
+ * written; it is read as `"any"`, which is what it meant, instead of being refused. Runs on every
+ * read of a stored policy (the relay, and a patch's merge), so no data migration is needed and
+ * the next write stores `"any"`. Anything else, malformed arrays included, is passed through
+ * unchanged for the schema to judge.
+ */
+export function upgradeStoredPolicy(policy: unknown): unknown {
+	if (typeof policy !== "object" || policy === null) return policy;
+	const { perChain } = policy as { perChain?: unknown };
+	// An array is not a perChain map or entry: pass it through so the schema refuses it, instead
+	// of spreading it into an empty object that inherits the deployment defaults.
+	if (
+		typeof perChain !== "object" ||
+		perChain === null ||
+		Array.isArray(perChain)
+	)
+		return policy;
+	const isEmptyList = (value: unknown) =>
+		Array.isArray(value) && value.length === 0;
+	return {
+		...policy,
+		perChain: Object.fromEntries(
+			Object.entries(perChain).map(([chainId, entry]) => {
+				if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+					return [chainId, entry];
+				const upgraded: Record<string, unknown> = { ...entry };
+				for (const field of ["allowedTargets", "allowedPaymasters"]) {
+					if (isEmptyList(upgraded[field])) upgraded[field] = "any";
+				}
+				return [chainId, upgraded];
+			}),
+		),
+	};
+}
 
 const originList = z
 	.array(z.string().refine(isBareOrigin, "must be a bare origin"))
@@ -293,7 +353,8 @@ function storedFields(row: Tenant) {
 		allowedDappOrigins: row.allowedDappOrigins,
 		corsOrigins: row.corsOrigins,
 		openRegistration: row.openRegistration,
-		policy: row.policy,
+		// so a patch that leaves the policy alone is not refused for a pre-G6 empty allowlist
+		policy: upgradeStoredPolicy(row.policy),
 		branding: row.branding,
 	};
 }
@@ -542,46 +603,49 @@ export function createTenantService(db: Db) {
  * address-valued allowlists resolve from `perChain[chainId]` ONLY, falling back to the
  * chain's own defaults — never to another chain's values, and never to a tenant base value,
  * which the schema cannot even express (MC-61).
+ *
+ * A stored policy that does not parse FAILS CLOSED: the result carries `tenantPolicyError`, and the
+ * `tenant-policy` rule refuses every operation. Falling back to the deployment defaults would let
+ * a broken row loosen the tenant's caps and open its allowlists (G6).
  */
 export function mergePolicy(
 	defaults: PolicyConfig,
 	tenantPolicy: unknown,
 	chainId: number,
 ): PolicyConfig & { relayRateLimitPerMinute?: number } {
-	const parsed = tenantPolicySchema.safeParse(tenantPolicy ?? {});
-	// fail safe: an unparseable stored policy falls back to the deployment defaults
-	const overrides = parsed.success ? parsed.data : {};
-	const perChain = parsed.success
-		? (parsed.data.perChain?.[String(chainId)] ?? {})
-		: {};
-	const cap = (
-		chain: string | undefined,
-		base: string | undefined,
-		fallback: bigint,
-	) => (chain ? BigInt(chain) : base ? BigInt(base) : fallback);
+	const parsed = tenantPolicySchema.safeParse(
+		upgradeStoredPolicy(tenantPolicy ?? {}),
+	);
+	if (!parsed.success) {
+		return {
+			...defaults,
+			tenantPolicyError: parsed.error.issues
+				.map((issue) => `${issue.path.join(".") || "policy"}: ${issue.message}`)
+				.join("; "),
+		};
+	}
+	const overrides = parsed.data;
+	const perChain = overrides.perChain?.[String(chainId)] ?? {};
+	const cap = (field: keyof typeof gasAndFeeCaps) => {
+		const value = perChain[field] ?? overrides[field];
+		return value ? BigInt(value) : defaults[field];
+	};
+	// `"any"` is no restriction, which evaluatePolicy reads as an empty list
+	const list = (value: "any" | string[] | undefined, fallback: string[]) =>
+		value === undefined ? fallback : value === "any" ? [] : value;
 	return {
-		maxCallGas: cap(
-			perChain.maxCallGas,
-			overrides.maxCallGas,
-			defaults.maxCallGas,
+		maxCallGas: cap("maxCallGas"),
+		maxVerificationGas: cap("maxVerificationGas"),
+		maxPreVerificationGas: cap("maxPreVerificationGas"),
+		maxPaymasterVerificationGas: cap("maxPaymasterVerificationGas"),
+		maxPaymasterPostOpGas: cap("maxPaymasterPostOpGas"),
+		maxFeePerGas: cap("maxFeePerGas"),
+		maxPriorityFeePerGas: cap("maxPriorityFeePerGas"),
+		allowedTargets: list(perChain.allowedTargets, defaults.allowedTargets),
+		allowedPaymasters: list(
+			perChain.allowedPaymasters,
+			defaults.allowedPaymasters,
 		),
-		maxVerificationGas: cap(
-			perChain.maxVerificationGas,
-			overrides.maxVerificationGas,
-			defaults.maxVerificationGas,
-		),
-		maxFeePerGas: cap(
-			perChain.maxFeePerGas,
-			overrides.maxFeePerGas,
-			defaults.maxFeePerGas,
-		),
-		maxPriorityFeePerGas: cap(
-			perChain.maxPriorityFeePerGas,
-			overrides.maxPriorityFeePerGas,
-			defaults.maxPriorityFeePerGas,
-		),
-		allowedTargets: perChain.allowedTargets ?? defaults.allowedTargets,
-		allowedPaymasters: perChain.allowedPaymasters ?? defaults.allowedPaymasters,
 		// The relay rate limit is SHARED across chains (MC-63) — one window per tenant — so a
 		// per-chain value would be meaningless and only the base override applies.
 		relayRateLimitPerMinute: overrides.relayRateLimitPerMinute,

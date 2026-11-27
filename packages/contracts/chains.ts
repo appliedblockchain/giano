@@ -71,14 +71,30 @@ export const DEFAULT_NATIVE_CURRENCY = {
 
 export type ChainDescriptor = z.infer<typeof chainDescriptorSchema>;
 
+/**
+ * A relay allowlist: `"any"` records the choice to allow any address; a list allows only those.
+ * An empty list is read as `"any"`, which is what it has always meant; write `"any"` instead.
+ */
+type ChainAllowlist = z.ZodUnion<
+	readonly [z.ZodLiteral<"any">, z.ZodArray<z.ZodType<`0x${string}`>>]
+>;
+
+const chainAllowlistSchema: ChainAllowlist = z.union([
+	z.literal("any"),
+	z.array(chainAddressSchema),
+]);
+
 /** Per-chain policy defaults. Address-valued fields are never inherited across chains (MC-61). */
 type ChainPolicyShape = {
 	maxCallGas: z.ZodOptional<z.ZodString>;
 	maxVerificationGas: z.ZodOptional<z.ZodString>;
+	maxPreVerificationGas: z.ZodOptional<z.ZodString>;
+	maxPaymasterVerificationGas: z.ZodOptional<z.ZodString>;
+	maxPaymasterPostOpGas: z.ZodOptional<z.ZodString>;
 	maxFeePerGas: z.ZodOptional<z.ZodString>;
 	maxPriorityFeePerGas: z.ZodOptional<z.ZodString>;
-	allowedTargets: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
-	allowedPaymasters: z.ZodOptional<z.ZodArray<z.ZodType<`0x${string}`>>>;
+	allowedTargets: z.ZodOptional<ChainAllowlist>;
+	allowedPaymasters: z.ZodOptional<ChainAllowlist>;
 };
 
 export const chainPolicySchema: z.ZodObject<ChainPolicyShape, z.core.$strict> =
@@ -86,10 +102,13 @@ export const chainPolicySchema: z.ZodObject<ChainPolicyShape, z.core.$strict> =
 		.object({
 			maxCallGas: z.string().regex(/^\d+$/).optional(),
 			maxVerificationGas: z.string().regex(/^\d+$/).optional(),
+			maxPreVerificationGas: z.string().regex(/^\d+$/).optional(),
+			maxPaymasterVerificationGas: z.string().regex(/^\d+$/).optional(),
+			maxPaymasterPostOpGas: z.string().regex(/^\d+$/).optional(),
 			maxFeePerGas: z.string().regex(/^\d+$/).optional(),
 			maxPriorityFeePerGas: z.string().regex(/^\d+$/).optional(),
-			allowedTargets: z.array(chainAddressSchema).optional(),
-			allowedPaymasters: z.array(chainAddressSchema).optional(),
+			allowedTargets: chainAllowlistSchema.optional(),
+			allowedPaymasters: chainAllowlistSchema.optional(),
 		})
 		.strict();
 

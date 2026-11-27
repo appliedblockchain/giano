@@ -114,6 +114,9 @@ export type UseropRelayOptions = {
 	defaultPolicy: {
 		maxCallGas: bigint;
 		maxVerificationGas: bigint;
+		maxPreVerificationGas: bigint;
+		maxPaymasterVerificationGas: bigint;
+		maxPaymasterPostOpGas: bigint;
 		maxFeePerGas: bigint;
 		maxPriorityFeePerGas: bigint;
 	};
@@ -140,19 +143,23 @@ export function createUseropRelay({
 		caller: Pick<RelayCaller, "session" | "tenant" | "chain">,
 	) => {
 		const { chain } = caller;
+		const own = chain.descriptor.policy;
 		const chainDefaults = {
-			maxCallGas:
-				chain.descriptor.policy.maxCallGas ?? defaultPolicy.maxCallGas,
+			maxCallGas: own.maxCallGas ?? defaultPolicy.maxCallGas,
 			maxVerificationGas:
-				chain.descriptor.policy.maxVerificationGas ??
-				defaultPolicy.maxVerificationGas,
-			maxFeePerGas:
-				chain.descriptor.policy.maxFeePerGas ?? defaultPolicy.maxFeePerGas,
+				own.maxVerificationGas ?? defaultPolicy.maxVerificationGas,
+			maxPreVerificationGas:
+				own.maxPreVerificationGas ?? defaultPolicy.maxPreVerificationGas,
+			maxPaymasterVerificationGas:
+				own.maxPaymasterVerificationGas ??
+				defaultPolicy.maxPaymasterVerificationGas,
+			maxPaymasterPostOpGas:
+				own.maxPaymasterPostOpGas ?? defaultPolicy.maxPaymasterPostOpGas,
+			maxFeePerGas: own.maxFeePerGas ?? defaultPolicy.maxFeePerGas,
 			maxPriorityFeePerGas:
-				chain.descriptor.policy.maxPriorityFeePerGas ??
-				defaultPolicy.maxPriorityFeePerGas,
-			allowedTargets: chain.descriptor.policy.allowedTargets,
-			allowedPaymasters: chain.descriptor.policy.allowedPaymasters,
+				own.maxPriorityFeePerGas ?? defaultPolicy.maxPriorityFeePerGas,
+			allowedTargets: own.allowedTargets,
+			allowedPaymasters: own.allowedPaymasters,
 		};
 		return {
 			...mergePolicy(chainDefaults, caller.tenant?.policy, chain.chainId),
@@ -223,6 +230,19 @@ export function createUseropRelay({
 			});
 
 			// Per-(tenant, chain) policy: tenant jsonb overrides merged over the chain's defaults.
+			const policy = tenantPolicy(caller);
+			if (policy.tenantPolicyError !== undefined) {
+				// A stored row no longer matches the schema: an operator has to fix it. Until then every
+				// relay for this tenant is refused by the `tenant-policy` rule below (fail closed).
+				log.error(
+					{
+						tenant: tenantSlug,
+						chainId: chain.chainId,
+						issues: policy.tenantPolicyError,
+					},
+					"tenant policy cannot be parsed; refusing the tenant's relays",
+				);
+			}
 			const decision = evaluatePolicy(
 				{
 					sender: rpcOp.sender,
@@ -233,10 +253,16 @@ export function createUseropRelay({
 					maxFeePerGas: userOp.maxFeePerGas,
 					maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
 					paymaster: rpcOp.paymaster,
+					paymasterVerificationGasLimit: BigInt(
+						rpcOp.paymasterVerificationGasLimit ?? "0x0",
+					),
+					paymasterPostOpGasLimit: BigInt(
+						rpcOp.paymasterPostOpGasLimit ?? "0x0",
+					),
 					paymasterData: rpcOp.paymasterData,
 				},
 				session.walletAddress,
-				tenantPolicy(caller),
+				policy,
 			);
 
 			if (!decision.allowed) {

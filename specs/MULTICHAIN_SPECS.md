@@ -1078,7 +1078,7 @@ Resolution for `(tenant, chain)`:
 | Field class | Resolution |
 |---|---|
 | Gas and fee caps, rate limit | `deployment default` ← `chain descriptor policy` ← `tenant base` ← `tenant perChain[chainId]`. Later wins; inheritance across chains is fine and wanted (MC-62) |
-| `allowedTargets`, `allowedPaymasters` | **`perChain[chainId]` only.** No base value, no inheritance, no fallback. Absent an entry, the tenant permits nothing on that chain |
+| `allowedTargets`, `allowedPaymasters` | **`perChain[chainId]`, else that chain's descriptor policy.** No tenant base value and no inheritance from another chain. Absent an entry, the tenant inherits the chain's own allowlists, which a production deployment must state (G6) |
 
 Address-valued fields do not appear at the tenant base level at all — the type above places them
 **only** under `perChain`, so a chain-agnostic address allowlist is not expressible (S6, MC-61). This
@@ -1093,9 +1093,11 @@ There is no migration: nothing is in production (Q4). A tenant configuring its f
 `perChain` entry, and when the deployment serves a single chain the admin API supplies the chain id
 for them (MC-53), so an on-premises tenant never encounters the dimension.
 
-The existing sense of an empty `allowedTargets` — *any target allowed* — is preserved **within** a
-`perChain` entry. "No entry at all" and "an entry permitting everything" are therefore distinct
-states, and the first denies.
+An allowlist is `"any"` or a non-empty list of addresses (openspec change `userop-policy-defaults`,
+G6). `"any"` records the choice to allow any address. An empty list is refused on write; one
+stored before G6 reads as `"any"`, which is what it meant. "No entry at all" inherits the
+chain's allowlists: the code never implemented the deny-by-default an earlier version of this section
+described, and the chain's own choice is the recorded one.
 
 ### 9.6 Health, readiness and degradation
 
