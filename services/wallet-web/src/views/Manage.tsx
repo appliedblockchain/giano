@@ -348,12 +348,18 @@ function OwnerRowView({
 
 	useEffect(() => setName(row.name ?? ""), [row.name]);
 
+	const [renameFailed, setRenameFailed] = useState(false);
 	const saveName = async () => {
 		if (!row.credentialId) return;
 		setSaving(true);
+		setRenameFailed(false);
 		try {
-			await actions.rename(row.credentialId, name.trim() || null);
-			setRenaming(false);
+			// The box stays open, with the name typed, when the rename was not saved.
+			if (await actions.rename(row.credentialId, name.trim() || null)) {
+				setRenaming(false);
+			} else {
+				setRenameFailed(true);
+			}
 		} finally {
 			setSaving(false);
 		}
@@ -438,7 +444,13 @@ function OwnerRowView({
 						Save
 					</button>
 				</div>
-			) : (
+			) : null}
+			{renaming && renameFailed ? (
+				<div className="error" data-testid="manage-rename-error">
+					The name was not saved. Try again.
+				</div>
+			) : null}
+			{renaming && row.credentialId ? null : (
 				<div className="owner-foot">
 					<span className="owner-fp" data-testid="manage-owner-fingerprint">
 						{row.fingerprint}
