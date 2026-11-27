@@ -200,12 +200,10 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 
 			{state.walletAddress && state.view === "set" && (
 				<div className="card">
-					<h2>Who can act on this wallet</h2>
+					<h2>Who can use this wallet</h2>
+					{/* WM-06: the list is the one read from this network. */}
 					{state.chains.length > 1 && state.referenceChainName ? (
-						<p>
-							As recorded on {state.referenceChainName} — an owner change
-							applies per network.
-						</p>
+						<p className="owner-meta">Read from {state.referenceChainName}.</p>
 					) : null}
 					{state.owners.map((row) => (
 						<OwnerRowView
@@ -365,127 +363,118 @@ function OwnerRowView({
 		}
 	};
 
-	// WM-03/WM-09: identifiable without a name — kind, fingerprint, creation date, transports.
+	// WM-03/WM-09: identifiable without a name — the device it was added on, where it is stored,
+	// when it was added, and a fingerprint derived from its key.
+	const device = addedFromLabel(row);
 	const title =
-		row.name ?? (row.kind === "address" ? "Ethereum account" : "Passkey");
-	const subtitle =
-		row.kind === "address"
-			? row.address
-			: row.credentialId
-				? `Passkey added ${row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "on an unknown date"}${addedFromLabel(row) ? ` on ${addedFromLabel(row)}` : ""}`
-				: "Passkey added outside this deployment"; // WM-04: never silently omitted
+		row.name ??
+		(row.kind === "address"
+			? "Ethereum account"
+			: (device ?? (row.credentialId ? "Passkey" : "Passkey added elsewhere")));
 	const storage = row.kind === "passkey" ? storageLabel(row) : null;
+	const added = row.createdAt
+		? `added ${new Date(row.createdAt).toLocaleDateString(undefined, {
+				day: "numeric",
+				month: "short",
+				year: "numeric",
+			})}`
+		: null;
 
 	return (
 		<div
-			style={{ borderBottom: "1px dashed var(--border)", padding: "8px 0" }}
+			className="owner-row"
 			data-testid="manage-owner-row"
 			data-fingerprint={row.fingerprint}
 		>
-			<div
-				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					gap: 8,
-					alignItems: "baseline",
-				}}
-			>
-				<div>
-					<b data-testid="manage-owner-name">{title}</b>{" "}
-					{row.isCurrent ? (
-						<span
-							style={{
-								background: "var(--pill)",
-								borderRadius: 6,
-								padding: "1px 6px",
-								fontSize: 11,
-							}}
-							data-testid="manage-owner-current"
-						>
-							this session
-						</span>
-					) : null}
-					<div
-						style={{
-							color: "var(--muted)",
-							fontSize: 12,
-							wordBreak: "break-all",
-						}}
-					>
-						{subtitle}
-					</div>
-					{storage ? (
-						<div
-							style={{ color: "var(--muted)", fontSize: 12 }}
-							data-testid="manage-owner-storage"
-						>
-							{storage}
-						</div>
-					) : null}
-				</div>
-				<span
-					className="v"
-					style={{ fontFamily: "ui-monospace, monospace", fontSize: 13 }}
-					data-testid="manage-owner-fingerprint"
-				>
-					{row.fingerprint}
+			<div className="owner-head">
+				<span className="owner-name" data-testid="manage-owner-name">
+					{title}
 				</span>
+				{row.isCurrent ? (
+					<span className="owner-badge" data-testid="manage-owner-current">
+						Current
+					</span>
+				) : null}
 			</div>
-			<div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-				{row.credentialId ? (
-					renaming ? (
-						<>
-							<input
-								value={name}
-								onChange={(event) => setName(event.target.value)}
-								placeholder="Name this credential"
-								style={{
-									flex: 1,
-									borderRadius: 8,
-									border: "1px solid var(--border)",
-									padding: "6px 8px",
-									background: "var(--bg)",
-									color: "var(--fg)",
-								}}
-								data-testid="manage-rename-input"
-							/>
+			<div className="owner-meta" data-testid="manage-owner-meta">
+				{row.kind === "address" ? (
+					<span style={{ fontFamily: "ui-monospace, monospace" }}>
+						{row.address}
+					</span>
+				) : row.credentialId ? (
+					<>
+						{/* A user-given name hides the device from the title, so it moves here. */}
+						{row.name && device && row.name !== device ? `${device} · ` : null}
+						{storage ? (
+							<span data-testid="manage-owner-storage">{storage}</span>
+						) : null}
+						{storage && added ? " · " : null}
+						{added}
+					</>
+				) : (
+					// WM-04: an owner with no registry row is listed, never silently omitted.
+					"Added outside this app"
+				)}
+			</div>
+			{renaming && row.credentialId ? (
+				<div className="owner-foot">
+					<input
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+						placeholder={device ?? "Name this passkey"}
+						style={{
+							flex: 1,
+							borderRadius: 8,
+							border: "1px solid var(--border)",
+							padding: "6px 8px",
+							background: "var(--bg)",
+							color: "var(--fg)",
+						}}
+						data-testid="manage-rename-input"
+					/>
+					<button
+						type="button"
+						className="link"
+						onClick={() => void saveName()}
+						disabled={saving}
+						data-testid="manage-rename-save"
+					>
+						Save
+					</button>
+				</div>
+			) : (
+				<div className="owner-foot">
+					<span className="owner-fp" data-testid="manage-owner-fingerprint">
+						{row.fingerprint}
+					</span>
+					<span className="owner-actions">
+						{row.credentialId ? (
 							<button
 								type="button"
-								style={{ flex: "none", padding: "6px 10px", fontSize: 13 }}
-								onClick={() => void saveName()}
-								disabled={saving}
-								data-testid="manage-rename-save"
+								className="link"
+								onClick={() => setRenaming(true)}
+								data-testid="manage-rename"
 							>
-								Save
+								Rename
 							</button>
-						</>
-					) : (
+						) : null}
 						<button
 							type="button"
-							style={{ flex: "none", padding: "6px 10px", fontSize: 13 }}
-							onClick={() => setRenaming(true)}
-							data-testid="manage-rename"
+							className="link danger"
+							onClick={onRemove}
+							disabled={!canRemove}
+							title={
+								canRemove
+									? undefined
+									: "The last remaining credential cannot be removed"
+							}
+							data-testid="manage-remove"
 						>
-							Rename
+							Remove
 						</button>
-					)
-				) : null}
-				<button
-					type="button"
-					style={{ flex: "none", padding: "6px 10px", fontSize: 13 }}
-					className="danger"
-					onClick={onRemove}
-					disabled={!canRemove}
-					title={
-						canRemove
-							? undefined
-							: "The last remaining credential cannot be removed"
-					}
-					data-testid="manage-remove"
-				>
-					Remove
-				</button>
-			</div>
+					</span>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -494,9 +483,10 @@ function OwnerRowView({
 const ROAMING_TRANSPORTS = new Set(["usb", "nfc", "ble"]);
 
 /**
- * Where a passkey is stored, in a few words (PS-1): the provider when its authenticator named one, a
- * security key when it is a roaming single-device key, and whether it is synced. Null for a row with
- * no registry entry. Display only: never an input to any decision.
+ * Where a passkey is stored, in a few words (PS-1): "Apple Passwords · synced", "Security key · this
+ * device only", "This device only". The provider when its authenticator named one, a security key when
+ * it is a roaming single-device key, and whether it is synced. Null for a row with no registry entry.
+ * Display only: never an input to any decision.
  */
 function storageLabel(row: OwnerRow): string | null {
 	if (!row.storage) return null;
@@ -508,11 +498,7 @@ function storageLabel(row: OwnerRow): string | null {
 		provider === null &&
 		deviceType === "singleDevice" &&
 		!!row.transports?.some((transport) => ROAMING_TRANSPORTS.has(transport));
-	const where = provider
-		? `Stored in ${provider}`
-		: securityKey
-			? "On a security key"
-			: null;
+	const where = provider ?? (securityKey ? "Security key" : null);
 	const sync = synced
 		? "synced"
 		: deviceType === "singleDevice"
