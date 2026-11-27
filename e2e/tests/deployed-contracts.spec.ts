@@ -93,16 +93,18 @@ async function deployFactory(): Promise<Address> {
 	return receipt.contractAddress;
 }
 
-// ── the tenant's sponsorship configuration ────────────────────────────────────
+// ── the tenant's sponsorship rules ────────────────────────────────────────────
 
-type AllowlistEntry = { contract: string; functions: "all" | string[] };
+type Rule = { id: string; contract: string };
 
-async function adminCall(
-	method: "GET" | "PUT",
+async function rulesApi(
+	method: "GET" | "POST" | "PATCH" | "DELETE",
+	path: string,
 	body?: unknown,
-): Promise<Record<string, unknown>> {
+): Promise<unknown> {
+	const separator = path.includes("?") ? "&" : "?";
 	const response = await fetch(
-		`${WALLET_API}/v1/admin/sponsorship?chainId=${CHAIN_A}`,
+		`${WALLET_API}/v1/admin/sponsorship/rules${path}${separator}chainId=${CHAIN_A}`,
 		{
 			method,
 			headers: {
@@ -115,29 +117,45 @@ async function adminCall(
 	const text = await response.text();
 	expect(
 		response.ok,
-		`sponsorship ${method} failed: ${response.status} ${text}`,
+		`rules ${method} ${path} failed: ${response.status} ${text}`,
 	).toBe(true);
-	return method === "GET"
-		? (JSON.parse(text) as { config: Record<string, unknown> }).config
-		: {};
+	return text ? JSON.parse(text) : undefined;
 }
 
-/** Adds `contracts` to the tenant's allowlist, with every function allowed. */
-async function allowContracts(
-	original: Record<string, unknown>,
-	contracts: Address[],
-): Promise<void> {
-	const allowlist = original.allowlist as AllowlistEntry[];
-	await adminCall("PUT", {
-		...original,
-		allowlist: [
-			...allowlist,
-			...contracts.map((contract) => ({
-				contract: contract.toLowerCase(),
-				functions: "all",
-			})),
-		],
-	});
+/** Every rule this spec creates carries this prefix, so a run removes only its own. */
+const RUN = `ps4-${Date.now()}`;
+const created: string[] = [];
+
+async function allow(
+	contract: Address,
+	options: {
+		functions?: "all" | string[];
+		reference: string;
+		expiresAt?: Date;
+	},
+): Promise<Rule> {
+	const rule = (await rulesApi("POST", "", {
+		contract,
+		functions: options.functions ?? "all",
+		clientReference: `${RUN}-${options.reference}`,
+		...(options.expiresAt
+			? { expiresAt: options.expiresAt.toISOString() }
+			: {}),
+	})) as Rule;
+	created.push(rule.id);
+	return rule;
+}
+
+/** The ids of the rules that allowed each recent decision for this tenant. */
+async function recentRuleIds(): Promise<string[][]> {
+	const response = await fetch(
+		`${WALLET_API}/v1/admin/sponsorship/decisions?chainId=${CHAIN_A}&outcome=allowed&limit=20`,
+		{ headers: { authorization: `Bearer ${tenant.adminKey}` } },
+	);
+	const { decisions } = (await response.json()) as {
+		decisions: Array<{ ruleIds: string[] }>;
+	};
+	return decisions.map((d) => d.ruleIds);
 }
 
 // ── sending a call from the dApp ──────────────────────────────────────────────
@@ -249,34 +267,44 @@ async function sponsoredByPaymaster(
 
 test.describe("sponsorship of contracts deployed at run time (PS-4)", () => {
 	let factory: Address;
-	let original: Record<string, unknown>;
+	let factoryRule: Rule;
 
 	test.beforeAll(async () => {
 		factory = await deployFactory();
-		original = await adminCall("GET");
+		factoryRule = await allow(factory, { reference: "factory" });
 	});
 
-	test.afterEach(async () => {
-		await adminCall("PUT", original);
+	test.afterAll(async () => {
+		for (const id of created) {
+			await fetch(
+				`${WALLET_API}/v1/admin/sponsorship/rules/${id}?chainId=${CHAIN_A}`,
+				{
+					method: "DELETE",
+					headers: { authorization: `Bearer ${tenant.adminKey}` },
+				},
+			);
+		}
 	});
 
-	test("an allow-listed factory deploys an escrow under sponsorship, but a call to the escrow is refused until its address is allowed", async ({
-		page,
-	}) => {
-		await allowContracts(original, [factory]);
-		const { credentials, address } = await connectWallet(page, tenant);
-		const wallet = address as Address;
-
-		// The escrow's address is known before it exists.
-		const salt = keccak256(toHex(`escrow-${Date.now()}`));
+	/** A fresh salt and the escrow address the connected wallet would deploy with it. */
+	async function predictEscrow(wallet: Address) {
+		const salt = keccak256(toHex(`${RUN}-${Math.random()}`));
 		const escrow = await client.readContract({
 			address: factory,
 			abi: FACTORY_ABI,
 			functionName: "predictEscrowAddress",
 			args: [wallet, salt],
 		});
+		return { salt, escrow };
+	}
 
-		// 1. The deployment: a call to the factory, which the allowlist names.
+	async function deployEscrow(
+		page: Page,
+		credentials: VirtualCredential[],
+		wallet: Address,
+		salt: Hex,
+		escrow: Address,
+	) {
 		const deploy = await openSend(
 			page,
 			credentials,
@@ -287,17 +315,8 @@ test.describe("sponsorship of contracts deployed at run time (PS-4)", () => {
 				args: [salt],
 			}),
 		);
-		const deployHash = await approveAndLand(page, deploy.popup, deploy.label);
-		expect(await sponsoredByPaymaster(wallet, deployHash)).toBe(true);
-		const [created] = await client.getContractEvents({
-			address: factory,
-			abi: FACTORY_ABI,
-			eventName: "EscrowCloneCreated",
-			args: { payer: wallet },
-			fromBlock: 0n,
-			strict: true,
-		});
-		expect(created.args.escrow).toBe(escrow);
+		const hash = await approveAndLand(page, deploy.popup, deploy.label);
+		expect(await sponsoredByPaymaster(wallet, hash)).toBe(true);
 		expect(
 			await client.readContract({
 				address: escrow,
@@ -305,25 +324,62 @@ test.describe("sponsorship of contracts deployed at run time (PS-4)", () => {
 				functionName: "payer",
 			}),
 		).toBe(wallet);
+	}
 
-		// 2. A call to the new escrow: no rule names it, so it is refused before the user is asked
-		//    to approve.
-		const confirm = encodeFunctionData({
-			abi: ESCROW_ABI,
-			functionName: "confirm",
-		});
+	const confirm = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: "confirm",
+	});
+
+	test("an allow-listed factory deploys an escrow under sponsorship, but a call to the escrow is refused until a rule names it", async ({
+		page,
+	}) => {
+		const { credentials, address } = await connectWallet(page, tenant);
+		const wallet = address as Address;
+		const { salt, escrow } = await predictEscrow(wallet);
+
+		await deployEscrow(page, credentials, wallet, salt, escrow);
+		expect(
+			(await recentRuleIds()).some((ids) => ids.includes(factoryRule.id)),
+		).toBe(true);
+
+		// No rule names the escrow, so the call is refused before the user is asked to approve.
 		const refused = await openSend(page, credentials, escrow, confirm);
 		await expectRefused(refused.popup, "contract-not-allowed");
 
-		// 3. Once the tenant allows the escrow's address, the same call is sponsored.
-		await allowContracts(original, [factory, escrow]);
+		// One rule for the escrow, added without touching any other rule, and the call is sponsored.
+		const rule = await allow(escrow, { reference: "late-escrow" });
 		const allowed = await openSend(page, credentials, escrow, confirm);
-		const confirmHash = await approveAndLand(
-			page,
-			allowed.popup,
-			allowed.label,
-		);
-		expect(await sponsoredByPaymaster(wallet, confirmHash)).toBe(true);
+		const hash = await approveAndLand(page, allowed.popup, allowed.label);
+		expect(await sponsoredByPaymaster(wallet, hash)).toBe(true);
+		expect((await recentRuleIds())[0]).toEqual([rule.id]);
+	});
+
+	test("a rule added for the predicted address before the deployment sponsors the first call, until it is removed or expires", async ({
+		page,
+	}) => {
+		const { credentials, address } = await connectWallet(page, tenant);
+		const wallet = address as Address;
+		const { salt, escrow } = await predictEscrow(wallet);
+
+		// The tenant's backend allows the escrow before it exists, as a retried request would.
+		const body = {
+			functions: ["confirm()"],
+			reference: `escrow-${salt.slice(2, 10)}`,
+			expiresAt: new Date(Date.now() + 10 * 60_000),
+		};
+		const rule = await allow(escrow, body);
+		const retried = await allow(escrow, body);
+		expect(retried.id).toBe(rule.id);
+
+		await deployEscrow(page, credentials, wallet, salt, escrow);
+
+		// The first call to the new escrow is sponsored with no further step, and the decision names
+		// the rule that allowed it.
+		const first = await openSend(page, credentials, escrow, confirm);
+		const firstHash = await approveAndLand(page, first.popup, first.label);
+		expect(await sponsoredByPaymaster(wallet, firstHash)).toBe(true);
+		expect((await recentRuleIds())[0]).toEqual([rule.id]);
 		expect(
 			await client.readContract({
 				address: escrow,
@@ -332,5 +388,21 @@ test.describe("sponsorship of contracts deployed at run time (PS-4)", () => {
 				args: [wallet],
 			}),
 		).toBe(true);
+
+		// An expired rule allows nothing.
+		await rulesApi("PATCH", `/${rule.id}`, {
+			expiresAt: new Date(Date.now() + 2_000).toISOString(),
+		});
+		await new Promise((resolve) => setTimeout(resolve, 2_500));
+		const expired = await openSend(page, credentials, escrow, confirm);
+		await expectRefused(expired.popup, "contract-not-allowed");
+
+		// Neither does a removed one: renew the rule, then remove it.
+		const renewed = await allow(escrow, {
+			reference: `renewed-${salt.slice(2, 10)}`,
+		});
+		await rulesApi("DELETE", `/${renewed.id}`);
+		const removed = await openSend(page, credentials, escrow, confirm);
+		await expectRefused(removed.popup, "contract-not-allowed");
 	});
 });
