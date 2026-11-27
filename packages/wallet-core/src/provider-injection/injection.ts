@@ -58,7 +58,16 @@ export type GianoProviderInjection<
 		chainType: ChainType,
 	): BufferSource | Promise<BufferSource>;
 	decodeUserId(userId: BufferSource): DecodedUserId | Promise<DecodedUserId>;
-	onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean>; // method to control if the credential is signed in or not
+	/**
+	 * Signs the credential in.
+	 *
+	 * @returns `false` when the sign-in failed. On success, the smart account the credential
+	 *          signs for, or `true` to leave the account to `getCredentialInfo().address` or, when
+	 *          that is not set, to the address derived from the credential. Return the address
+	 *          when one user can hold several credentials: a credential added with
+	 *          `addOwnerPublicKey` derives a different, empty account.
+	 */
+	onCredentialSignedIn(credential: PublicKeyCredential): Promise<boolean | Hex>;
 	getPublicKeyByCredentialId(rawId: ArrayBuffer): Promise<XYVector>;
 	onCredentialKey(rawId: ArrayBuffer, xyVector: XYVector): Promise<void>;
 	/**

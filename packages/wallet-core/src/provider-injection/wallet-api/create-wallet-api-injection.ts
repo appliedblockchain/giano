@@ -235,6 +235,26 @@ export function createWalletApiInjection(
 		return (await response.json()) as T;
 	}
 
+	/**
+	 * The credential and wallet of the current session, or null when there is no session or
+	 * wallet-api has ended it. Any other failure is thrown: picking a credential without the
+	 * session's answer is the guess this replaces.
+	 */
+	async function sessionAccount(): Promise<{
+		credentialId: string;
+		walletAddress: Hex;
+	} | null> {
+		if (!sessionToken) return null;
+		try {
+			return await api<{ credentialId: string; walletAddress: Hex }>("/v1/me", {
+				auth: true,
+			});
+		} catch (error) {
+			if (error instanceof SessionEndedError) return null;
+			throw error;
+		}
+	}
+
 	return {
 		getSessionToken: () => sessionToken,
 		getExternalUserId: () => externalUserId,
@@ -287,12 +307,21 @@ export function createWalletApiInjection(
 		},
 
 		logout: async () => {
-			if (sessionToken) {
-				await api("/v1/sessions/logout", { method: "POST", auth: true }).catch(
-					() => undefined,
-				);
-			}
+			const token = sessionToken;
+			if (!token) return;
+			// The revoke starts BEFORE the session ends here: a session-ended listener may navigate
+			// away on "logout", which would cancel a request started after it and leave the token
+			// valid on the server. keepalive lets the request finish even if the page unloads.
+			// Its answer is ignored: a 401 means the session had already ended there (removing the
+			// passkey in use revokes it, WM-30), which is no reason to report the logout as a session
+			// wallet-api refused.
+			const revoked = fetchImpl(`${base}/v1/sessions/logout`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${token}` },
+				keepalive: true,
+			}).catch(() => undefined);
 			endSession("logout");
+			await revoked;
 		},
 
 		logoutAll: async () => {
@@ -332,10 +361,32 @@ export function createWalletApiInjection(
 				headers: grantHeaders,
 				body: JSON.stringify({ externalUserId }),
 			});
-			const [firstCredential] = result.credentialIds;
+			const challenge = fromBase64Url(result.challenge);
+
+			// A user can hold several credentials, one per device (WM-35), and this device holds only
+			// some of them. With a session, the session names the credential this device signed in
+			// with and the wallet it acts for. It is used even when the list above does not name it
+			// (it was fetched for this device's external user id, which can differ): falling back to
+			// the list would connect to the address derived from someone else's key.
+			const session = await sessionAccount();
+			if (session) {
+				return {
+					credentialId: fromBase64Url(session.credentialId),
+					challenge,
+					address: session.walletAddress,
+				};
+			}
+
+			// Without a session, offer every credential and let the authenticator present the ones
+			// it holds. The sign-in then names the wallet (onCredentialSignedIn).
+			const [only, ...others] = result.credentialIds;
+			if (!only) return { credentialId: null, challenge };
 			return {
-				credentialId: firstCredential ? fromBase64Url(firstCredential) : null,
-				challenge: fromBase64Url(result.challenge),
+				credentialId:
+					others.length === 0
+						? fromBase64Url(only)
+						: result.credentialIds.map(fromBase64Url),
+				challenge,
 			};
 		},
 
@@ -360,6 +411,7 @@ export function createWalletApiInjection(
 		onCredentialSignedIn: async (credential) => {
 			const result = await api<{
 				verified: boolean;
+				walletAddress?: Hex;
 				externalUserId?: string;
 				session: { token: string };
 			}>("/v1/webauthn/authentication/verify", {
@@ -370,7 +422,10 @@ export function createWalletApiInjection(
 			});
 			setSession(result.session.token);
 			adoptExternalUserId(result.externalUserId);
-			return result.verified;
+			if (!result.verified) return false;
+			// The wallet the credential is bound to. A credential added from another device derives
+			// a different, empty account, so the provider must not derive it (WM-15).
+			return result.walletAddress ?? true;
 		},
 
 		getPublicKeyByCredentialId: async (rawId): Promise<XYVector> => {

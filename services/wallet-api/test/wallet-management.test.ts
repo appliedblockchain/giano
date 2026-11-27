@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	credentials,
 	pendingAdditions,
 	users,
 	walletManagementLog,
@@ -310,6 +311,39 @@ describe("pending-addition lifecycle (WM-18…WM-23)", () => {
 		});
 		expect(again.statusCode).toBe(409);
 		expect((again.json() as { error: string }).error).toBe("pending-consumed");
+	});
+
+	it("lists a user's credentials oldest first, however Postgres stores the rows", async () => {
+		const deviceA = createAuthenticator();
+		const deviceB = createAuthenticator();
+		const a = await register("ordered-user", deviceA, "Device A");
+		const slot = await openSlot(a.session.token);
+		const filled = await fill(slot.claimCode, deviceB);
+		const { publicKey } = filled.json() as {
+			publicKey: { x: string; y: string };
+		};
+		ctx.chainState.contracts.add(a.walletAddress.toLowerCase());
+		ctx.chainState.ownerKeys.add(ownerKeyOf(publicKey.x, publicKey.y));
+		const completed = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/wallet/pending-additions/${slot.id}/complete`,
+			headers: authed(a.session.token),
+			payload: { chainIds: [31337], name: "Device B" },
+		});
+		expect(completed.statusCode).toBe(200);
+		const b = completed.json() as { credentialId: string };
+
+		// Storage order is A, B. Give B the earlier creation time, so only an explicit order puts
+		// it first: the list must follow the creation time, not where Postgres put the row (an
+		// insert can reuse free space ahead of older rows).
+		await ctx.db
+			.update(credentials)
+			.set({ createdAt: sql`now() - interval '1 hour'` })
+			.where(eq(credentials.credentialId, b.credentialId));
+
+		expect(
+			(await getOptions("ordered-user", "authentication")).credentialIds,
+		).toEqual([b.credentialId, a.credentialId]);
 	});
 
 	it("refuses a bind from a session scoped to another wallet (WM-16)", async () => {
