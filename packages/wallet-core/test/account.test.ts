@@ -1,11 +1,17 @@
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
+import * as P256 from "ox/P256";
 import * as WebAuthnP256 from "ox/WebAuthnP256";
 import {
+	concat,
 	decodeAbiParameters,
 	encodeFunctionData,
 	hashMessage,
 	hashTypedData,
 	hexToBytes,
+	hexToString,
+	keccak256,
+	numberToHex,
+	sha256,
 	size,
 	toHex,
 } from "viem";
@@ -31,6 +37,7 @@ import {
 	type InstalledWebAuthnMock,
 	installWebAuthnMock,
 } from "./webauthn-mock";
+import { rawSignatureToDer } from "./webauthn-mock/der";
 
 const LOCAL_PK =
 	"0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as const;
@@ -622,6 +629,88 @@ describe("parseDerSignature", () => {
 		expect(() => parseDerSignature(bytes("0x3006020100020101"))).toThrow(
 			/out of range/,
 		);
+	});
+
+	it("recovers (r, low s) from minimal DER over many deterministic signatures, short integers included", () => {
+		const privateKey = `0x${"42".repeat(32)}` as const;
+		const word = (value: bigint) => numberToHex(value, { size: 32 });
+		let shortR = 0;
+		let shortS = 0;
+		// RFC 6979 makes the corpus fixed; run until both a 31-byte r and a 31-byte s have appeared.
+		for (
+			let i = 0;
+			i < 4096 && (i < 256 || shortR === 0 || shortS === 0);
+			i++
+		) {
+			const { r, s } = P256.sign({ payload: keccak256(toHex(i)), privateKey });
+			if (r < 2n ** 248n) shortR++;
+			if (s < 2n ** 248n) shortS++;
+			// The low s as signed, and its high twin n - s (always 33 bytes with the sign byte).
+			for (const sOnWire of [s, P256_N - s]) {
+				const der = rawSignatureToDer(bytes(concat([word(r), word(sOnWire)])));
+				expect(parseDerSignature(der)).toEqual({ r, s });
+			}
+		}
+		expect(shortR).toBeGreaterThan(0);
+		expect(shortS).toBeGreaterThan(0);
+	});
+});
+
+/** RFC 4648 §5 base64url without padding, as webauthn-sol's `Base64.encodeURL` (OpenZeppelin) emits it. */
+const base64UrlNoPad = (data: Uint8Array) => {
+	const table =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	let out = "";
+	for (let i = 0; i < data.length; i += 3) {
+		const chunk =
+			(data[i] << 16) | ((data[i + 1] ?? 0) << 8) | (data[i + 2] ?? 0);
+		const chars = Math.ceil((Math.min(3, data.length - i) * 8) / 6);
+		for (let j = 0; j < chars; j++) out += table[(chunk >> (18 - 6 * j)) & 63];
+	}
+	return out;
+};
+
+describe("passkey signatures against webauthn-sol's checks", () => {
+	it("every sign() over many random hashes passes WebAuthn.verify(requireUV: true)", async () => {
+		const { owner, rawId } = await createWebAuthnOwner(mock.authenticator);
+		const { x, y } = mock.authenticator.getPublicKeyXY(rawId);
+		const publicKey = { prefix: 4, x: BigInt(x), y: BigInt(y) } as const;
+		const type = '"type":"webauthn.get"';
+
+		// The mock signs with WebCrypto: a random nonce and no low-s, like a real authenticator.
+		for (let i = 0; i < 128; i++) {
+			const hash = toHex(crypto.getRandomValues(new Uint8Array(32)));
+			const [auth] = decodeAbiParameters(
+				WEBAUTHN_AUTH,
+				await signHelper({ hash, owner }),
+			);
+			const clientDataJSON = hexToString(auth.clientDataJSON);
+			const typeIndex = Number(auth.typeIndex);
+			const challengeIndex = Number(auth.challengeIndex);
+			// GianoSmartWallet passes `abi.encode(hash)`, which for a bytes32 is the hash's 32 bytes.
+			const challenge = `"challenge":"${base64UrlNoPad(hexToBytes(hash))}"`;
+
+			expect(auth.s <= P256_N / 2n, `high s for ${hash}`).toBe(true);
+			expect(clientDataJSON.slice(typeIndex, typeIndex + type.length)).toBe(
+				type,
+			);
+			expect(
+				clientDataJSON.slice(challengeIndex, challengeIndex + challenge.length),
+			).toBe(challenge);
+			// UP (0x01) and UV (0x04).
+			expect(hexToBytes(auth.authenticatorData)[32] & 0x05).toBe(0x05);
+			const message = sha256(
+				concat([auth.authenticatorData, sha256(auth.clientDataJSON)]),
+			);
+			expect(
+				P256.verify({
+					payload: message,
+					publicKey,
+					signature: { r: auth.r, s: auth.s },
+				}),
+				`P-256 verify for ${hash}`,
+			).toBe(true);
+		}
 	});
 });
 
