@@ -286,3 +286,30 @@ button.link {
 button.link.danger {
 	color: var(--danger);
 }
+
+/* ── The wallet card: the address on its own line, network statuses as plain text ── */
+.wallet-address {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 13px;
+	padding: 6px 0;
+	border-bottom: 1px dashed var(--border);
+}
+.wallet-address .k {
+	color: var(--muted);
+}
+.wallet-address .address {
+	font-family: ui-monospace, monospace;
+	font-size: 12.5px;
+	overflow-wrap: anywhere;
+}
+.kv .v.plain {
+	font-family: inherit;
+	word-break: normal;
+	overflow-wrap: break-word;
+}
+.chain-id {
+	font-size: 11.5px;
+	opacity: 0.8;
+}
