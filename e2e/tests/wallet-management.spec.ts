@@ -63,6 +63,13 @@ test("view: one credential on-chain, current session marked (WM-01, WM-10)", asy
 	expect(onChain.owners[0].kind).toBe("passkey");
 
 	await expect(popup.getByTestId("manage-owner-row")).toHaveCount(1);
+	// The wallet card says where the wallet exists, in plain words.
+	await expect(popup.getByTestId("settings-chain-31337")).toContainText(
+		"Deployed · 1 owner",
+	);
+	await expect(popup.getByTestId("settings-chain-31338")).toContainText(
+		"Not deployed yet",
+	);
 	// WM-10: the credential in use is marked as such.
 	await expect(popup.getByTestId("manage-owner-current")).toBeVisible();
 	// PS-1: where the passkey is stored. The virtual authenticator names no known provider, and

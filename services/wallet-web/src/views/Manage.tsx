@@ -134,9 +134,10 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 				<h2>Wallet</h2>
 				{state.walletAddress ? (
 					<>
-						<div className="kv">
+						{/* The address on a line of its own, so it breaks only where it must. */}
+						<div className="wallet-address">
 							<span className="k">Address</span>
-							<span className="v" data-testid="settings-address">
+							<span className="address" data-testid="settings-address">
 								{state.walletAddress}
 							</span>
 						</div>
@@ -147,15 +148,10 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 								data-testid={`settings-chain-${row.chainId}`}
 							>
 								<span className="k">
-									{row.chainName} ({row.chainId})
+									{row.chainName}{" "}
+									<span className="chain-id">{row.chainId}</span>
 								</span>
-								<span className="v">
-									{row.deployed === null
-										? "unreachable"
-										: row.deployed
-											? `deployed · ${row.owners} owner(s)`
-											: "deploys with your first transaction"}
-								</span>
+								<span className="v plain">{chainStatus(row)}</span>
 							</div>
 						))}
 					</>
@@ -510,4 +506,15 @@ function storageLabel(row: OwnerRow): string | null {
 		.filter((part): part is string => part !== null)
 		.join(" · ");
 	return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** One network's line in the wallet card: whether the wallet exists there, and its owners. */
+function chainStatus(row: {
+	deployed: boolean | null;
+	owners: number | null;
+}): string {
+	if (row.deployed === null) return "Unreachable";
+	if (!row.deployed) return "Not deployed yet";
+	const owners = row.owners ?? 0;
+	return `Deployed · ${owners} ${owners === 1 ? "owner" : "owners"}`;
 }
