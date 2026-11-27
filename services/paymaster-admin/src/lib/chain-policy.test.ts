@@ -49,6 +49,22 @@ describe("chain relay policy form", () => {
 		expect(problems.join("\n")).toMatch(/"0x1234" is not a 0x address/);
 		expect(chainPolicyFormProblems(chainPolicyToForm(null))).toEqual([]);
 	});
+
+	it("does not block a save on an overridden field it shows read-only, and drops it when invalid", () => {
+		const form = chainPolicyToForm({
+			maxCallGas: "0",
+			maxVerificationGas: "5000000",
+			allowedTargets: "any",
+		});
+		const locked = new Set(["maxCallGas", "maxVerificationGas"]);
+		expect(chainPolicyFormProblems(form)).toHaveLength(1);
+		expect(chainPolicyFormProblems(form, locked)).toEqual([]);
+		// the invalid overridden value is dropped; a valid one is kept
+		expect(formToChainPolicy(form, locked)).toEqual({
+			maxVerificationGas: "5000000",
+			allowedTargets: "any",
+		});
+	});
 });
 
 describe("chain relay policy display", () => {

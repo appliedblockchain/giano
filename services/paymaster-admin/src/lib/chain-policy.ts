@@ -54,16 +54,55 @@ export function chainPolicyToForm(
 	return form;
 }
 
-/** The stored policy to send. A field left empty or *not set* is left out. */
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** What is wrong with one field, one sentence each; empty when nothing is. */
+function fieldProblems(
+	form: ChainPolicyForm,
+	field: CapField | ListField,
+): string[] {
+	if ((CAP_FIELDS as readonly string[]).includes(field)) {
+		const value = form[field as CapField].trim();
+		return value && !/^[1-9]\d*$/.test(value)
+			? [
+					`${CAP_LABELS[field as CapField]} must be a positive whole number, or empty to leave it not set.`,
+				]
+			: [];
+	}
+	const list = form[field as ListField];
+	const label = LIST_LABELS[field as ListField];
+	if (list.mode !== "only") return [];
+	const addresses = linesToList(list.text);
+	const problems: string[] =
+		addresses.length === 0
+			? [
+					`${label} is "Only these" with no address. Add one, or choose "Any address" if that is what you mean.`,
+				]
+			: [];
+	for (const address of addresses)
+		if (!ADDRESS.test(address))
+			problems.push(`${label}: "${address}" is not a 0x address.`);
+	return problems;
+}
+
+/**
+ * The stored policy to send. A field left empty or *not set* is left out. So is a `locked` field
+ * (overridden, so shown read-only) whose stored value is invalid: the admin cannot edit it, and
+ * keeping it would have wallet-api refuse the whole save. The override applies to it either way.
+ */
 export function formToChainPolicy(
 	form: ChainPolicyForm,
+	locked: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
 	const policy: Record<string, unknown> = {};
+	const keep = (field: CapField | ListField) =>
+		!locked.has(field) || fieldProblems(form, field).length === 0;
 	for (const field of CAP_FIELDS) {
 		const value = form[field].trim();
-		if (value) policy[field] = value;
+		if (value && keep(field)) policy[field] = value;
 	}
 	for (const field of LIST_FIELDS) {
+		if (!keep(field)) continue;
 		const list = form[field];
 		if (list.mode === "any") policy[field] = "any";
 		else if (list.mode === "only") policy[field] = linesToList(list.text);
@@ -71,36 +110,18 @@ export function formToChainPolicy(
 	return policy;
 }
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-
 /**
  * What is wrong with the form before it is sent, one sentence each; empty when nothing is. wallet-api
- * checks the same and more, and its answer is shown too: this only saves a round trip.
+ * checks the same and more, and its answer is shown too: this only saves a round trip. `locked`
+ * fields are skipped: they cannot be edited here, and {@link formToChainPolicy} drops an invalid one.
  */
-export function chainPolicyFormProblems(form: ChainPolicyForm): string[] {
-	const problems: string[] = [];
-	for (const field of CAP_FIELDS) {
-		const value = form[field].trim();
-		if (value && !/^[1-9]\d*$/.test(value))
-			problems.push(
-				`${CAP_LABELS[field]} must be a positive whole number, or empty to leave it not set.`,
-			);
-	}
-	for (const field of LIST_FIELDS) {
-		const list = form[field];
-		if (list.mode !== "only") continue;
-		const addresses = linesToList(list.text);
-		if (addresses.length === 0)
-			problems.push(
-				`${LIST_LABELS[field]} is "Only these" with no address. Add one, or choose "Any address" if that is what you mean.`,
-			);
-		for (const address of addresses)
-			if (!ADDRESS.test(address))
-				problems.push(
-					`${LIST_LABELS[field]}: "${address}" is not a 0x address.`,
-				);
-	}
-	return problems;
+export function chainPolicyFormProblems(
+	form: ChainPolicyForm,
+	locked: ReadonlySet<string> = new Set(),
+): string[] {
+	return [...CAP_FIELDS, ...LIST_FIELDS]
+		.filter((field) => !locked.has(field))
+		.flatMap((field) => fieldProblems(form, field));
 }
 
 const GWEI = 1_000_000_000n;

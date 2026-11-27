@@ -46,7 +46,8 @@ const log = (message: string, data?: unknown) =>
 
 /**
  * Each served chain's relay policy (openspec chain-relay-policy-console): the caps and allowlists the
- * relay applies to every tenant on the chain, unless the tenant's own policy narrows them. Stored in
+ * relay applies to every tenant on the chain. A tenant's own policy, where it sets a field for the
+ * chain, replaces the chain's value (looser or stricter): the chain's value is a default, not a ceiling. Stored in
  * wallet-api's database and edited here; a field GIANO_CHAINS or an env var overrides is shown with
  * its source and cannot be edited here. A chain with a problem has its operations refused, and the
  * problem says how to fix it.
@@ -90,7 +91,7 @@ export function RelayPolicyTab() {
 		<Stack gap="4">
 			<SectionCard
 				title="Relay policy"
-				subtitle="What wallet-api relays on each chain, for every tenant: gas and fee caps, and which contracts and paymasters an operation may use. A tenant's own policy can narrow these per chain. An edit applies to the next operation."
+				subtitle="What wallet-api relays on each chain, for every tenant: gas and fee caps, and which contracts and paymasters an operation may use. These are defaults: a field a tenant's own policy sets for the chain replaces the value here, looser or stricter. An edit applies to the next operation."
 				action={
 					<Button
 						size="sm"
@@ -238,7 +239,9 @@ function ChainCard({
 						</Table.Body>
 					</Table.Root>
 				</Table.ScrollArea>
-				{showHistory && <ChainHistory chainId={chain.chainId} />}
+				{showHistory && (
+					<ChainHistory chainId={chain.chainId} version={chain.version} />
+				)}
 			</Stack>
 		</SectionCard>
 	);
@@ -258,13 +261,25 @@ function SourceBadge({ field }: { field: ChainPolicyView["fields"][string] }) {
 	);
 }
 
-function ChainHistory({ chainId }: { chainId: number }) {
+/** The chain's history, newest first; read again when `version` changes, so a save shows at once. */
+function ChainHistory({
+	chainId,
+	version,
+}: {
+	chainId: number;
+	version: number;
+}) {
 	const { run } = usePlatform();
 	const [entries, setEntries] = useState<ChainPolicyHistoryEntry[]>();
+	const [next, setNext] = useState<string | null>(null);
+	const [loadingMore, setLoadingMore] = useState(false);
 	const [error, setError] = useState<string>();
-	useEffect(() => {
-		void (async () => {
-			const result = await run((api) => api.chainPolicyHistory(chainId));
+
+	const read = useCallback(
+		async (before?: string) => {
+			const result = await run((api) =>
+				api.chainPolicyHistory(chainId, before),
+			);
 			if (!result) return;
 			if (!result.ok) {
 				console.error(
@@ -273,9 +288,36 @@ function ChainHistory({ chainId }: { chainId: number }) {
 				);
 				return setError(result.error.message);
 			}
-			setEntries(result.value.entries);
-		})();
-	}, [run, chainId]);
+			setError(undefined);
+			setEntries((current) =>
+				before
+					? [...(current ?? []), ...result.value.entries]
+					: result.value.entries,
+			);
+			setNext(result.value.next);
+			log("history read", {
+				chainId,
+				before,
+				count: result.value.entries.length,
+			});
+		},
+		[run, chainId],
+	);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: version is the reload trigger
+	useEffect(() => {
+		void read();
+	}, [read, version]);
+
+	const loadMore = async () => {
+		if (!next) return;
+		setLoadingMore(true);
+		try {
+			await read(next);
+		} finally {
+			setLoadingMore(false);
+		}
+	};
 	if (error)
 		return (
 			<Text fontSize="sm" color="red.fg">
@@ -297,6 +339,17 @@ function ChainHistory({ chainId }: { chainId: number }) {
 					</Text>
 				</Stack>
 			))}
+			{next && (
+				<Button
+					size="xs"
+					variant="ghost"
+					alignSelf="start"
+					loading={loadingMore}
+					onClick={() => void loadMore()}
+				>
+					Load older entries
+				</Button>
+			)}
 		</Stack>
 	);
 }
@@ -315,11 +368,11 @@ function EditChainPolicyDialog({
 		chainPolicyToForm(chain.stored),
 	);
 	const locked = overriddenFields(chain);
-	const problems = chainPolicyFormProblems(form);
+	const problems = chainPolicyFormProblems(form, locked);
 	const issues = issuesByField(error);
 
 	const save = async () => {
-		const policy = formToChainPolicy(form);
+		const policy = formToChainPolicy(form, locked);
 		log("saving", { chainId: chain.chainId, version: chain.version, policy });
 		const result = await act((api) =>
 			api.replaceChainPolicy(chain.chainId, chain.version, policy),
