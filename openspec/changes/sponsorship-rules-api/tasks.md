@@ -58,4 +58,4 @@
   - check that the decision lists the rule;
   - check that a delete refuses the next call;
   - check that an expired rule refuses it.
-- [ ] 4.4 Run the full wallet-api tests, typecheck, lint and the e2e sponsorship specs, then open the stack's PRs with a changeset for every published package touched.
+- [x] 4.4 Run the full wallet-api tests, typecheck, lint and the e2e sponsorship specs, then open the stack's PRs with a changeset for every published package touched.
