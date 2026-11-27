@@ -362,6 +362,16 @@ const envSchema = z
 			.bigint()
 			.positive()
 			.default(2_000_000_000_000_000n),
+		/**
+		 * The most active sponsorship rules a tenant may have on one chain. A tenant that adds a rule
+		 * for every contract it deploys stays under it by giving rules an expiry; one that never
+		 * removes rules reaches it and has to clean up, which is what it is for.
+		 */
+		SPONSORSHIP_MAX_RULES_PER_CHAIN: z.coerce
+			.number()
+			.int()
+			.positive()
+			.default(1000),
 		/** `validUntil` window. Minutes, not hours: an authorisation commits real money. */
 		SPONSORSHIP_VALIDITY_SECONDS: z.coerce
 			.number()

@@ -20,6 +20,8 @@ import {
 	sponsorshipDecisions,
 	sponsorshipReservations,
 	tenantSponsorship,
+	tenantSponsorshipRuleEvents,
+	tenantSponsorshipRules,
 	tenants,
 } from "../src/db/schema.js";
 import {
@@ -230,6 +232,8 @@ beforeEach(async () => {
 	await ctx.db.delete(sponsorshipDecisions);
 	await ctx.db.delete(sponsorshipReservations);
 	await ctx.db.delete(tenantSponsorship);
+	await ctx.db.delete(tenantSponsorshipRules);
+	await ctx.db.delete(tenantSponsorshipRuleEvents);
 	await ctx.db.delete(paymasterTenants);
 	ctx.paymasterState.unreachable = false;
 	ctx.paymasterState.feeOverrides.clear();
@@ -938,6 +942,158 @@ describe("stub versus data", () => {
 	});
 });
 
+// ── rules as records (openspec sponsorship-rules-api) ─────────────────────────
+
+describe("sponsorship rules as records", () => {
+	const THIRD = "0x5555555555555555555555555555555555555555" as Address;
+
+	beforeEach(async () => {
+		await setConfig(ADMIN_KEY, generousConfig);
+		await fund(tenantAId, 10n ** 18n);
+	});
+
+	async function rulesOf(tenantId: string) {
+		return ctx.db
+			.select()
+			.from(tenantSponsorshipRules)
+			.where(eq(tenantSponsorshipRules.tenantId, tenantId));
+	}
+
+	it("turns the deprecated allowlist into rules with no reference", async () => {
+		const rules = await rulesOf(tenantAId);
+		expect(rules).toHaveLength(1);
+		expect(rules[0]).toMatchObject({
+			contract: TOKEN,
+			functions: [TRANSFER],
+			clientReference: null,
+			expiresAt: null,
+		});
+	});
+
+	it("ignores an expired rule", async () => {
+		await ctx.db.insert(tenantSponsorshipRules).values({
+			tenantId: tenantAId,
+			chainId: 31337,
+			contract: OTHER,
+			functions: "all",
+			expiresAt: new Date(Date.now() - 1_000),
+		});
+		const session = await newSession(`expired-${Math.random()}`);
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterStubData",
+			candidateOp(session.walletAddress, execute(OTHER, TRANSFER)),
+		);
+		expect(body.error?.data?.reason).toBe("contract-not-allowed");
+	});
+
+	it("allows a call to a contract whose rule has a reference and a future expiry", async () => {
+		await ctx.db.insert(tenantSponsorshipRules).values({
+			tenantId: tenantAId,
+			chainId: 31337,
+			contract: OTHER,
+			functions: "all",
+			clientReference: "milestone-1",
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const session = await newSession(`referenced-${Math.random()}`);
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterStubData",
+			candidateOp(session.walletAddress, execute(OTHER, TRANSFER)),
+		);
+		expect(body.error).toBeUndefined();
+	});
+
+	it("records the rule that allowed a decision", async () => {
+		const session = await newSession(`rule-ids-${Math.random()}`);
+		await rpc(
+			session.token,
+			"pm_getPaymasterStubData",
+			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER)),
+		);
+		const [rule] = await rulesOf(tenantAId);
+		const res = await ctx.app.inject({
+			method: "GET",
+			url: "/v1/admin/sponsorship/decisions",
+			headers: { authorization: `Bearer ${ADMIN_KEY}` },
+		});
+		const [decision] = (
+			res.json() as { decisions: Array<{ outcome: string; ruleIds: string[] }> }
+		).decisions;
+		expect(decision.outcome).toBe("allowed");
+		expect(decision.ruleIds).toEqual([rule.id]);
+	});
+
+	it("leaves rules with a reference alone when the deprecated allowlist is rewritten", async () => {
+		await ctx.db.insert(tenantSponsorshipRules).values({
+			tenantId: tenantAId,
+			chainId: 31337,
+			contract: OTHER,
+			functions: "all",
+			clientReference: "milestone-1",
+		});
+		const res = await setConfig(ADMIN_KEY, {
+			...generousConfig,
+			allowlist: [{ contract: THIRD, functions: "all" }],
+		});
+		expect(res.statusCode).toBe(200);
+		// The response and the stored value show the mirror: the legacy rules only.
+		expect(
+			(res.json() as { config: { allowlist: unknown[] } }).config.allowlist,
+		).toEqual([{ contract: THIRD, functions: "all" }]);
+		const contracts = (await rulesOf(tenantAId)).map((r) => r.contract).sort();
+		expect(contracts).toEqual([OTHER, THIRD]);
+	});
+
+	it("refuses a deprecated allowlist that names a contract with a referenced rule", async () => {
+		await ctx.db.insert(tenantSponsorshipRules).values({
+			tenantId: tenantAId,
+			chainId: 31337,
+			contract: OTHER,
+			functions: "all",
+			clientReference: "milestone-1",
+		});
+		const res = await setConfig(ADMIN_KEY, {
+			...generousConfig,
+			allowlist: [{ contract: OTHER, functions: "all" }],
+		});
+		expect(res.statusCode).toBe(400);
+		expect(
+			(res.json() as { issues: Array<{ path: string }> }).issues[0].path,
+		).toBe("allowlist");
+	});
+
+	it("keeps the rules when settings are written without an allowlist", async () => {
+		const res = await setConfig(ADMIN_KEY, {
+			enabled: true,
+			maxCostPerTxWei: "12345",
+		});
+		expect(res.statusCode).toBe(200);
+		expect(await rulesOf(tenantAId)).toHaveLength(1);
+		expect(
+			(res.json() as { config: { allowlist: unknown[] } }).config.allowlist,
+		).toEqual([{ contract: TOKEN, functions: [TRANSFER] }]);
+	});
+
+	it("records each rule change as an event", async () => {
+		await setConfig(ADMIN_KEY, {
+			...generousConfig,
+			allowlist: [{ contract: THIRD, functions: "all" }],
+		});
+		const events = await ctx.db
+			.select()
+			.from(tenantSponsorshipRuleEvents)
+			.where(eq(tenantSponsorshipRuleEvents.tenantId, tenantAId));
+		expect(events.map((e) => e.action).sort()).toEqual([
+			"created",
+			"created",
+			"deleted",
+		]);
+		expect(events.every((e) => e.createdByKeyHash !== null)).toBe(true);
+	});
+});
+
 // ── R-06: the audit trail ─────────────────────────────────────────────────────
 
 describe("decision records", () => {
@@ -1010,7 +1166,6 @@ describe("tenant configuration", () => {
 			res.json() as { issues: Array<{ path: string }> }
 		).issues.map((i) => i.path);
 		expect(issues).toContain("maxCostPerTxWei");
-		expect(issues).toContain("allowlist");
 
 		const rows = await ctx.db
 			.select()
@@ -1076,12 +1231,16 @@ describe("tenant configuration", () => {
 			maxCostPerTxWei: "12345",
 		});
 
-		// A patch must not be able to leave the rule set in a state a full replace would reject.
+		// A patch must not be able to leave the settings in a state a full replace would reject.
 		const broken = await ctx.app.inject({
 			method: "PATCH",
 			url: "/v1/admin/sponsorship",
 			headers: { authorization: `Bearer ${ADMIN_KEY}` },
-			payload: { allowlist: [] },
+			payload: {
+				maxCostPerTxWei: undefined,
+				enabled: true,
+				walletManagement: { enabled: "yes" },
+			},
 		});
 		expect(broken.statusCode).toBe(400);
 	});

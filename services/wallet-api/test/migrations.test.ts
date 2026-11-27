@@ -373,3 +373,126 @@ describe("migration 0007_tenant_lifecycle", () => {
 		]);
 	});
 });
+
+/**
+ * 0014 moves sponsorship rules out of the settings. A deployment upgrading must sponsor exactly what
+ * it did before, so every stored allowlist entry becomes a rule, and the settings keep their
+ * allowlist as the mirror a rollback reads.
+ */
+describe("migration 0014_sponsorship_rules", () => {
+	let container: StartedPostgreSqlContainer;
+	let client: pg.Client;
+	let tenantId: string;
+
+	beforeAll(async () => {
+		container = await new PostgreSqlContainer("postgres:17-alpine").start();
+		await runMigrations(container.getConnectionUri(), upTo("0013"));
+		client = new pg.Client({ connectionString: container.getConnectionUri() });
+		await client.connect();
+		const { rows } = await client.query(
+			`INSERT INTO tenants (slug, wallet_origin, rp_id, rp_name, expected_origins)
+       VALUES ('acme', 'https://wallet.acme.app', 'wallet.acme.app', 'Acme', ARRAY['https://wallet.acme.app'])
+       RETURNING id`,
+		);
+		tenantId = rows[0].id;
+		await client.query(
+			`INSERT INTO tenant_sponsorship (tenant_id, chain_id, config) VALUES
+         ($1, 31337, $2), ($1, 31338, $3)`,
+			[
+				tenantId,
+				JSON.stringify({
+					enabled: true,
+					maxCostPerTxWei: "1000",
+					allowlist: [
+						{
+							contract: "0x3333333333333333333333333333333333333333",
+							functions: ["0xa9059cbb"],
+						},
+						{
+							contract: "0x4444444444444444444444444444444444444444",
+							functions: "all",
+						},
+					],
+				}),
+				JSON.stringify({ enabled: false }),
+			],
+		);
+	});
+
+	afterAll(async () => {
+		await client?.end();
+		await stopPostgres(container);
+	});
+
+	it("turns every stored allowlist entry into a rule, with a created event, and keeps the mirror", async () => {
+		expect(
+			await runMigrations(container.getConnectionUri(), upTo("0014")),
+		).toEqual(["0014_sponsorship_rules.sql"]);
+
+		const rules = await client.query(
+			`SELECT chain_id, contract, functions, client_reference, expires_at
+         FROM tenant_sponsorship_rules WHERE tenant_id = $1 ORDER BY contract`,
+			[tenantId],
+		);
+		expect(rules.rows).toEqual([
+			{
+				chain_id: "31337",
+				contract: "0x3333333333333333333333333333333333333333",
+				functions: ["0xa9059cbb"],
+				client_reference: null,
+				expires_at: null,
+			},
+			{
+				chain_id: "31337",
+				contract: "0x4444444444444444444444444444444444444444",
+				functions: "all",
+				client_reference: null,
+				expires_at: null,
+			},
+		]);
+
+		const events = await client.query(
+			`SELECT action, created_by_key_hash FROM tenant_sponsorship_rule_events WHERE tenant_id = $1`,
+			[tenantId],
+		);
+		expect(events.rows).toHaveLength(2);
+		expect(events.rows.every((e) => e.action === "created")).toBe(true);
+		expect(events.rows.every((e) => e.created_by_key_hash === null)).toBe(true);
+
+		const settings = await client.query(
+			`SELECT chain_id, version, config->'allowlist' AS allowlist FROM tenant_sponsorship ORDER BY chain_id`,
+		);
+		expect(settings.rows.map((r) => r.version)).toEqual([1, 1]);
+		expect(settings.rows[0].allowlist).toHaveLength(2);
+	});
+
+	it("gives existing decisions an empty list of rules", async () => {
+		const { rows } = await client.query(
+			`SELECT column_default, is_nullable FROM information_schema.columns
+       WHERE table_name = 'sponsorship_decisions' AND column_name = 'rule_ids'`,
+		);
+		expect(rows[0].is_nullable).toBe("NO");
+	});
+
+	it("refuses a second rule for the same contract, and a reused client reference", async () => {
+		await expect(
+			client.query(
+				`INSERT INTO tenant_sponsorship_rules (tenant_id, chain_id, contract, functions)
+         VALUES ($1, 31337, '0x3333333333333333333333333333333333333333', '"all"')`,
+				[tenantId],
+			),
+		).rejects.toThrow(/tenant_sponsorship_rules_contract_key/);
+		await client.query(
+			`INSERT INTO tenant_sponsorship_rules (tenant_id, chain_id, contract, functions, client_reference)
+       VALUES ($1, 31337, '0x5555555555555555555555555555555555555555', '"all"', 'milestone-1')`,
+			[tenantId],
+		);
+		await expect(
+			client.query(
+				`INSERT INTO tenant_sponsorship_rules (tenant_id, chain_id, contract, functions, client_reference)
+         VALUES ($1, 31337, '0x6666666666666666666666666666666666666666', '"all"', 'milestone-1')`,
+				[tenantId],
+			),
+		).rejects.toThrow(/tenant_sponsorship_rules_reference_key/);
+	});
+});

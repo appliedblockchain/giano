@@ -6,6 +6,7 @@ import {
 	checkWalletManagementCap,
 	parseSponsorshipConfig,
 	type SponsorshipConfig,
+	type SponsorshipRule,
 	sponsorshipConfigSchema,
 	walletManagementEnabled,
 } from "../src/services/sponsorship-config.js";
@@ -87,16 +88,33 @@ function config(overrides: Partial<SponsorshipConfig> = {}): SponsorshipConfig {
 	});
 }
 
+/** One rule per allowlist entry of a config, with a stable id, as the service would read them. */
+function rulesOf(cfg: SponsorshipConfig): SponsorshipRule[] {
+	return (cfg.allowlist ?? []).map((entry) => ({
+		id: `rule-${entry.contract}`,
+		contract: entry.contract,
+		functions: entry.functions,
+	}));
+}
+
+/**
+ * Evaluates with the rules taken from the config's allowlist, unless the test gives its own, so the
+ * tests can keep describing a tenant's rules as one list.
+ */
 function evaluate(overrides: Partial<EvaluationInput> = {}) {
+	const cfg = overrides.config ?? config();
+	const rules = overrides.rules ?? rulesOf(cfg);
 	return evaluateSponsorship({
 		candidate,
-		config: config(),
 		balance: generousBalance,
 		feeWei: FEE_WEI,
 		overhead,
 		walletManagementCapWei: WM_CAP_WEI,
 		sessionWalletAddress: WALLET,
 		...overrides,
+		config: cfg,
+		rules,
+		hasActiveRules: overrides.hasActiveRules ?? rules.length > 0,
 	});
 }
 
@@ -164,18 +182,33 @@ describe("deny by default", () => {
 		expect(decision.reason).toBe("sponsorship-disabled");
 	});
 
-	it("refuses an enabled configuration with an empty allowlist", () => {
-		// The schema will not produce this, but a row written by an older version could, and it must
+	it("refuses an enabled tenant with no active rule", () => {
+		// Enabling no longer needs a rule first, so this is a state a tenant can be in, and it must
 		// not be read as "allow everything".
 		const decision = evaluate({
 			config: {
 				enabled: true,
 				maxCostPerTxWei: "1000000000000000000",
-				allowlist: [],
 			},
 		});
 		expect(decision.allowed).toBe(false);
 		expect(decision.reason).toBe("no-sponsorship-config");
+	});
+
+	it("refuses wallet management too, for an enabled tenant with no active rule", () => {
+		const decision = evaluate({
+			candidate: { ...candidate, callData: execute(WALLET, ADD_OWNER) },
+			rules: [],
+		});
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("no-sponsorship-config");
+	});
+
+	it("never reads the deprecated allowlist mirror", () => {
+		// The mirror lists the token, but no active rule does: the token is not allowed.
+		const decision = evaluate({ rules: [], hasActiveRules: true });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("contract-not-allowed");
 	});
 
 	it("distinguishes an unparseable configuration from a switched-off one", () => {
@@ -718,7 +751,7 @@ describe("configuration schema", () => {
 				{ contract: TOKEN, functions: ["transfer(address,uint256)"] },
 			],
 		});
-		expect(parsed.allowlist[0].functions).toEqual([TRANSFER]);
+		expect(parsed.allowlist?.[0].functions).toEqual([TRANSFER]);
 	});
 
 	it("lowercases addresses so matching never depends on checksum casing", () => {
@@ -729,17 +762,21 @@ describe("configuration schema", () => {
 				{ contract: TOKEN.toUpperCase().replace("0X", "0x"), functions: "all" },
 			],
 		});
-		expect(parsed.allowlist[0].contract).toBe(TOKEN.toLowerCase());
+		expect(parsed.allowlist?.[0].contract).toBe(TOKEN.toLowerCase());
 	});
 
-	it("requires a cap and a non-empty allowlist once enabled", () => {
+	it("requires a cap once enabled, and no rule", () => {
 		const result = sponsorshipConfigSchema.safeParse({ enabled: true });
 		expect(result.success).toBe(false);
 		const paths = result.success
 			? []
 			: result.error.issues.map((i) => i.path.join("."));
 		expect(paths).toContain("maxCostPerTxWei");
-		expect(paths).toContain("allowlist");
+		expect(paths).not.toContain("allowlist");
+		expect(
+			sponsorshipConfigSchema.safeParse({ enabled: true, maxCostPerTxWei: "1" })
+				.success,
+		).toBe(true);
 	});
 
 	// The one permissive default in the schema, and the only one that should be: wallet management
@@ -850,7 +887,7 @@ describe("configuration schema", () => {
 			allowlist: "everything",
 		});
 		expect(parsed.ok).toBe(false);
-		expect(parsed.config).toEqual({ enabled: false, allowlist: [] });
+		expect(parsed.config).toEqual({ enabled: false });
 		if (!parsed.ok) expect(parsed.issues.length).toBeGreaterThan(0);
 	});
 
@@ -863,5 +900,70 @@ describe("configuration schema", () => {
 		const parsed = parseSponsorshipConfig(stored);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.config.enabled).toBe(true);
+	});
+});
+
+describe("the rules that allowed a decision", () => {
+	const TOKEN_RULE: SponsorshipRule = {
+		id: "11111111-1111-4111-8111-111111111111",
+		contract: TOKEN,
+		functions: [TRANSFER],
+	};
+	const OTHER_RULE: SponsorshipRule = {
+		id: "22222222-2222-4222-8222-222222222222",
+		contract: OTHER,
+		functions: "all",
+	};
+
+	it("names the rule that allowed the call", () => {
+		const decision = evaluate({ rules: [TOKEN_RULE] });
+		expect(decision.allowed).toBe(true);
+		expect(decision.ruleIds).toEqual([TOKEN_RULE.id]);
+	});
+
+	it("names each rule of a batch once, in call order", () => {
+		const decision = evaluate({
+			candidate: {
+				...candidate,
+				callData: executeBatch([
+					{ target: OTHER, data: APPROVE },
+					{ target: TOKEN, data: TRANSFER },
+					{ target: OTHER, data: TRANSFER },
+				]),
+			},
+			rules: [TOKEN_RULE, OTHER_RULE],
+		});
+		expect(decision.allowed).toBe(true);
+		expect(decision.ruleIds).toEqual([OTHER_RULE.id, TOKEN_RULE.id]);
+	});
+
+	it("names no rule for wallet management alone", () => {
+		const decision = evaluate({
+			candidate: { ...candidate, callData: execute(WALLET, ADD_OWNER) },
+			rules: [TOKEN_RULE],
+		});
+		expect(decision.allowed).toBe(true);
+		expect(decision.ruleIds).toEqual([]);
+	});
+
+	it("does not name a rule whose functions refused the call", () => {
+		const decision = evaluate({
+			candidate: { ...candidate, callData: execute(TOKEN, APPROVE) },
+			rules: [TOKEN_RULE],
+		});
+		expect(decision.reason).toBe("function-not-allowed");
+		expect(decision.ruleIds).toEqual([]);
+	});
+
+	it("matches a rule whatever the case of its contract", () => {
+		const decision = evaluate({
+			rules: [
+				{
+					...TOKEN_RULE,
+					contract: TOKEN.toUpperCase().replace("0X", "0x") as Address,
+				},
+			],
+		});
+		expect(decision.allowed).toBe(true);
 	});
 });

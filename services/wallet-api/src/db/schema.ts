@@ -12,6 +12,7 @@ import {
 	text,
 	timestamp,
 	unique,
+	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
 
@@ -484,8 +485,93 @@ export const tenantSponsorship = pgTable(
 			.defaultNow(),
 		/** sha256 of the admin key that wrote it — who changed the rules, without storing the key. */
 		updatedByKeyHash: text("updated_by_key_hash"),
+		/**
+		 * Incremented by every settings write. A write that names a stale version in `If-Match` is
+		 * refused, so two edits from the same version cannot both succeed. 0 means never written.
+		 */
+		version: integer("version").notNull().default(0),
 	},
 	(t) => [primaryKey({ columns: [t.tenantId, t.chainId] })],
+);
+
+/**
+ * A tenant's sponsorship rules, one row per contract (openspec sponsorship-rules-api).
+ *
+ * A row per rule, not an array in the settings, so a tenant that deploys a contract for every
+ * payment can add one rule without reading or rewriting the others, and the unique keys hold under
+ * concurrent writes. `config.allowlist` in `tenant_sponsorship` mirrors the rules that have no
+ * client reference, for the deprecated field and for a rollback; evaluation never reads it.
+ */
+export const tenantSponsorshipRules = pgTable(
+	"tenant_sponsorship_rules",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: uuid("tenant_id")
+			.notNull()
+			.references(() => tenants.id, { onDelete: "cascade" }),
+		chainId: bigint("chain_id", { mode: "number" }).notNull(),
+		/** Lower case, as the rules engine compares it. */
+		contract: text("contract").notNull(),
+		/** `"all"`, or the 4-byte selectors the rule allows. */
+		functions: jsonb("functions").$type<"all" | string[]>().notNull(),
+		/** The tenant's own reference: a create that repeats it returns the existing rule. */
+		clientReference: text("client_reference"),
+		/** After this time the rule allows nothing. */
+		expiresAt: timestamp("expires_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		createdByKeyHash: text("created_by_key_hash"),
+		updatedByKeyHash: text("updated_by_key_hash"),
+	},
+	(t) => [
+		unique("tenant_sponsorship_rules_contract_key").on(
+			t.tenantId,
+			t.chainId,
+			t.contract,
+		),
+		uniqueIndex("tenant_sponsorship_rules_reference_key")
+			.on(t.tenantId, t.chainId, t.clientReference)
+			.where(sql`client_reference IS NOT NULL`),
+		index("tenant_sponsorship_rules_expires_idx").on(
+			t.tenantId,
+			t.chainId,
+			t.expiresAt,
+		),
+	],
+);
+
+/** Who created, changed or removed which rule. A removed rule keeps its events. */
+export const tenantSponsorshipRuleEvents = pgTable(
+	"tenant_sponsorship_rule_events",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: uuid("tenant_id")
+			.notNull()
+			.references(() => tenants.id, { onDelete: "cascade" }),
+		chainId: bigint("chain_id", { mode: "number" }).notNull(),
+		ruleId: uuid("rule_id").notNull(),
+		action: text("action", {
+			enum: ["created", "updated", "deleted", "expired-removed"],
+		}).notNull(),
+		/** The rule after the change, or before a removal. */
+		rule: jsonb("rule").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		/** Null when wallet-api made the change itself: a migration, or removing an expired rule. */
+		createdByKeyHash: text("created_by_key_hash"),
+	},
+	(t) => [
+		index("tenant_sponsorship_rule_events_tenant_idx").on(
+			t.tenantId,
+			t.chainId,
+			t.createdAt,
+		),
+	],
 );
 
 export const tenantSponsorshipHistory = pgTable(
@@ -624,6 +710,8 @@ export const sponsorshipDecisions = pgTable(
 		outcome: text("outcome", { enum: ["allowed", "refused"] }).notNull(),
 		reason: text("reason"),
 		ruleResults: jsonb("rule_results").notNull().default([]),
+		/** The rules that allowed the operation's application calls; empty for wallet management alone. */
+		ruleIds: uuid("rule_ids").array().notNull().default(sql`'{}'`),
 		feeWei: numeric("fee_wei", { precision: 78, scale: 0 }),
 		reservationId: uuid("reservation_id").references(
 			() => sponsorshipReservations.id,

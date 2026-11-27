@@ -20,9 +20,15 @@ import {
 import {
 	checkWalletManagementCap,
 	formatConfigIssues,
+	type SponsorshipConfig,
 	sponsorshipConfigSchema,
 } from "../services/sponsorship-config.js";
 import type { LedgerService } from "../services/sponsorship-ledger.js";
+import {
+	legacyAllowlist,
+	RuleWriteError,
+	replaceLegacyRules,
+} from "../services/sponsorship-rule-store.js";
 import { sha256hex } from "../services/tenants.js";
 
 /**
@@ -70,38 +76,76 @@ export default async function adminSponsorshipRoutes(
 		return sha256hex(header.slice("Bearer ".length).trim());
 	};
 
-	/** Writes the new configuration and appends the previous one to the history in one transaction. */
+	/**
+	 * Writes the new settings and appends them to the history, in one transaction. A deprecated
+	 * `allowlist` in them replaces the legacy rules in the same transaction, and the stored value's
+	 * `allowlist` is rewritten as the mirror of the legacy rules (design D8). Returns what was stored,
+	 * or the refusal of the rules write.
+	 */
 	async function writeConfig(
 		tenantId: string,
 		chainId: number,
-		nextConfig: unknown,
+		nextConfig: SponsorshipConfig,
 		keyHash: string | null,
-	) {
-		await db.transaction(async (tx) => {
-			await tx.insert(tenantSponsorshipHistory).values({
-				tenantId,
-				chainId,
-				config: nextConfig,
-				createdByKeyHash: keyHash,
-			});
-			await tx
-				.insert(tenantSponsorship)
-				.values({
+	): Promise<
+		| { ok: true; config: SponsorshipConfig }
+		| { ok: false; error: RuleWriteError }
+	> {
+		try {
+			const stored = await db.transaction(async (tx) => {
+				if (nextConfig.allowlist !== undefined) {
+					await replaceLegacyRules(tx, {
+						tenantId,
+						chainId,
+						allowlist: nextConfig.allowlist,
+						keyHash,
+						now: new Date(),
+						maxRules: config.SPONSORSHIP_MAX_RULES_PER_CHAIN,
+					});
+				}
+				const value: SponsorshipConfig = {
+					...nextConfig,
+					allowlist: await legacyAllowlist(tx, tenantId, chainId),
+				};
+				await tx.insert(tenantSponsorshipHistory).values({
 					tenantId,
 					chainId,
-					config: nextConfig,
-					updatedByKeyHash: keyHash,
-				})
-				.onConflictDoUpdate({
-					target: [tenantSponsorship.tenantId, tenantSponsorship.chainId],
-					set: {
-						config: nextConfig,
-						updatedAt: new Date(),
-						updatedByKeyHash: keyHash,
-					},
+					config: value,
+					createdByKeyHash: keyHash,
 				});
-		});
+				await tx
+					.insert(tenantSponsorship)
+					.values({
+						tenantId,
+						chainId,
+						config: value,
+						updatedByKeyHash: keyHash,
+						version: 1,
+					})
+					.onConflictDoUpdate({
+						target: [tenantSponsorship.tenantId, tenantSponsorship.chainId],
+						set: {
+							config: value,
+							updatedAt: new Date(),
+							updatedByKeyHash: keyHash,
+							version: sql`${tenantSponsorship.version} + 1`,
+						},
+					});
+				return value;
+			});
+			return { ok: true, config: stored };
+		} catch (error) {
+			if (error instanceof RuleWriteError) return { ok: false, error };
+			throw error;
+		}
 	}
+
+	/** The 400 a refused deprecated allowlist write answers. */
+	const allowlistRefusal = (error: RuleWriteError) => ({
+		error: "validation",
+		message: "sponsorship configuration is not valid",
+		issues: [{ path: "allowlist", message: error.message }],
+	});
 
 	// ── Rules ──────────────────────────────────────────────────────────────────
 
@@ -215,12 +259,14 @@ export default async function adminSponsorshipRoutes(
 			}
 
 			const chain = requireChainOf(request);
-			await writeConfig(
+			const written = await writeConfig(
 				tenant.id,
 				chain.chainId,
 				parsed.data,
 				keyHashOf(request),
 			);
+			if (!written.ok)
+				return reply.code(400).send(allowlistRefusal(written.error));
 
 			// The reservation statement joins against this row, so a tenant that has just enabled
 			// sponsorship must have one — otherwise its first operation is refused for a reason that
@@ -241,7 +287,7 @@ export default async function adminSponsorshipRoutes(
 				},
 				"sponsorship configuration updated",
 			);
-			return { config: parsed.data, updatedAt: new Date().toISOString() };
+			return { config: written.config, updatedAt: new Date().toISOString() };
 		},
 	);
 
@@ -309,7 +355,14 @@ export default async function adminSponsorshipRoutes(
 				});
 			}
 
-			await writeConfig(tenant.id, chainId, parsed.data, keyHashOf(request));
+			const written = await writeConfig(
+				tenant.id,
+				chainId,
+				parsed.data,
+				keyHashOf(request),
+			);
+			if (!written.ok)
+				return reply.code(400).send(allowlistRefusal(written.error));
 			if (chain.paymaster) {
 				await ledger.ensureTenantRow({
 					tenantId: tenant.id,
@@ -317,7 +370,7 @@ export default async function adminSponsorshipRoutes(
 					paymasterAddress: chain.paymaster.address,
 				});
 			}
-			return { config: parsed.data, updatedAt: new Date().toISOString() };
+			return { config: written.config, updatedAt: new Date().toISOString() };
 		},
 	);
 
@@ -583,6 +636,8 @@ export default async function adminSponsorshipRoutes(
 								outcome: z.string(),
 								reason: z.string().nullable(),
 								ruleResults: z.unknown(),
+								/** The rules that allowed the operation's application calls. */
+								ruleIds: z.array(z.string()),
 								feeWei: wei.nullable(),
 								createdAt: z.string(),
 							}),
@@ -618,6 +673,7 @@ export default async function adminSponsorshipRoutes(
 					outcome: row.outcome,
 					reason: row.reason,
 					ruleResults: row.ruleResults,
+					ruleIds: row.ruleIds,
 					feeWei: row.feeWei,
 					createdAt: row.createdAt.toISOString(),
 				})),
