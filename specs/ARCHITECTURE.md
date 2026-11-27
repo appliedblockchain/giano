@@ -250,7 +250,7 @@ token. wallet-api stores only its hash, bound to the user, the credential and th
 is not a signing key: every operation that moves funds still needs a fresh passkey signature. A
 stolen token exposes the user's identity and credential list and can spend the tenant's relay and
 sponsorship budgets, but cannot take assets. Its lifecycle bounds that exposure (G5,
-[`openspec/changes/session-lifecycle`](../openspec/changes/session-lifecycle/design.md)):
+[`openspec/changes/archive/2026-11-26-session-lifecycle`](../openspec/changes/archive/2026-11-26-session-lifecycle/design.md)):
 
 - a session stops working after `SESSION_IDLE_TIMEOUT_SECONDS` unused (one hour by default) or
   `SESSION_TTL_SECONDS` after issue (24 hours), whichever comes first, and use never extends the
