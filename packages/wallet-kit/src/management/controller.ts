@@ -112,7 +112,8 @@ export type ManagementNotice =
 export type AddressInputError =
 	| "invalid-address"
 	| "not-checksummed"
-	| "own-wallet";
+	| "own-wallet"
+	| "already-owner";
 
 export type ManagementFlow =
 	// add on this device / from a second device
@@ -145,6 +146,12 @@ export type ManagementFlow =
 			type: "add";
 			step: "done";
 			ok: boolean;
+			/**
+			 * The owner was added on-chain but wallet-api did not record the passkey, so the new
+			 * device cannot sign in yet. `retrySave` tries again; it is absent once saved.
+			 */
+			saveFailed?: boolean;
+			retrySave?: () => void;
 			chains: ChainProgress[];
 			appliedChainIds: number[];
 			refusal?: SponsorshipRefusal;
@@ -257,7 +264,8 @@ export type ManagementController = {
 	logoutAll: () => Promise<void>;
 
 	// ── the set ──
-	rename: (credentialId: string, name: string | null) => Promise<void>;
+	/** Renames a passkey; resolves true when wallet-api saved it, false when it failed. */
+	rename: (credentialId: string, name: string | null) => Promise<boolean>;
 
 	// ── start a flow (each drives its own sub-state through `flow`) ──
 	startAddThisDevice: () => void; // WM-14
@@ -372,9 +380,16 @@ export function createManagementController({
 			(row): row is ChainOwnerSet & { set: OwnerSet } => row.set !== null,
 		);
 		// The set shown is the set ON THE CHAIN IT WAS READ FROM (WM-06): the first served
-		// chain where the account is deployed and readable, else the first readable one.
+		// chain where the account is deployed and readable. When no readable chain has it and
+		// another chain could not be read, nobody knows the set: that is "unreadable" (WM-05),
+		// never an empty list. When every chain was read and none has it, the wallet is simply
+		// not deployed yet.
+		const deployedSet = readable.find((row) => row.set.deployed);
+		const unknownSet =
+			!deployedSet && chainSets.some((row) => row.set === null);
 		const referenceSet =
-			readable.find((row) => row.set.deployed) ?? readable[0] ?? null;
+			deployedSet ?? (unknownSet ? null : (readable[0] ?? null));
+		const undeployed = !!referenceSet && !referenceSet.set.deployed;
 		const divergent = readable.some((a) =>
 			readable.some((b) => ownerSetsDiverge(a.set, b.set)),
 		);
@@ -414,7 +429,7 @@ export function createManagementController({
 				owner.ownerBytes.toLowerCase(),
 			),
 		);
-		const strays: OwnerRow[] = referenceSet
+		const registryRows: OwnerRow[] = referenceSet
 			? credentials
 					.filter(
 						(credential) =>
@@ -452,14 +467,23 @@ export function createManagementController({
 				? "signed-out"
 				: loading && !loadedOnce
 					? "loading"
-					: loadedOnce && chainSets.length > 0 && readable.length === 0
-						? "unreadable" // WM-05: the set could not be read anywhere — its own state, never an empty list
+					: loadedOnce &&
+							chainSets.length > 0 &&
+							(readable.length === 0 || unknownSet)
+						? "unreadable" // WM-05: the set could not be read — its own state, never an empty list
 						: "set";
+
+		// A wallet deployed nowhere yet has exactly the owners in its factory salt: the passkey it
+		// was made from. Its registry rows are its owners-to-be, not passkeys that own nothing.
+		const shownOwners = undeployed
+			? registryRows.filter((row) => !row.removedAt)
+			: owners;
+		const strays = undeployed ? [] : registryRows;
 
 		return {
 			view,
 			walletAddress: me?.walletAddress ?? null,
-			owners,
+			owners: shownOwners,
 			strays,
 			divergent,
 			chains: chainSets.map((row) => ({
@@ -585,7 +609,9 @@ export function createManagementController({
 		} catch (err) {
 			const message = (err as Error).message;
 			const status = (err as { status?: number }).status;
-			if (status === 401 || /401|session/i.test(message)) {
+			// Only wallet-api's refusal of the session signs the user out, not any message that
+			// happens to mention a session.
+			if (status === 401 || isSessionEndedError(err)) {
 				resetToSignedOut();
 			} else {
 				error = message;
@@ -598,22 +624,40 @@ export function createManagementController({
 	}
 
 	async function withBusy(action: () => Promise<void>): Promise<void> {
+		await attempt(action);
+	}
+
+	/** Runs an action with the busy flag; resolves true when it succeeded. */
+	async function attempt(action: () => Promise<void>): Promise<boolean> {
 		busy = true;
 		error = null;
 		notify();
 		try {
 			await action();
+			return true;
 		} catch (err) {
 			// a refused session already moved the user to sign-in with its own notice
 			if (!isSessionEndedError(err)) {
 				error = (err as Error).message;
 				log("action failed", error);
 			}
+			return false;
 		} finally {
 			busy = false;
 			notify();
 		}
 	}
+
+	/**
+	 * Why a change must stop before any passkey prompt, beyond a refusal: sponsorship could not be
+	 * checked, or the session ended. Null when the change can go on.
+	 */
+	const preflightStop = (preflight: { state: string; message?: string }) =>
+		preflight.state === "unavailable"
+			? `Sponsorship could not be checked right now, so nothing was sent and no passkey was used. Try again in a moment.${preflight.message ? ` (${preflight.message})` : ""}`
+			: preflight.state === "session-ended"
+				? "Your session ended. Sign in again, then retry."
+				: null;
 
 	const refusedFlow = (refusal: SponsorshipRefusal): ManagementFlow => ({
 		type: "refused",
@@ -642,10 +686,21 @@ export function createManagementController({
 					setFlowIf(generation, refusedFlow(preflight));
 					return;
 				}
+				// Stopped before any passkey prompt: a ceremony now could only end in every chain
+				// failing (WM-68).
+				const stop = preflightStop(preflight);
+				if (stop) {
+					log(`add(${mode}): stopped before consent`, preflight);
+					setFlowIf(generation, { type: "add", step: "error", message: stop });
+					return;
+				}
 				const slot = await api.openPendingAddition();
 				if (generation !== flowGeneration) {
-					// Dismissed while opening: the slot must not stay claimable (WM-52).
-					void api.declinePendingAddition(slot.id).catch(() => undefined);
+					// Dismissed while opening: the slot must not stay claimable. A cancel, not a
+					// refused fingerprint, so it raises no WM-52 alert.
+					void api
+						.declinePendingAddition(slot.id, "cancelled")
+						.catch(() => undefined);
 					return;
 				}
 				activeSlot = { id: slot.id, settled: false };
@@ -694,7 +749,7 @@ export function createManagementController({
 						// This controller runs on the wallet origin, which is what the new device opens.
 						pairingUrl: pairingUrl(globalThis.location.origin, slot.claimCode),
 						expiresAt: slot.expiresAt,
-						cancel: () => void declineAdd(generation, slot.id, false),
+						cancel: () => void declineAdd(generation, slot.id, "cancelled"),
 					});
 					startPolling(generation, slot.id);
 				}
@@ -737,6 +792,18 @@ export function createManagementController({
 						stopPolling();
 						activeSlot = null;
 						setFlowIf(generation, { type: "add", step: "expired" }); // WM-23: distinct from a network failure
+					} else if (slot.status === "declined" || slot.status === "consumed") {
+						// Settled elsewhere (another tab, or a retry): nothing more can arrive.
+						stopPolling();
+						activeSlot = null;
+						setFlowIf(generation, {
+							type: "add",
+							step: "error",
+							message:
+								slot.status === "declined"
+									? "This pending addition was declined. Start again for a new code."
+									: "This pending addition was already used. Start again for a new code.",
+						});
 					}
 				} catch (err) {
 					if ((err as { code?: string }).code === "pending-expired") {
@@ -774,7 +841,11 @@ export function createManagementController({
 				// WM-21/WM-52: a mismatch is declined, counted, and nothing is added. On the
 				// same-device flow a decline is simply a cancel back to the list.
 				decline: () =>
-					void declineAdd(generation, slotId, mode === "second-device"),
+					void declineAdd(
+						generation,
+						slotId,
+						mode === "second-device" ? "fingerprint-mismatch" : "cancelled",
+					),
 			});
 		emit();
 	}
@@ -797,43 +868,77 @@ export function createManagementController({
 					setFlowIf(generation, { ...flow, chains: rows });
 			},
 		});
+		let saved = true;
 		if (outcome.appliedChainIds.length > 0) {
 			flowDirty = true;
 			activeSlot = { id: slotId, settled: true };
-			try {
-				// The chain confirmed FIRST; only now does the registry bind (WM-15, WK-18) — and
-				// only the chains that actually confirmed.
-				const name = nameOf().trim();
-				await api.completePendingAddition(slotId, {
-					chainIds: outcome.appliedChainIds,
-					name: name || undefined,
-				});
-			} catch (err) {
-				log(
-					"add: binding failed after on-chain success — the owner will show as added outside this deployment (WM-04)",
-					(err as Error).message,
-				);
-			}
+			saved = await bindAdded(slotId, outcome.appliedChainIds, nameOf);
 		}
-		setFlowIf(generation, {
+		const done = (saveFailed: boolean): ManagementFlow => ({
 			type: "add",
 			step: "done",
-			ok: outcome.ok,
+			// Not done until the new passkey can sign in: the registry must know it too.
+			ok: outcome.ok && !saveFailed,
 			chains: outcome.progress,
 			appliedChainIds: outcome.appliedChainIds,
 			refusal: outcome.refusal,
+			...(saveFailed
+				? {
+						saveFailed: true,
+						retrySave: () =>
+							void (async () => {
+								const retried = await bindAdded(
+									slotId,
+									outcome.appliedChainIds,
+									nameOf,
+								);
+								setFlowIf(generation, done(!retried));
+							})(),
+					}
+				: {}),
 		});
+		setFlowIf(generation, done(!saved));
 	}
 
+	/**
+	 * Records the new passkey in wallet-api, AFTER the chain confirmed it (WM-15, WK-18), for the
+	 * chains that confirmed. False when it failed: the owner is on-chain, but the new device cannot
+	 * sign in until the registry knows the passkey, so the caller says so and offers a retry.
+	 */
+	async function bindAdded(
+		slotId: string,
+		chainIds: number[],
+		nameOf: () => string,
+	): Promise<boolean> {
+		try {
+			const name = nameOf().trim();
+			await api.completePendingAddition(slotId, {
+				chainIds,
+				name: name || undefined,
+			});
+			return true;
+		} catch (err) {
+			log(
+				"add: saving the passkey failed after on-chain success — offering a retry",
+				(err as Error).message,
+			);
+			return false;
+		}
+	}
+
+	/**
+	 * Declines the slot. "fingerprint-mismatch" is the user saying the keys differ, the alertable
+	 * WM-52 event, and shows the declined screen; "cancelled" is the user leaving the flow.
+	 */
 	async function declineAdd(
 		generation: number,
 		slotId: string,
-		showDeclined: boolean,
+		reason: "fingerprint-mismatch" | "cancelled",
 	) {
 		stopPolling();
-		await api.declinePendingAddition(slotId).catch(() => undefined);
+		await api.declinePendingAddition(slotId, reason).catch(() => undefined);
 		activeSlot = null;
-		if (showDeclined) {
+		if (reason === "fingerprint-mismatch") {
 			log("add: fingerprint declined — nothing added");
 			setFlowIf(generation, { type: "add", step: "declined" });
 		} else {
@@ -857,6 +962,16 @@ export function createManagementController({
 			if (preflight.state === "refused") {
 				log("add-address: sponsorship refused before consent", preflight);
 				setFlowIf(generation, refusedFlow(preflight));
+				return;
+			}
+			const stop = preflightStop(preflight);
+			if (stop) {
+				log("add-address: stopped before consent", preflight);
+				setFlowIf(generation, {
+					type: "address",
+					step: "error",
+					message: stop,
+				});
 				return;
 			}
 			toAddressInput(generation, "", null);
@@ -898,6 +1013,19 @@ export function createManagementController({
 						candidate.toLowerCase() === me.walletAddress.toLowerCase()
 					) {
 						inputError = "own-wallet";
+						return emit();
+					}
+					// Refused here, not by the contract after a passkey prompt (AlreadyOwner).
+					if (
+						chainSets.some((row) =>
+							row.set?.owners.some(
+								(owner) =>
+									owner.kind === "address" &&
+									owner.address?.toLowerCase() === candidate.toLowerCase(),
+							),
+						)
+					) {
+						inputError = "already-owner";
 						return emit();
 					}
 					toAddressConfirm(generation, candidate, current);
@@ -1045,6 +1173,9 @@ export function createManagementController({
 						"remove-owner: registry mark failed — the chain change stands; the registry will show the divergence",
 						(err as Error).message,
 					);
+					// The passkey in use can no longer sign: end the session here even though
+					// wallet-api did not confirm it (WM-30), rather than keep a session that fails.
+					if (owner.isCurrent) endedSession = true;
 				}
 			} else {
 				await api
@@ -1167,8 +1298,11 @@ export function createManagementController({
 		flowGeneration++; // invalidate any in-flight continuation of the dismissed flow
 		stopPolling();
 		if (activeSlot && !activeSlot.settled) {
-			// An abandoned slot is declined so it cannot be consumed later (WM-52).
-			void api.declinePendingAddition(activeSlot.id).catch(() => undefined);
+			// An abandoned slot is declined so it cannot be consumed later; a cancel, not a
+			// refused fingerprint, so it raises no WM-52 alert.
+			void api
+				.declinePendingAddition(activeSlot.id, "cancelled")
+				.catch(() => undefined);
 		}
 		activeSlot = null;
 		flow = null;
@@ -1224,7 +1358,7 @@ export function createManagementController({
 			}),
 
 		rename: (credentialId, name) =>
-			withBusy(async () => {
+			attempt(async () => {
 				await api.renameCredential(credentialId, name);
 				log("credential renamed", { credentialId, name });
 				await load();

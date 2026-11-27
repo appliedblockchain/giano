@@ -120,7 +120,18 @@ export async function applyOwnerChange(
 			// Checked before the account is restored: a passkey added as an owner cannot connect
 			// to an account that is not deployed, so restoring first would fail the chain instead
 			// of skipping it.
-			if (!(await runtime.isAccountDeployed(walletAddress))) {
+			const deployed = await runtime.isAccountDeployed(walletAddress);
+			if (deployed === null) {
+				// Unknown is not "not deployed": the change was not applied here, and the chain may
+				// hold the account. It is a failure, so the change is not reported complete.
+				update(chainId, {
+					state: "failed",
+					detail:
+						"this network could not be reached — the change is not applied here",
+				});
+				continue;
+			}
+			if (!deployed) {
 				update(chainId, {
 					state: "skipped",
 					detail:
