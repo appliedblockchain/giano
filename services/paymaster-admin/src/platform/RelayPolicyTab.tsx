@@ -31,6 +31,7 @@ import {
 	overriddenFields,
 } from "../lib/chain-policy";
 import type {
+	ApiResult,
 	ChainPolicyHistoryEntry,
 	ChainPolicyView,
 } from "../lib/platform-api";
@@ -277,9 +278,19 @@ function ChainHistory({
 
 	const read = useCallback(
 		async (before?: string) => {
-			const result = await run((api) =>
-				api.chainPolicyHistory(chainId, before),
-			);
+			let result:
+				| ApiResult<{ entries: ChainPolicyHistoryEntry[]; next: string | null }>
+				| undefined;
+			try {
+				result = await run((api) => api.chainPolicyHistory(chainId, before));
+			} catch (cause) {
+				// run() rethrows a network or decoding failure: show it, never leave "Reading…"
+				console.error(
+					"[paymaster-admin] relay policy: could not read the history",
+					cause,
+				);
+				return setError(cause instanceof Error ? cause.message : String(cause));
+			}
 			if (!result) return;
 			if (!result.ok) {
 				console.error(
@@ -318,13 +329,13 @@ function ChainHistory({
 			setLoadingMore(false);
 		}
 	};
-	if (error)
-		return (
-			<Text fontSize="sm" color="red.fg">
-				Could not read the history: {error}
-			</Text>
-		);
-	if (!entries) return <Text color="fg.muted">Reading the history…</Text>;
+	const failure = error && (
+		<Text fontSize="sm" color="red.fg">
+			Could not read the history: {error}
+		</Text>
+	);
+	if (!entries)
+		return failure || <Text color="fg.muted">Reading the history…</Text>;
 	return (
 		<Stack gap="2">
 			{entries.map((entry) => (
@@ -350,6 +361,7 @@ function ChainHistory({
 					Load older entries
 				</Button>
 			)}
+			{failure}
 		</Stack>
 	);
 }
@@ -367,6 +379,7 @@ function EditChainPolicyDialog({
 	const [form, setForm] = useState<ChainPolicyForm>(() =>
 		chainPolicyToForm(chain.stored),
 	);
+	const [saveFailure, setSaveFailure] = useState<string>();
 	const locked = overriddenFields(chain);
 	const problems = chainPolicyFormProblems(form, locked);
 	const issues = issuesByField(error);
@@ -374,9 +387,19 @@ function EditChainPolicyDialog({
 	const save = async () => {
 		const policy = formToChainPolicy(form, locked);
 		log("saving", { chainId: chain.chainId, version: chain.version, policy });
-		const result = await act((api) =>
-			api.replaceChainPolicy(chain.chainId, chain.version, policy),
-		);
+		setSaveFailure(undefined);
+		let result: ApiResult<ChainPolicyView> | undefined;
+		try {
+			result = await act((api) =>
+				api.replaceChainPolicy(chain.chainId, chain.version, policy),
+			);
+		} catch (cause) {
+			// act() rethrows a network or decoding failure; the write may still have committed
+			console.error("[paymaster-admin] relay policy: save failed", cause);
+			return setSaveFailure(
+				cause instanceof Error ? cause.message : String(cause),
+			);
+		}
 		if (!result) return; // the session ended
 		if (!result.ok) {
 			console.error(
@@ -502,6 +525,18 @@ function EditChainPolicyDialog({
 										<Text key={problem}>{problem}</Text>
 									))}
 								</Stack>
+							</Alert.Description>
+						</Alert.Content>
+					</Alert.Root>
+				)}
+				{saveFailure && (
+					<Alert.Root status="error" size="sm">
+						<Alert.Indicator />
+						<Alert.Content>
+							<Alert.Title>The save did not get an answer</Alert.Title>
+							<Alert.Description overflowWrap="anywhere">
+								{saveFailure}. The change may already be saved: close this
+								dialog and refresh before trying again.
 							</Alert.Description>
 						</Alert.Content>
 					</Alert.Root>
