@@ -1,8 +1,10 @@
 # Giano wallet management — requirements
 
-A Giano wallet is created with **one** passkey, and there is no way to add a second, to remove one,
-or to see from the wallet itself what can act on it. The account contract has been able to do all
-three since it was written; nothing above it has ever called those functions.
+When this document was written, a Giano wallet was created with **one** passkey, and there was no way
+to add a second, to remove one, or to see from the wallet itself what can act on it. The account
+contract had been able to do all three since it was written; nothing above it called those functions.
+[§1](#1-the-problem) describes that state; [Implementation status](#implementation-status) says what
+is built.
 
 This document specifies the interface through which a user sees and controls the set of credentials
 that can act on their wallet — and the ceremony, backend and SDK changes that interface needs in
@@ -14,7 +16,34 @@ than one kind). It is also the **precondition for BR-33**, recovery: whatever me
 BR-33's open question, every option in it ends in a credential being added to a wallet, and today no
 credential can be added to a wallet by any means.
 
-Status: **draft, in review.**
+Status: **implemented**, with the deviations listed under [Implementation status](#implementation-status).
+
+## Implementation status
+
+The interface, the backend changes and the SDK functions this document requires are built: the
+owner set read from the chain and joined to the registry, names, adding a passkey on this device and
+from a second device (claim code, QR code and fingerprint comparison), adding an externally-owned
+account, removal with the last-owner guard, sessions bound to the wallet, the management button in
+both demonstrations, and end-to-end coverage with two devices (`e2e/tests/multi-device.spec.ts`,
+`e2e/tests/wallet-management.spec.ts`). Built beyond this document: where each passkey is stored and
+the device and browser it was added from, a QR code for the second device, and a connect and
+sign-in that use whichever passkey the device holds.
+
+Deviations and open items:
+
+- **WM-41.** An owner change is chain-bound on every chain (`execute`), with one passkey prompt per
+  chain. The sponsorship authorisations are chain-bound and the relay decodes only `execute` and
+  `executeBatch`, so a replayable `executeWithoutChainIdValidation` operation can be neither
+  sponsored nor relayed. WM-42 holds on every deployment as a result, and WM-45 has nothing to keep.
+- **WM-44.** Per-chain progress is shown, and a chain that cannot be read fails rather than being
+  skipped, but a failed chain cannot be retried from the interface yet.
+- **WM-46, Q2.** A chain where the account is not deployed is skipped and the change is not applied
+  there. Nothing applies it when the account deploys later (MC-38 is open), so the owner sets differ
+  between chains until it is reconciled.
+- **WM-37.** The consent screen does not yet name which credential authorises the change.
+- **WM-50.** A change the client refuses before it is sent is not recorded in the audit trail.
+- **WM-61.** The bring-your-own reference implements viewing, adding a passkey on the same device and
+  removing; it does not implement the second-device claim, adding an account, or renaming.
 
 > **Numbering.** Requirements are `WM-nn`, globally unique within this document. They are unrelated
 > to the `BR-nn`, `MC-nn` and `R-nn` series, which are cited here rather than restated. The
