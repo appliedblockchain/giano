@@ -24,6 +24,7 @@ const INPUT_ERROR_COPY: Record<AddressInputError, string> = {
 	"not-checksummed":
 		"Enter the address in its checksummed (mixed-case) form, exactly as your wallet shows it.",
 	"own-wallet": "That is this wallet’s own address.",
+	"already-owner": "That account already controls this wallet.",
 };
 
 export function AddressFlow({

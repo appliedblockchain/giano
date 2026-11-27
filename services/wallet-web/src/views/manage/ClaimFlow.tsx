@@ -122,7 +122,11 @@ export function ClaimFlow({
 				: flow.code === "pending-consumed" ||
 						flow.code === "pending-already-filled"
 					? "This code was already used. Ask your other device for a fresh one."
-					: "Something went wrong talking to the wallet service — this may be a connection problem; try again.";
+					: flow.code === "pending-declined"
+						? "This code was declined on your other device, so nothing was added. Ask it for a fresh code to try again."
+						: flow.code === "credential-already-registered"
+							? "This passkey is already registered. Try again: a new passkey will be created on this device."
+							: "Something went wrong talking to the wallet service — this may be a connection problem; try again.";
 
 	return (
 		<FlowShell title="That didn't work">
