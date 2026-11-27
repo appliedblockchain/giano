@@ -18,6 +18,20 @@ resource "aws_db_parameter_group" "db" {
     value = "1000" # anything over a second lands in the logs
   }
 
+  # pgaudit — ISO 27001 audit logging. shared_preload_libraries is static: the instance
+  # must be rebooted after apply before pgaudit is loaded. The list replaces the engine
+  # default, so keep pg_stat_statements and pg_tle in it.
+  parameter {
+    name         = "shared_preload_libraries"
+    value        = "pg_stat_statements,pg_tle,pgaudit"
+    apply_method = "pending-reboot"
+  }
+
+  parameter {
+    name  = "pgaudit.log"
+    value = "ddl,role,write"
+  }
+
   tags = merge(local.tags, { Name = "${var.name_prefix}-${var.component}-db-params" })
 }
 
