@@ -30,6 +30,10 @@ export const FIXTURE_CONTRACTS = {
 		source: "src/testing/GianoTestPrivateErc20.sol",
 		file: "private-test-erc20.json",
 	},
+	GianoTestEscrowFactory: {
+		source: "src/testing/GianoTestEscrowFactory.sol",
+		file: "test-escrow-factory.json",
+	},
 } as const;
 
 export type FixtureContractName = keyof typeof FIXTURE_CONTRACTS;

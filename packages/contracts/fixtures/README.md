@@ -8,6 +8,11 @@ Test fixtures the deploy CLI deploys from a committed artifact instead of a rele
   holds the creation code, the runtime code, its size and the fingerprint (keccak256 of the runtime
   code; the token has no immutables).
 
+- `test-escrow-factory.json`: `GianoTestEscrowFactory` (`src/testing/GianoTestEscrowFactory.sol`), a
+  permissionless factory that deploys escrows as EIP-1167 clones at predictable addresses. The e2e
+  suite deploys it itself (`e2e/tests/deployed-contracts.spec.ts`) to test sponsorship rules for
+  contracts an app deploys at run time. The deploy CLI does not deploy it.
+
 Why not a release: a release is what every chain of a class is adopted at, forever. The token exists
 only for the demo's private token section (openspec `silent-data-network`, design D7), so it must not
 wait for a release, and a release must not carry it.
