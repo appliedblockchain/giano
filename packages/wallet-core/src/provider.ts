@@ -20,7 +20,6 @@ import {
 	hexToBytes,
 	isHex,
 	type PublicClient,
-	parseGwei,
 	type RpcTransactionRequest,
 	stringToBytes,
 	type TransactionRequest,
@@ -125,7 +124,9 @@ export type CreateGianoProviderParams = {
 	/**
 	 * Fallback fee estimation used when neither the request nor the bundler's
 	 * prepared op carries fees, resolved per chain — fee levels differ between chains
-	 * by orders of magnitude, so one figure cannot serve them all.
+	 * by orders of magnitude, so one figure cannot serve them all. Defaults to the current
+	 * chain's own estimate (`eth_maxPriorityFeePerGas` and the latest base fee, or `eth_gasPrice`
+	 * on a chain without EIP-1559 fees).
 	 */
 	estimateFeesPerGas?: (
 		chainId: number,
@@ -297,12 +298,37 @@ export const createGianoProvider = (
 	const { transports, chains, initialChainId, bundlers, factoryAddresses } =
 		options;
 	const logger = options.logger ?? defaultGianoLogger;
+	// The default reads fees from the current chain. A fixed figure cannot serve every chain: 200
+	// gwei is three orders of magnitude above an L2's fees, so it trips the relay's per-chain fee
+	// caps and inflates the paymaster prefund ("AA31 paymaster deposit too low").
 	const estimateFeesPerGas =
 		options.estimateFeesPerGas ??
-		(async (_chainId: number) => ({
-			maxFeePerGas: parseGwei("200"),
-			maxPriorityFeePerGas: parseGwei("2"),
-		}));
+		(async (_chainId: number) => {
+			const readClient = requireClient();
+			try {
+				const { maxFeePerGas, maxPriorityFeePerGas } =
+					await readClient.estimateFeesPerGas();
+				return { maxFeePerGas, maxPriorityFeePerGas };
+			} catch {
+				// a chain without EIP-1559 fees: fall back to the legacy gas price
+				const gasPrice = await readClient.getGasPrice();
+				return { maxFeePerGas: gasPrice * 2n, maxPriorityFeePerGas: gasPrice };
+			}
+		});
+
+	// The request's fees, estimated only when one is missing: a request that prices itself must
+	// not fail because the chain's fee estimate could not be read. An explicit 0 is a value.
+	const feesFor = async (requested: Partial<FeeValues>): Promise<FeeValues> =>
+		requested.maxFeePerGas != null && requested.maxPriorityFeePerGas != null
+			? {
+					maxFeePerGas: requested.maxFeePerGas,
+					maxPriorityFeePerGas: requested.maxPriorityFeePerGas,
+				}
+			: resolveUserOpFees(
+					requested,
+					{},
+					await estimateFeesPerGas(requireChain().id),
+				);
 
 	let smartAccount: SmartAccount<GianoSmartAccountImplementation> | null;
 	let chain: Chain | undefined;
@@ -378,11 +404,7 @@ export const createGianoProvider = (
 		 * Doing it first is also simply more correct for the unsponsored path: the gas estimate is
 		 * computed against the fees the operation will actually carry.
 		 */
-		const fees = resolveUserOpFees(
-			userOpRequest,
-			{},
-			await estimateFeesPerGas(requireChain().id),
-		);
+		const fees = await feesFor(userOpRequest);
 		const requestWithFees = { ...userOpRequest, ...fees };
 
 		/*
@@ -991,11 +1013,7 @@ export const createGianoProvider = (
 				...options,
 			};
 
-			const fees = resolveUserOpFees(
-				options,
-				{},
-				await estimateFeesPerGas(requireChain().id),
-			);
+			const fees = await feesFor(options);
 			const prepared = await requireBundler().prepareUserOperation({
 				account: smartAccount,
 				...op,

@@ -32,7 +32,7 @@ import {
 } from "../../packages/contracts/chains";
 import { ENTRY_POINT_V09 } from "../../packages/contracts/deploy/config";
 import { loadProfile } from "../../packages/contracts/deploy/profiles";
-import { v3For } from "./dev-v3-chains.mts";
+import { dropPaymasterOverride, v3For } from "./dev-v3-chains.mts";
 
 const CHAIN_ID = 19874;
 const PROFILE = "iron-kestrel";
@@ -96,8 +96,8 @@ export function addIronKestrel(
 	entry.walletApi = {
 		...entry.walletApi,
 		factory: v3.factory,
-		policy: { ...entry.walletApi?.policy, allowedPaymasters: [v3.proxy] },
 	};
+	dropPaymasterOverride(entry);
 	entry.bundler = { ...entry.bundler, rpcUrl: writeUrl, stateOverride: false };
 	entry.paymasterAdmin = {
 		...entry.paymasterAdmin,

@@ -213,6 +213,8 @@ export type ManagementFlow =
 			type: "refused";
 			reason: SponsorshipRefusalReason;
 			message: string;
+			/** The rules wallet-api evaluated; a failed `paymaster-tenant` narrows the copy. */
+			ruleResults: SponsorshipRefusal["ruleResults"];
 			back: () => void;
 	  };
 
@@ -584,6 +586,7 @@ export function createManagementController({
 		type: "refused",
 		reason: refusal.reason,
 		message: refusal.message,
+		ruleResults: refusal.ruleResults,
 		back: () => dismissFlow(),
 	});
 

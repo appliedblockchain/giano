@@ -54,76 +54,112 @@ const multiChain = (
 		...extra,
 	}) as NodeJS.ProcessEnv;
 
-const STATED = { allowedTargets: "any", allowedPaymasters: [PAYMASTER] };
-
-describe("per-chain fee caps (G6 R2)", () => {
-	it("gives a known L2 a cap that can fire, instead of the chain-agnostic 500 gwei", () => {
-		const [base] = loadConfig(multiChain([{ chainId: 8453 }])).CHAINS;
-		expect(base.policy.maxFeePerGas).toBe(10n * GWEI);
-		expect(base.policy.maxPriorityFeePerGas).toBe(1n * GWEI);
-		expect(base.policy.maxFeePerGas).toBeLessThan(
-			FALLBACK_FEE_CAPS.maxFeePerGas,
-		);
-	});
-
-	it("covers every public chain Giano serves today", () => {
+describe("known fee caps (G6 R2)", () => {
+	it("covers every public chain Giano serves today, below the chain-agnostic fallback", () => {
 		for (const chainId of [1, 10, 8453, 84532, 11155111]) {
 			expect(KNOWN_CHAIN_FEE_CAPS[chainId], String(chainId)).toBeDefined();
 		}
-	});
-
-	it("lets the descriptor's own cap win, then the env var when set", () => {
-		const config = loadConfig(
-			multiChain([{ chainId: 8453, policy: { maxFeePerGas: "123" } }], {
-				USEROP_MAX_PRIORITY_FEE_PER_GAS: "45",
-			}),
+		expect(KNOWN_CHAIN_FEE_CAPS[8453].maxFeePerGas).toBe(10n * GWEI);
+		expect(KNOWN_CHAIN_FEE_CAPS[8453].maxFeePerGas).toBeLessThan(
+			FALLBACK_FEE_CAPS.maxFeePerGas,
 		);
-		expect(config.CHAINS[0].policy).toMatchObject({
-			maxFeePerGas: 123n,
-			maxPriorityFeePerGas: 45n,
-		});
-	});
-
-	it("leaves a chain with no known default to the fallback (local devnets)", () => {
-		const [local] = loadConfig(singleChain(31337)).CHAINS;
-		expect(local.policy.maxFeePerGas).toBeUndefined();
-		// an empty env value is unset, not 0
-		expect(
-			loadConfig(singleChain(31337, { USEROP_MAX_FEE_PER_GAS: "" })).CHAINS[0]
-				.policy.maxFeePerGas,
-		).toBeUndefined();
-	});
-
-	it("reads the new gas caps from a descriptor and defaults them from the env", () => {
-		const config = loadConfig(
-			multiChain([
-				{ chainId: 8453, policy: { maxPreVerificationGas: "2000000" } },
-			]),
-		);
-		expect(config.CHAINS[0].policy.maxPreVerificationGas).toBe(2_000_000n);
-		expect(config.USEROP_MAX_PRE_VERIFICATION_GAS).toBe(10_000_000n);
-		expect(config.USEROP_MAX_PAYMASTER_VERIFICATION_GAS).toBe(1_000_000n);
-		expect(config.USEROP_MAX_PAYMASTER_POST_OP_GAS).toBe(1_000_000n);
 	});
 });
 
-describe('explicit allowlists: "any" or addresses (G6 R5)', () => {
-	it('accepts "any" in a descriptor and in the single-chain env, as no restriction', () => {
+/**
+ * Each chain's relay policy lives in the database (chain-policy.test.ts). What config resolves is
+ * only what the deployment overrides, field by field, with where it was set (chain-relay-policy-console
+ * design D2).
+ */
+describe("overrides (chain-relay-policy-console D2)", () => {
+	it("lets the descriptor's own cap win, then the env var when set, each with its source", () => {
+		const config = loadConfig(
+			multiChain([{ chainId: 8453, policy: { maxFeePerGas: "123" } }], {
+				USEROP_MAX_FEE_PER_GAS: "999",
+				USEROP_MAX_PRIORITY_FEE_PER_GAS: "45",
+			}),
+		);
+		expect(config.CHAINS[0].policy).toEqual({
+			maxFeePerGas: { value: 123n, source: "GIANO_CHAINS" },
+			maxPriorityFeePerGas: {
+				value: 45n,
+				source: "USEROP_MAX_PRIORITY_FEE_PER_GAS",
+			},
+		});
+	});
+
+	it("overrides nothing by default: an unset or empty env var leaves the stored value in charge", () => {
+		const config = loadConfig(
+			singleChain(31337, {
+				USEROP_MAX_FEE_PER_GAS: "",
+				USEROP_MAX_CALL_GAS: "",
+			}),
+		);
+		expect(config.CHAINS[0].policy).toEqual({});
+		expect(config.USEROP_MAX_CALL_GAS).toBeUndefined();
+		expect(config.USEROP_MAX_PRE_VERIFICATION_GAS).toBeUndefined();
+	});
+
+	it("reads the gas caps from a descriptor and from the env", () => {
+		const config = loadConfig(
+			multiChain(
+				[{ chainId: 8453, policy: { maxPreVerificationGas: "2000000" } }],
+				{ USEROP_MAX_PAYMASTER_POST_OP_GAS: "300000" },
+			),
+		);
+		expect(config.CHAINS[0].policy).toEqual({
+			maxPreVerificationGas: { value: 2_000_000n, source: "GIANO_CHAINS" },
+			maxPaymasterPostOpGas: {
+				value: 300_000n,
+				source: "USEROP_MAX_PAYMASTER_POST_OP_GAS",
+			},
+		});
+	});
+
+	it('reads "any", an address list and a legacy empty list from a descriptor and the single-chain env', () => {
 		expect(
 			loadConfig(
-				multiChain([{ chainId: 8453, policy: { allowedTargets: "any" } }]),
+				multiChain([
+					{
+						chainId: 8453,
+						policy: { allowedTargets: "any", allowedPaymasters: [PAYMASTER] },
+					},
+				]),
+			).CHAINS[0].policy,
+		).toEqual({
+			allowedTargets: { value: "any", source: "GIANO_CHAINS" },
+			allowedPaymasters: {
+				value: [PAYMASTER.toLowerCase()],
+				source: "GIANO_CHAINS",
+			},
+		});
+		// an empty list has always meant "any address" in a descriptor
+		expect(
+			loadConfig(
+				multiChain([{ chainId: 8453, policy: { allowedTargets: [] } }]),
 			).CHAINS[0].policy.allowedTargets,
-		).toEqual([]);
+		).toEqual({ value: "any", source: "GIANO_CHAINS" });
 		expect(
 			loadConfig(singleChain(31337, { USEROP_ALLOWED_TARGETS: "any" }))
 				.CHAINS[0].policy.allowedTargets,
-		).toEqual([]);
+		).toEqual({ value: "any", source: "USEROP_ALLOWED_TARGETS" });
 	});
 
 	it("refuses a malformed single-chain allowlist", () => {
 		expect(() =>
 			loadConfig(singleChain(31337, { USEROP_ALLOWED_PAYMASTERS: "anything" })),
 		).toThrow(/USEROP_ALLOWED_PAYMASTERS: must be "any"/);
+	});
+
+	it('refuses a separator-only allowlist: only "any" selects unrestricted', () => {
+		for (const field of [
+			"USEROP_ALLOWED_TARGETS",
+			"USEROP_ALLOWED_PAYMASTERS",
+		]) {
+			expect(() => loadConfig(singleChain(8453, { [field]: " , " }))).toThrow(
+				/must be "any" or comma-separated 0x addresses/,
+			);
+		}
 	});
 
 	it("refuses USEROP_ALLOWED_TARGETS=any with GIANO_CHAINS: allowlists are per chain (MC-61)", () => {
@@ -135,90 +171,12 @@ describe('explicit allowlists: "any" or addresses (G6 R5)', () => {
 	});
 });
 
-describe("production boot refusals (G6 R2, R5)", () => {
-	const production = { GIANO_DEPLOYMENT_CLASS: "production" };
-
-	it("boots when every chain states both allowlists and has a known fee cap", () => {
-		expect(() =>
-			loadConfig(multiChain([{ chainId: 8453, policy: STATED }], production)),
-		).not.toThrow();
+describe("production boot (chain-relay-policy-console D4)", () => {
+	it("boots with nothing stated: the stored policy decides, and a gap refuses that chain only", () => {
 		expect(() =>
 			loadConfig(
-				singleChain(8453, {
-					...production,
-					USEROP_ALLOWED_TARGETS: "any",
-					USEROP_ALLOWED_PAYMASTERS: PAYMASTER,
-				}),
-			),
-		).not.toThrow();
-	});
-
-	it("refuses a chain whose allowlists are not stated, naming the chain and the field", () => {
-		expect(() =>
-			loadConfig(
-				multiChain(
-					[{ chainId: 8453, policy: { allowedTargets: "any" } }],
-					production,
-				),
-			),
-		).toThrow(/chain 8453: walletApi\.policy\.allowedPaymasters/);
-		expect(() =>
-			loadConfig(
-				singleChain(8453, {
-					...production,
-					USEROP_ALLOWED_PAYMASTERS: PAYMASTER,
-				}),
-			),
-		).toThrow(/chain 8453: USEROP_ALLOWED_TARGETS must be stated/);
-	});
-
-	it('refuses a separator-only allowlist: only "any" selects unrestricted', () => {
-		for (const field of [
-			"USEROP_ALLOWED_TARGETS",
-			"USEROP_ALLOWED_PAYMASTERS",
-		]) {
-			expect(() =>
-				loadConfig(
-					singleChain(8453, {
-						...production,
-						USEROP_ALLOWED_TARGETS: "any",
-						USEROP_ALLOWED_PAYMASTERS: PAYMASTER,
-						[field]: " , ",
-					}),
-				),
-			).toThrow(/must be "any" or comma-separated 0x addresses/);
-		}
-	});
-
-	it("refuses a chain that would get the fallback fee cap", () => {
-		expect(() =>
-			loadConfig(multiChain([{ chainId: 777777, policy: STATED }], production)),
-		).toThrow(/chain 777777: no maxFeePerGas cap is known/);
-		// a descriptor cap, or the env, is enough
-		expect(() =>
-			loadConfig(
-				multiChain(
-					[
-						{
-							chainId: 777777,
-							policy: {
-								...STATED,
-								maxFeePerGas: "1000000000",
-								maxPriorityFeePerGas: "100000000",
-							},
-						},
-					],
-					production,
-				),
-			),
-		).not.toThrow();
-	});
-
-	it("does not apply the production rules to a testnet or development deployment", () => {
-		expect(() =>
-			loadConfig(
-				multiChain([{ chainId: 777777 }], {
-					GIANO_DEPLOYMENT_CLASS: "testnet",
+				multiChain([{ chainId: 8453 }, { chainId: 777777 }], {
+					GIANO_DEPLOYMENT_CLASS: "production",
 				}),
 			),
 		).not.toThrow();

@@ -284,9 +284,12 @@ export function createSponsorshipService(
 			// here (D2, D3). Signing would only buy an on-chain revert (UnknownTenant or TenantDisabled)
 			// and hold a reservation until it expired; and an unregistered tenant would otherwise read as
 			// out of credit. A tenant whose own switch is off keeps that reason: it is the first to fix.
+			// A config the rules refuse anyway (switched off, or no allowlist) keeps that tenant-wide
+			// reason, so the wallet and an owner change are not told it is about this network only.
 			if (
 				!unparseable &&
 				config.enabled &&
+				config.allowlist.length > 0 &&
 				!(tenantOnChain.registered && tenantOnChain.enabled)
 			) {
 				const detail = tenantOnChain.registered

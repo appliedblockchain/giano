@@ -43,6 +43,7 @@ import { joinTenants, type TenantRow } from "./lib/tenants";
 import { OverviewTab } from "./overview/OverviewTab";
 import { PaymasterTab } from "./paymaster/PaymasterTab";
 import { AdminsTab } from "./platform/AdminsTab";
+import { RelayPolicyTab } from "./platform/RelayPolicyTab";
 import { SignIn } from "./platform/SignIn";
 import type { PlatformAreaProps } from "./platform/shared";
 import { RolesTab } from "./roles/RolesTab";
@@ -461,9 +462,13 @@ function RouteView({
 	const { platformApi } = getAdminConfig();
 	const { client, overview } = platformProps;
 
-	if (route.tab === "not-found" || (route.tab === "admins" && !platformApi))
+	if (
+		route.tab === "not-found" ||
+		((route.tab === "admins" || route.tab === "relay-policy") && !platformApi)
+	)
 		return <NotFound />;
 	if (route.tab === "admins") return <AdminsTab />;
+	if (route.tab === "relay-policy") return <RelayPolicyTab />;
 
 	const reading = loading ? (
 		<Stack align="center" py="16" gap="3">

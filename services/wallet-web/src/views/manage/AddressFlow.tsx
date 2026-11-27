@@ -171,6 +171,7 @@ export function AddressFlow({
 					<RefusalNotice
 						reason={flow.refusal.reason}
 						message={flow.refusal.message}
+						ruleResults={flow.refusal.ruleResults}
 					/>
 				) : null}
 				<ChainProgressList progress={flow.chains} />

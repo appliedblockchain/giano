@@ -724,3 +724,45 @@ export const tenantTxMappingsHistory = pgTable(
 		),
 	],
 );
+
+// ── Chain relay policy ─────────────────────────────────────────────────────────────
+//
+// One row per chain (openspec chain-relay-policy-console). Seeded by wallet-api at boot for every
+// served chain without one, then edited by platform admins. GIANO_CHAINS and the USEROP_* env vars
+// override it field by field (services/chain-policy.ts).
+
+export const chainRelayPolicyActions = ["seed", "update"] as const;
+
+export const chainRelayPolicy = pgTable("chain_relay_policy", {
+	chainId: bigint("chain_id", { mode: "number" }).primaryKey(),
+	/** Validated by `storedChainPolicySchema` (services/chain-policy.ts) on every write and read. */
+	policy: jsonb("policy").notNull(),
+	version: integer("version").notNull().default(1),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	/** 'platform-admin:<id>:<address>' | 'system:seed' */
+	updatedBy: text("updated_by").notNull(),
+});
+
+/** Append-only record of every chain relay policy write. */
+export const chainRelayPolicyHistory = pgTable(
+	"chain_relay_policy_history",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		chainId: bigint("chain_id", { mode: "number" }).notNull(),
+		action: text("action", { enum: chainRelayPolicyActions }).notNull(),
+		actor: text("actor").notNull(),
+		platformAdminSessionId: uuid("platform_admin_session_id").references(
+			() => platformAdminSessions.id,
+		),
+		before: jsonb("before"),
+		after: jsonb("after").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(t) => [
+		index("chain_relay_policy_history_chain_idx").on(t.chainId, t.createdAt),
+	],
+);

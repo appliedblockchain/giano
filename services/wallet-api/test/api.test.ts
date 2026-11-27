@@ -1,10 +1,15 @@
 import assert from "node:assert";
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
-import { tenants, users } from "../src/db/schema.js";
+import {
+	chainRelayPolicy,
+	tenants,
+	useropLog,
+	users,
+} from "../src/db/schema.js";
 import { createChallengeService } from "../src/services/challenges.js";
 import {
 	loadTenantFixtures,
@@ -996,6 +1001,88 @@ describe("userop relay", () => {
 		);
 	});
 
+	it("applies an edit to the chain's stored policy to the very next operation (chain-relay-policy-console D6)", async () => {
+		const [stored] = await ctx.db
+			.select()
+			.from(chainRelayPolicy)
+			.where(eq(chainRelayPolicy.chainId, 31337));
+		assert(stored, "the test chain's policy was seeded at boot");
+		await ctx.db
+			.update(chainRelayPolicy)
+			.set({ policy: { ...(stored.policy as object), maxCallGas: "1000" } })
+			.where(eq(chainRelayPolicy.chainId, 31337));
+		try {
+			const res = await ctx.app.inject({
+				method: "POST",
+				url: "/v1/userops",
+				headers: { authorization: `Bearer ${sessionToken}` },
+				payload: { userOperation: makeOp(41) },
+			});
+			expect(res.statusCode).toBe(403);
+			expect((res.json() as { message: string }).message).toMatch(
+				/^call-gas-cap: callGasLimit \d+ > cap 1000/,
+			);
+		} finally {
+			await ctx.db
+				.update(chainRelayPolicy)
+				.set({ policy: stored.policy })
+				.where(eq(chainRelayPolicy.chainId, 31337));
+		}
+	});
+
+	it("fails closed when the chain's stored policy cannot be parsed, in every deployment class", async () => {
+		const [stored] = await ctx.db
+			.select()
+			.from(chainRelayPolicy)
+			.where(eq(chainRelayPolicy.chainId, 31337));
+		assert(stored, "the test chain's policy was seeded at boot");
+		// a hand edit: a number where a decimal string belongs
+		await ctx.db
+			.update(chainRelayPolicy)
+			.set({ policy: { maxCallGas: 5 } })
+			.where(eq(chainRelayPolicy.chainId, 31337));
+		try {
+			const sendsBefore = ctx.bundlerCalls.filter(
+				(c) => c.method === "eth_sendUserOperation",
+			).length;
+			const res = await ctx.app.inject({
+				method: "POST",
+				url: "/v1/userops",
+				headers: { authorization: `Bearer ${sessionToken}` },
+				payload: { userOperation: makeOp(42) },
+			});
+			expect(res.statusCode).toBe(403);
+			const body = res.json() as {
+				message: string;
+				policy: { rule: string; passed: boolean }[];
+			};
+			// the caller is told the chain is refused, not how the deployment is configured
+			expect(body.message).toMatch(/^chain-policy: this chain's relay policy/);
+			expect(body.message).not.toMatch(/maxCallGas|GIANO_CHAINS|USEROP_/);
+			expect(body.policy[0]).toMatchObject({
+				rule: "chain-policy",
+				passed: false,
+			});
+			// the audit row keeps the full problem for the operator
+			const audited = await ctx.db
+				.select({ rejectReason: useropLog.rejectReason })
+				.from(useropLog)
+				.where(like(useropLog.rejectReason, "chain-policy:%"));
+			expect(audited.at(-1)?.rejectReason).toMatch(
+				/^chain-policy: chain 31337's stored relay policy is invalid.*maxCallGas/,
+			);
+			expect(
+				ctx.bundlerCalls.filter((c) => c.method === "eth_sendUserOperation")
+					.length,
+			).toBe(sendsBefore);
+		} finally {
+			await ctx.db
+				.update(chainRelayPolicy)
+				.set({ policy: stored.policy })
+				.where(eq(chainRelayPolicy.chainId, 31337));
+		}
+	});
+
 	it("fails closed when the tenant's stored policy cannot be parsed (G6 R4)", async () => {
 		const [stored] = await ctx.db
 			.select({ policy: tenants.policy })
@@ -1021,8 +1108,15 @@ describe("userop relay", () => {
 				message: string;
 				policy: { rule: string; passed: boolean }[];
 			};
-			expect(body.message).toMatch(/^tenant-policy: /);
+			expect(body.message).toMatch(
+				/^tenant-policy: this application's relay policy/,
+			);
+			expect(body.message).not.toMatch(/maxCallGas|perChain/);
 			expect(body.policy[0]).toMatchObject({
+				rule: "chain-policy",
+				passed: true,
+			});
+			expect(body.policy[1]).toMatchObject({
 				rule: "tenant-policy",
 				passed: false,
 			});

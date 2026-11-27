@@ -12,7 +12,12 @@ import {
 } from "@appliedblockchain/giano-contracts";
 import { z } from "zod";
 import { ENVIRONMENT_NAMES, resolveEnvironment } from "./environments.js";
-import { KNOWN_CHAIN_FEE_CAPS } from "./services/chain-fee-caps.js";
+import {
+	CHAIN_CAP_FIELDS,
+	CHAIN_LIST_FIELDS,
+	CHAIN_POLICY_ENV,
+	type ChainPolicyOverrides,
+} from "./services/chain-policy.js";
 
 const addressSchema = z
 	.string()
@@ -101,28 +106,13 @@ export type ResolvedChain = {
 	 */
 	chainType?: ChainType | "auto";
 	/**
-	 * Per-chain policy defaults. Address-valued fields live HERE and only here — the same
-	 * address denotes different contracts on different chains, so a chain-agnostic address
-	 * allowlist is not expressible (MC-61).
+	 * What the deployment's configuration sets for this chain's relay policy: the descriptor's
+	 * `walletApi.policy`, else a `USEROP_*` env var, field by field, each with its source. Every field
+	 * it sets overrides the chain's stored policy (services/chain-policy.ts, design D2). Address-valued
+	 * fields exist per chain only — the same address denotes different contracts on different chains
+	 * (MC-61).
 	 */
-	policy: {
-		maxCallGas?: bigint;
-		maxVerificationGas?: bigint;
-		maxPreVerificationGas?: bigint;
-		maxPaymasterVerificationGas?: bigint;
-		maxPaymasterPostOpGas?: bigint;
-		/**
-		 * The descriptor's cap, else `USEROP_MAX_FEE_PER_GAS`, else the chain's known default
-		 * (chain-fee-caps.ts). Unset only for a chain none of them covers; the relay then uses the
-		 * fallback, which a production deployment refuses to boot with.
-		 */
-		maxFeePerGas?: bigint;
-		maxPriorityFeePerGas?: bigint;
-		/** lowercase; empty = no restriction (`"any"`, or no recorded choice outside production) */
-		allowedTargets: string[];
-		/** lowercase; empty = no restriction */
-		allowedPaymasters: string[];
-	};
+	policy: ChainPolicyOverrides;
 };
 
 /**
@@ -140,8 +130,9 @@ function unresolvedConfig(message: string): never {
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
  * rows, written by Giano's platform admins at runtime — see
- * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
- * jsonb may override per field.
+ * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values, when set, override
+ * every chain's stored relay policy field by field (services/chain-policy.ts); unset, the stored
+ * policy applies. A tenant's policy jsonb applies on top of the result.
  */
 const envSchema = z
 	.object({
@@ -339,36 +330,21 @@ const envSchema = z
 			.default(3),
 
 		/**
-		 * UserOp policy caps — deployment defaults, overridable per chain descriptor and per tenant
-		 * via policy jsonb. What each one protects: README, "Relay policy".
+		 * UserOp policy overrides. Each chain's relay policy lives in the database and is edited in the
+		 * console (services/chain-policy.ts); a variable set here overrides that field on every chain
+		 * whose GIANO_CHAINS descriptor does not set it. No defaults: an unset variable overrides
+		 * nothing. What each cap protects: README, "Relay policy".
 		 */
-		USEROP_MAX_CALL_GAS: z.coerce.bigint().positive().default(5_000_000n),
-		USEROP_MAX_VERIFICATION_GAS: z.coerce
-			.bigint()
-			.positive()
-			.default(5_000_000n),
-		/** Generous: on OP Stack chains it carries the L1 data fee in L2 gas. */
-		USEROP_MAX_PRE_VERIFICATION_GAS: z.coerce
-			.bigint()
-			.positive()
-			.default(10_000_000n),
-		USEROP_MAX_PAYMASTER_VERIFICATION_GAS: z.coerce
-			.bigint()
-			.positive()
-			.default(1_000_000n),
-		USEROP_MAX_PAYMASTER_POST_OP_GAS: z.coerce
-			.bigint()
-			.positive()
-			.default(1_000_000n),
-		/**
-		 * Fee caps for every chain without its own descriptor cap. No default, so "unset" can be told
-		 * apart: unset, a chain falls back to its known default (src/services/chain-fee-caps.ts).
-		 */
+		USEROP_MAX_CALL_GAS: optionalPositiveBigint,
+		USEROP_MAX_VERIFICATION_GAS: optionalPositiveBigint,
+		USEROP_MAX_PRE_VERIFICATION_GAS: optionalPositiveBigint,
+		USEROP_MAX_PAYMASTER_VERIFICATION_GAS: optionalPositiveBigint,
+		USEROP_MAX_PAYMASTER_POST_OP_GAS: optionalPositiveBigint,
 		USEROP_MAX_FEE_PER_GAS: optionalPositiveBigint,
 		USEROP_MAX_PRIORITY_FEE_PER_GAS: optionalPositiveBigint,
-		/** `any`, or comma-separated addresses. Unset is no recorded choice: any target outside production. */
+		/** Single-chain shorthand only: `any`, or comma-separated addresses. Overrides the stored allowlist. */
 		USEROP_ALLOWED_TARGETS: envAllowlist,
-		/** `any`, or comma-separated addresses. Unset is no recorded choice: any paymaster outside production. */
+		/** Single-chain shorthand only: `any`, or comma-separated addresses. Overrides the stored allowlist. */
 		USEROP_ALLOWED_PAYMASTERS: envAllowlist,
 
 		// ── Gas sponsorship ─────────────────────────────────────────────────────────────
@@ -733,70 +709,6 @@ const envSchema = z
 			}
 		}
 
-		// A production relay policy is decided, not defaulted (G6). Each served chain must state both
-		// allowlists — `"any"` is a valid statement — so that a tenant with no entry of its own for the
-		// chain inherits a recorded choice; and each must get its fee caps from somewhere that knows the
-		// chain, not from the chain-agnostic fallback, which never fires on an L2. Tenant rows are
-		// deliberately not checked here: they are runtime data, the service boots with none, and one bad
-		// row must not stop every tenant's relay (it fails closed on its own: the `tenant-policy` rule).
-		if (env.GIANO_DEPLOYMENT_CLASS === "production") {
-			const served: { chainId: number; policy: ChainPolicy | undefined }[] =
-				env.GIANO_CHAINS
-					? env.GIANO_CHAINS.map((d) => ({
-							chainId: d.chainId,
-							policy: d.walletApi.policy,
-						}))
-					: env.CHAIN_ID !== undefined
-						? [
-								{
-									chainId: env.CHAIN_ID,
-									policy: {
-										allowedTargets: env.USEROP_ALLOWED_TARGETS,
-										allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS,
-									},
-								},
-							]
-						: [];
-			const where = env.GIANO_CHAINS
-				? (field: string) => `walletApi.policy.${field} in GIANO_CHAINS`
-				: (field: string) =>
-						field === "allowedTargets"
-							? "USEROP_ALLOWED_TARGETS"
-							: "USEROP_ALLOWED_PAYMASTERS";
-			for (const { chainId, policy } of served) {
-				for (const field of ["allowedTargets", "allowedPaymasters"] as const) {
-					if (policy?.[field] === undefined) {
-						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
-							path: [env.GIANO_CHAINS ? "GIANO_CHAINS" : where(field)],
-							message: `chain ${chainId}: ${where(field)} must be stated when GIANO_DEPLOYMENT_CLASS=production — "any", or the addresses allowed`,
-						});
-					}
-				}
-				const known = KNOWN_CHAIN_FEE_CAPS[chainId];
-				for (const [field, envValue, envName] of [
-					[
-						"maxFeePerGas",
-						env.USEROP_MAX_FEE_PER_GAS,
-						"USEROP_MAX_FEE_PER_GAS",
-					],
-					[
-						"maxPriorityFeePerGas",
-						env.USEROP_MAX_PRIORITY_FEE_PER_GAS,
-						"USEROP_MAX_PRIORITY_FEE_PER_GAS",
-					],
-				] as const) {
-					if (!policy?.[field] && envValue === undefined && !known) {
-						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
-							path: [env.GIANO_CHAINS ? "GIANO_CHAINS" : envName],
-							message: `chain ${chainId}: no ${field} cap is known for this chain — set walletApi.policy.${field} for it, or ${envName}, when GIANO_DEPLOYMENT_CLASS=production`,
-						});
-					}
-				}
-			}
-		}
-
 		if (
 			env.TENANT_DELETE_MAX_LEDGER_LAG_BLOCKS <=
 			env.PAYMASTER_WATCHER_CONFIRMATIONS
@@ -882,34 +794,34 @@ const envSchema = z
 		}
 	})
 	.transform((env) => {
-		const big = (value: string | undefined) =>
-			value ? BigInt(value) : undefined;
-		// `"any"`, an empty list and (outside production) no statement at all resolve to "no restriction".
-		const allowlist = (value: ChainPolicy["allowedTargets"]) =>
-			value === undefined || value === "any"
-				? []
-				: value.map((a) => a.toLowerCase());
+		// Field by field: the descriptor's `walletApi.policy`, else the env var when set. An empty list in a
+		// descriptor has always meant "any address" and still does (G6).
 		const resolvePolicy = (
-			chainId: number,
 			policy: ChainPolicy | undefined,
-		): ResolvedChain["policy"] => ({
-			maxCallGas: big(policy?.maxCallGas),
-			maxVerificationGas: big(policy?.maxVerificationGas),
-			maxPreVerificationGas: big(policy?.maxPreVerificationGas),
-			maxPaymasterVerificationGas: big(policy?.maxPaymasterVerificationGas),
-			maxPaymasterPostOpGas: big(policy?.maxPaymasterPostOpGas),
-			// descriptor > env when set > the chain's known default (chain-fee-caps.ts, design D2)
-			maxFeePerGas:
-				big(policy?.maxFeePerGas) ??
-				env.USEROP_MAX_FEE_PER_GAS ??
-				KNOWN_CHAIN_FEE_CAPS[chainId]?.maxFeePerGas,
-			maxPriorityFeePerGas:
-				big(policy?.maxPriorityFeePerGas) ??
-				env.USEROP_MAX_PRIORITY_FEE_PER_GAS ??
-				KNOWN_CHAIN_FEE_CAPS[chainId]?.maxPriorityFeePerGas,
-			allowedTargets: allowlist(policy?.allowedTargets),
-			allowedPaymasters: allowlist(policy?.allowedPaymasters),
-		});
+		): ChainPolicyOverrides => {
+			const overrides: ChainPolicyOverrides = {};
+			for (const field of CHAIN_CAP_FIELDS) {
+				const own = policy?.[field];
+				const envName = CHAIN_POLICY_ENV[field] as keyof typeof env;
+				const fromEnv = env[envName] as bigint | undefined;
+				if (own)
+					overrides[field] = { value: BigInt(own), source: "GIANO_CHAINS" };
+				else if (fromEnv !== undefined)
+					overrides[field] = { value: fromEnv, source: envName };
+			}
+			for (const field of CHAIN_LIST_FIELDS) {
+				const own = policy?.[field];
+				if (own === undefined) continue;
+				overrides[field] = {
+					value:
+						own === "any" || own.length === 0
+							? "any"
+							: own.map((a) => a.toLowerCase()),
+					source: env.GIANO_CHAINS ? "GIANO_CHAINS" : CHAIN_POLICY_ENV[field],
+				};
+			}
+			return overrides;
+		};
 
 		// The single-chain shorthand as one chain. The validation above guarantees every field it reads.
 		const singleChain = (): ResolvedChain => {
@@ -949,7 +861,7 @@ const envSchema = z
 					env.SPONSORSHIP_PAYMASTER_ADDRESS as `0x${string}` | undefined,
 					deployment,
 				),
-				policy: resolvePolicy(CHAIN_ID, {
+				policy: resolvePolicy({
 					allowedTargets: env.USEROP_ALLOWED_TARGETS,
 					allowedPaymasters: env.USEROP_ALLOWED_PAYMASTERS,
 				}),
@@ -992,7 +904,7 @@ const envSchema = z
 							registry,
 						),
 						chainType: bundlerChainType(descriptor.bundler),
-						policy: resolvePolicy(descriptor.chainId, walletApi.policy),
+						policy: resolvePolicy(walletApi.policy),
 					};
 				})
 			: [singleChain()];

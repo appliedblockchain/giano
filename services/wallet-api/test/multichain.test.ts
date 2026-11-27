@@ -70,9 +70,10 @@ describe("config: the chain list", () => {
 			factory: "0x2222222222222222222222222222222222222222",
 		});
 		// address-valued env defaults fold into the sole chain's policy (MC-61)
-		expect(config.CHAINS[0].policy.allowedPaymasters).toEqual([
-			"0x1000000000000000000000000000000000000001",
-		]);
+		expect(config.CHAINS[0].policy.allowedPaymasters).toEqual({
+			value: ["0x1000000000000000000000000000000000000001"],
+			source: "USEROP_ALLOWED_PAYMASTERS",
+		});
 		expect(config.CHAINS[0].name).not.toMatch(/^\d+$/); // never a bare number (MC-81)
 	});
 
@@ -652,7 +653,7 @@ const descriptor = {
 	entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as const,
 	factory: FACTORY,
 	implementation: IMPLEMENTATION,
-	policy: { allowedTargets: [], allowedPaymasters: [] },
+	policy: {},
 };
 
 /** The fake client's default code (`0xabcd`) stands in for every release contract's code. */

@@ -39,11 +39,24 @@ const CHAINS = [
 	{ chainId: 11155111, profile: "ethereum-sepolia" },
 ] as const;
 
-type Entry = Record<string, unknown> & {
+export type Entry = Record<string, unknown> & {
 	chainId?: number;
 	walletApi?: Record<string, unknown> & { policy?: Record<string, unknown> };
 	paymasterAdmin?: Record<string, unknown>;
 };
+
+/**
+ * The relay's paymaster allowlist lives in wallet-api's database (seeded with the chain's
+ * sponsorshipPaymaster, edited in the console), so the chain document no longer overrides it. An
+ * existing override is removed; any other policy field is kept.
+ */
+export function dropPaymasterOverride(entry: Entry): void {
+	const policy = entry.walletApi?.policy;
+	if (!entry.walletApi || !policy || !("allowedPaymasters" in policy)) return;
+	const { allowedPaymasters: _dropped, ...rest } = policy;
+	if (Object.keys(rest).length > 0) entry.walletApi.policy = rest;
+	else delete entry.walletApi.policy;
+}
 
 export function v3For(chainId: number, profileId: string) {
 	const record = JSON.parse(
@@ -109,8 +122,8 @@ export function pointAtV3(bundle: Record<string, unknown>): {
 			...(entry.walletApi?.implementation
 				? { implementation: v3.implementation }
 				: {}),
-			policy: { ...entry.walletApi?.policy, allowedPaymasters: [v3.proxy] },
 		};
+		dropPaymasterOverride(entry);
 		entry.paymasterAdmin = {
 			...entry.paymasterAdmin,
 			timelockAddress: v3.timelock,

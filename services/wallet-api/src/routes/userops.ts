@@ -8,7 +8,9 @@ import { requireSessionOf } from "../plugins/auth.js";
 import { requireChainOf } from "../plugins/chain.js";
 import { ApiError } from "../plugins/error-handler.js";
 import type { ChainRegistry } from "../services/chains.js";
+import type { PolicyRuleResult } from "../services/userop-policy.js";
 import {
+	forCaller,
 	rpcUserOpSchema,
 	SEND_OUTCOME_UNKNOWN,
 	type UseropRelay,
@@ -202,13 +204,19 @@ export default async function useropRoutes(
 					);
 				}
 			}
+			// The audit row keeps the full detail; the caller gets what forCaller lets through.
+			const results = (row.policyResults ?? []) as PolicyRuleResult[];
+			const shown =
+				row.status === "rejected" && results.some((r) => !r.passed)
+					? forCaller(results)
+					: { policy: results, reason: row.rejectReason };
 			return {
 				userOperationHash: row.useropHash,
 				chainId: row.chainId,
 				sender: row.sender,
 				status,
-				policyResults: row.policyResults as never,
-				rejectReason: row.rejectReason,
+				policyResults: shown.policy as never,
+				rejectReason: shown.reason,
 				createdAt: row.createdAt.toISOString(),
 			};
 		},

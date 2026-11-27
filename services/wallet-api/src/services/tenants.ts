@@ -595,6 +595,19 @@ export function createTenantService(db: Db) {
 }
 
 /**
+ * The tenant's relay rate limit override, shared across chains (MC-63); undefined when it sets none
+ * or its policy does not parse (that tenant's operations are refused by `tenant-policy` anyway).
+ */
+export function tenantRelayRateLimit(
+	tenantPolicy: unknown,
+): number | undefined {
+	const parsed = tenantPolicySchema.safeParse(
+		upgradeStoredPolicy(tenantPolicy ?? {}),
+	);
+	return parsed.success ? parsed.data.relayRateLimitPerMinute : undefined;
+}
+
+/**
  * Per-request policy for one (tenant, chain), per specs/MULTICHAIN_SPECS.md §9.5.
  *
  * `defaults` is already per chain (deployment env defaults + the chain descriptor's policy).

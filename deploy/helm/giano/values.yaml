@@ -20,8 +20,9 @@ config:
   #       name: Base
   #       rpcUrl: https://…
   #       walletApi:
-  #         # stated per chain: "any", or the addresses (required when production, G6)
-  #         policy: { allowedTargets: any, allowedPaymasters: ["0x…"] }
+  #         # optional overrides of the chain's relay policy, which lives in wallet-api's database
+  #         # and is edited in the console (Relay policy); a field set here wins over it
+  #         policy: { maxFeePerGas: "100000000000" }
   #       bundler:
   #         chainType: op-stack
   # With bundler.enabled, each chain submits to the in-chart bundler at /<chainId>; otherwise

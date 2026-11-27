@@ -1077,8 +1077,14 @@ Resolution for `(tenant, chain)`:
 
 | Field class | Resolution |
 |---|---|
-| Gas and fee caps, rate limit | `deployment default` ← `chain descriptor policy` ← `tenant base` ← `tenant perChain[chainId]`. Later wins; inheritance across chains is fine and wanted (MC-62) |
-| `allowedTargets`, `allowedPaymasters` | **`perChain[chainId]`, else that chain's descriptor policy.** No tenant base value and no inheritance from another chain. Absent an entry, the tenant inherits the chain's own allowlists, which a production deployment must state (G6) |
+| Gas and fee caps, rate limit | `the chain's policy` ← `tenant base` ← `tenant perChain[chainId]`. Later wins; inheritance across chains is fine and wanted (MC-62). The rate limit's default is `USEROP_RATE_LIMIT_PER_MINUTE` |
+| `allowedTargets`, `allowedPaymasters` | **`perChain[chainId]`, else the chain's policy.** No tenant base value and no inheritance from another chain |
+
+The chain's policy is itself per field: the chain descriptor's `walletApi.policy`, else the matching
+`USEROP_*` env var when set, else the chain's row in `chain_relay_policy`, which wallet-api seeds with
+safe defaults and platform admins edit in the console. A field none of them decides falls back
+outside production and refuses the chain's operations in production (openspec
+`chain-relay-policy-console`, wallet-api README "Relay policy").
 
 Address-valued fields do not appear at the tenant base level at all — the type above places them
 **only** under `perChain`, so a chain-agnostic address allowlist is not expressible (S6, MC-61). This

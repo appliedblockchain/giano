@@ -102,9 +102,19 @@ export const chainPolicySchema: z.ZodObject<ChainPolicyShape, z.core.$strict> =
 		.object({
 			maxCallGas: z.string().regex(/^\d+$/).optional(),
 			maxVerificationGas: z.string().regex(/^\d+$/).optional(),
-			maxPreVerificationGas: z.string().regex(/^\d+$/).optional(),
-			maxPaymasterVerificationGas: z.string().regex(/^\d+$/).optional(),
-			maxPaymasterPostOpGas: z.string().regex(/^\d+$/).optional(),
+			// The caps added with G6 must be positive: a cap of 0 refuses every operation that uses it.
+			maxPreVerificationGas: z
+				.string()
+				.regex(/^[1-9]\d*$/)
+				.optional(),
+			maxPaymasterVerificationGas: z
+				.string()
+				.regex(/^[1-9]\d*$/)
+				.optional(),
+			maxPaymasterPostOpGas: z
+				.string()
+				.regex(/^[1-9]\d*$/)
+				.optional(),
 			maxFeePerGas: z.string().regex(/^\d+$/).optional(),
 			maxPriorityFeePerGas: z.string().regex(/^\d+$/).optional(),
 			allowedTargets: chainAllowlistSchema.optional(),

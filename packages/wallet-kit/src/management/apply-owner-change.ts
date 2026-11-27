@@ -166,8 +166,11 @@ export async function applyOwnerChange(
 				data,
 			});
 			if (preflight.state === "refused") {
-				refusal ??= preflight;
 				const chainScoped = isChainScopedRefusal(preflight);
+				// The reported refusal is the one the app's team can act on: a tenant-wide refusal
+				// replaces an earlier chain-scoped one, never the other way round.
+				if (!refusal || (!chainScoped && isChainScopedRefusal(refusal)))
+					refusal = preflight;
 				if (!chainScoped) stopped = true;
 				update(chainId, { state: "refused", detail: preflight.message });
 				log(`${label}: sponsorship refused`, {

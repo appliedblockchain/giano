@@ -86,8 +86,9 @@ name: giano-infrastructure
 # The backend chain document (packages/contracts/chains.ts) — wallet-api and the bundler read the
 # same one, as the AWS stack's `chains` secret serves both. Identical canonical contracts on both
 # chains, VERIFIED at boot against the chain, not assumed, so a stale state.json fails loudly here
-# rather than mysteriously later. `allowedPaymasters` is per chain by design: only ops sponsored by
-# our own paymaster reach the bundler through the relay.
+# rather than mysteriously later. The relay policy, including `allowedPaymasters` (only ops sponsored
+# by our own paymaster reach the bundler), is stored in wallet-api's database, seeded at boot and
+# edited in the console; a `walletApi.policy` field here would override it and lock it there.
 x-giano-chains: &giano-chains |
   [
     {
@@ -95,8 +96,7 @@ x-giano-chains: &giano-chains |
       "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
-        "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
-        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+        "factory": "0x9c01925D07527A7920031196396A9c37421715A2"
       }
     },
     {
@@ -104,8 +104,7 @@ x-giano-chains: &giano-chains |
       "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
-        "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
-        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+        "factory": "0x9c01925D07527A7920031196396A9c37421715A2"
       }
     },
     {
@@ -113,8 +112,7 @@ x-giano-chains: &giano-chains |
       "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
-        "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
-        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+        "factory": "0x9c01925D07527A7920031196396A9c37421715A2"
       },
       "bundler": { "stateOverride": false }
     }

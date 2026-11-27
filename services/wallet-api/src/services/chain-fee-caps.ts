@@ -4,8 +4,9 @@
  * One chain-agnostic cap cannot be right on both Ethereum and Base: their fees differ by three
  * orders of magnitude, so the old 500 gwei default never fired on an L2. Each value here is far
  * above that chain's normal fees, so it fires on a client bug or an attack rather than on
- * congestion. A chain descriptor's own `walletApi.policy` caps, or the `USEROP_MAX_*_FEE_PER_GAS`
- * env vars when set, take precedence; a tenant's overrides apply on top.
+ * congestion. They seed a chain's stored relay policy (chain-policy.ts) the first time wallet-api
+ * serves it; from then on the stored value applies, unless a descriptor's `walletApi.policy` cap or a
+ * `USEROP_MAX_*_FEE_PER_GAS` env var overrides it. A tenant's overrides apply on top.
  *
  * Local devnets and Silent Data are left out on purpose: whoever runs them sets their fees.
  */
@@ -29,8 +30,9 @@ export const KNOWN_CHAIN_FEE_CAPS: Readonly<Record<number, FeeCaps>> = {
 };
 
 /**
- * The caps for a chain nothing else gives one to: the pre-G6 default. A production deployment
- * refuses to boot rather than use it (config.ts).
+ * The caps for a chain nothing else gives one to: the pre-G6 default. Only a deployment outside
+ * production falls back to it. A production deployment still boots, but refuses every operation
+ * on that chain under the `chain-policy` rule until the cap is set (chain-policy.ts).
  */
 export const FALLBACK_FEE_CAPS: FeeCaps = {
 	maxFeePerGas: 500n * GWEI,

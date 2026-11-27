@@ -98,37 +98,44 @@ export function createPaymasterReader(
 	const contract = { address, abi: gianoPaymasterAbi } as const;
 
 	let paramsCache: Cached<PaymasterOnChainParams> | undefined;
+	// A cold cache read by several decisions at once is fetched once.
+	let paramsInFlight: Promise<PaymasterOnChainParams> | undefined;
 	const feeCache = new Map<string, Cached<bigint>>();
 
 	const fresh = <T>(cached: Cached<T> | undefined): T | undefined =>
 		cached && Date.now() - cached.at < ttl ? cached.value : undefined;
 
+	const readParams = async (): Promise<PaymasterOnChainParams> => {
+		const [postOpGasAllowance, penaltyBps, defaultFeeWei] = await Promise.all([
+			client.readContract({
+				...contract,
+				functionName: "postOpGasAllowance",
+			}),
+			client.readContract({ ...contract, functionName: "penaltyBps" }),
+			client.readContract({ ...contract, functionName: "defaultFeeWei" }),
+		]);
+		const value: PaymasterOnChainParams = {
+			postOpGasAllowance: BigInt(postOpGasAllowance),
+			penaltyBps: BigInt(penaltyBps),
+			defaultFeeWei: BigInt(defaultFeeWei),
+		};
+		paramsCache = { value, at: Date.now() };
+		return value;
+	};
+
+	const params = async (): Promise<PaymasterOnChainParams> => {
+		const cached = fresh(paramsCache);
+		if (cached) return cached;
+		paramsInFlight ??= readParams().finally(() => {
+			paramsInFlight = undefined;
+		});
+		return paramsInFlight;
+	};
+
 	return {
 		address,
 
-		async params() {
-			const cached = fresh(paramsCache);
-			if (cached) return cached;
-
-			const [postOpGasAllowance, penaltyBps, defaultFeeWei] = await Promise.all(
-				[
-					client.readContract({
-						...contract,
-						functionName: "postOpGasAllowance",
-					}),
-					client.readContract({ ...contract, functionName: "penaltyBps" }),
-					client.readContract({ ...contract, functionName: "defaultFeeWei" }),
-				],
-			);
-
-			const value: PaymasterOnChainParams = {
-				postOpGasAllowance: BigInt(postOpGasAllowance),
-				penaltyBps: BigInt(penaltyBps),
-				defaultFeeWei: BigInt(defaultFeeWei),
-			};
-			paramsCache = { value, at: Date.now() };
-			return value;
-		},
+		params,
 
 		async feeFor(tenantId) {
 			const cached = fresh(feeCache.get(tenantId));
@@ -143,33 +150,32 @@ export function createPaymasterReader(
 		},
 
 		async tenant(tenantId) {
-			const [state, fee] = await Promise.all([
-				client.readContract({
-					...contract,
-					functionName: "getTenant",
-					args: [tenantId],
-				}) as Promise<{
-					registered: boolean;
-					enabled: boolean;
-					hasFeeOverride: boolean;
-					withdrawAddress: Address;
-					balance: bigint;
-					deficit: bigint;
-					feeWeiOverride: bigint;
-				}>,
-				client.readContract({
-					...contract,
-					functionName: "feeFor",
-					args: [tenantId],
-				}) as Promise<bigint>,
-			]);
+			// One live read per decision. The fee follows GianoPaymaster.feeFor's own rule: the
+			// record's override, else the (cached) default, so no second uncached call is needed.
+			const state = (await client.readContract({
+				...contract,
+				functionName: "getTenant",
+				args: [tenantId],
+			})) as {
+				registered: boolean;
+				enabled: boolean;
+				hasFeeOverride: boolean;
+				withdrawAddress: Address;
+				balance: bigint;
+				deficit: bigint;
+				feeWeiOverride: bigint;
+			};
+			const fee = state.hasFeeOverride
+				? BigInt(state.feeWeiOverride)
+				: (await params()).defaultFeeWei;
+			feeCache.set(tenantId, { value: fee, at: Date.now() });
 			return {
 				registered: state.registered,
 				enabled: state.enabled,
 				withdrawAddress: state.withdrawAddress,
 				balanceWei: BigInt(state.balance),
 				deficitWei: BigInt(state.deficit),
-				feeWei: BigInt(fee),
+				feeWei: fee,
 			};
 		},
 

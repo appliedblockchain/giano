@@ -1621,6 +1621,54 @@ describe("request routing & events", () => {
 		expect(handler).not.toHaveBeenCalled();
 	});
 
+	it("reads fees from the chain when no estimateFeesPerGas is given", async () => {
+		const methods: string[] = [];
+		const { provider } = buildProvider(mock.authenticator, {
+			transportOptions: {
+				onRequest: (method: string) => void methods.push(method),
+			},
+		});
+		await connect(provider);
+		await provider.request({
+			method: "eth_prepareUserOperation",
+			params: [
+				[
+					{
+						to: "0x1111111111111111111111111111111111111111",
+						value: 0n,
+						data: "0x",
+					},
+				],
+			] as never,
+		});
+		// the mock chain has no base fee, so the legacy gas price is read
+		expect(methods).toContain("eth_gasPrice");
+	});
+
+	it("does not estimate fees for a request that carries both", async () => {
+		const estimateFeesPerGas = vi.fn(async () => {
+			throw new Error("fee estimate unavailable");
+		});
+		const { provider } = buildProvider(mock.authenticator, {
+			overrides: { estimateFeesPerGas },
+		});
+		await connect(provider);
+		await provider.request({
+			method: "eth_prepareUserOperation",
+			params: [
+				[
+					{
+						to: "0x1111111111111111111111111111111111111111",
+						value: 0n,
+						data: "0x",
+					},
+				],
+				{ maxFeePerGas: parseGwei("3"), maxPriorityFeePerGas: 0n },
+			] as never,
+		});
+		expect(estimateFeesPerGas).not.toHaveBeenCalled();
+	});
+
 	it("uses a custom estimateFeesPerGas fallback", async () => {
 		const estimateFeesPerGas = vi.fn(async () => ({
 			maxFeePerGas: parseGwei("5"),

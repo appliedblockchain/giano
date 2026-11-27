@@ -18,8 +18,10 @@ name: giano-e2e
 
 # The backend chain document (packages/contracts/chains.ts), read by wallet-api and the bundler
 # alike, so the two cannot disagree about a chain's RPC or EntryPoint. Identical canonical
-# contracts on every chain — verified at boot, not assumed (MC-48). allowedPaymasters is per chain
-# by design (MC-61): only ops sponsored by our own paymaster reach the bundler through the relay.
+# contracts on every chain — verified at boot, not assumed (MC-48). The relay policy, including
+# allowedPaymasters (only ops sponsored by our own paymaster reach the bundler, MC-61), is stored in
+# wallet-api's database, seeded at boot and edited in the console; a `walletApi.policy` field here
+# would override it and lock it in the console.
 x-giano-chains: &giano-chains |
   [
     {
@@ -28,8 +30,7 @@ x-giano-chains: &giano-chains |
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
-        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6",
-        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6"
       }
     },
     {
@@ -38,8 +39,7 @@ x-giano-chains: &giano-chains |
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
-        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6",
-        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6"
       }
     },
     {
@@ -48,8 +48,7 @@ x-giano-chains: &giano-chains |
       "sponsorshipPaymaster": "0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96",
       "walletApi": {
         "factory": "0x9c01925D07527A7920031196396A9c37421715A2",
-        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6",
-        "policy": { "allowedPaymasters": ["0x4Bf0c2F63C4fA20D88B8126298fFFC64710Ece96"] }
+        "implementation": "0x44EF48A4BEaD5571B3B13b81400EA7930e5810D6"
       },
       "bundler": { "stateOverride": false }
     }

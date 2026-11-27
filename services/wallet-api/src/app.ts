@@ -26,6 +26,7 @@ import healthRoutes from "./routes/health.js";
 import paymasterRoutes from "./routes/paymaster.js";
 import platformAdminRoutes from "./routes/platform-admins.js";
 import platformAuthRoutes from "./routes/platform-auth.js";
+import platformChainPolicyRoutes from "./routes/platform-chain-policies.js";
 import platformChainRoutes from "./routes/platform-chains.js";
 import platformDriftRoutes from "./routes/platform-drift.js";
 import platformRpcRoutes from "./routes/platform-rpc.js";
@@ -37,7 +38,7 @@ import useropRoutes from "./routes/userops.js";
 import walletManagementRoutes from "./routes/wallet-management.js";
 import webauthnRoutes from "./routes/webauthn.js";
 import wellKnownRoutes from "./routes/well-known.js";
-import { FALLBACK_FEE_CAPS } from "./services/chain-fee-caps.js";
+import { createChainPolicyService } from "./services/chain-policy.js";
 import { buildChainRegistry, type ChainRegistry } from "./services/chains.js";
 import { createChallengeService } from "./services/challenges.js";
 import { createDriftStore, type DriftStore } from "./services/drift.js";
@@ -60,6 +61,11 @@ export type BuildAppOptions = {
 	db: Db;
 	/** Overridable in tests. */
 	fetchImpl?: typeof fetch;
+	/**
+	 * Seed each served chain's relay policy before the relay starts (default true). Only the OpenAPI
+	 * generator turns it off: it builds the app without a database and serves no request.
+	 */
+	seedChainPolicies?: boolean;
 	/**
 	 * Supplies the HSM-backed signer. Required when `SPONSORSHIP_SIGNER_KIND=hsm`, which `loadConfig`
 	 * forces for a production deployment — the deployment chooses its own key service (production
@@ -84,6 +90,7 @@ export async function buildApp({
 	fetchImpl,
 	hsmSignerAdapter,
 	paymasterReader,
+	seedChainPolicies = true,
 }: BuildAppOptions) {
 	const app = Fastify({
 		// request.ip is the client, not the ALB or nginx in front of it, only when this names
@@ -297,22 +304,24 @@ export async function buildApp({
 		challenges,
 		registry,
 	});
+	// Each chain's relay policy lives in the database (openspec chain-relay-policy-console). A chain
+	// without one is seeded with safe defaults before the relay can take an operation; a database
+	// error here stops the boot, because a relay must not run without its policy. Every chain's
+	// remaining problems are logged at error level.
+	const chainPolicies = createChainPolicyService({
+		db,
+		chains: config.CHAINS,
+		production: config.GIANO_DEPLOYMENT_CLASS === "production",
+	});
+	if (seedChainPolicies) await chainPolicies.seed(app.log);
+
 	// One relay pipeline behind two doors: the REST endpoint and the JSON-RPC bundler facade
-	// share policy, audit log, idempotency and the per-tenant submission window.
+	// share policy, audit log, idempotency and the per-tenant submission window. The chain's
+	// policy is read for each operation, and the tenant's policy applies on top (mergePolicy).
 	const relay = createUseropRelay({
 		db,
 		config,
-		// deployment-wide default caps; the chain descriptor's policy and tenants.policy
-		// override per field, per chain (mergePolicy). The fee caps were already resolved per chain
-		// (config.ts), so these apply only to a chain nothing gave one to.
-		defaultPolicy: {
-			maxCallGas: config.USEROP_MAX_CALL_GAS,
-			maxVerificationGas: config.USEROP_MAX_VERIFICATION_GAS,
-			maxPreVerificationGas: config.USEROP_MAX_PRE_VERIFICATION_GAS,
-			maxPaymasterVerificationGas: config.USEROP_MAX_PAYMASTER_VERIFICATION_GAS,
-			maxPaymasterPostOpGas: config.USEROP_MAX_PAYMASTER_POST_OP_GAS,
-			...FALLBACK_FEE_CAPS,
-		},
+		chainPolicies,
 		metrics: app.metrics,
 	});
 	await app.register(useropRoutes, {
@@ -338,6 +347,7 @@ export async function buildApp({
 		await app.register(platformRpcRoutes, { config });
 		await app.register(platformDriftRoutes, { db, config, registry, drift });
 		await app.register(platformUsageRoutes, { db, config, registry });
+		await app.register(platformChainPolicyRoutes, { config, chainPolicies });
 		await app.register(platformChainRoutes, {
 			db,
 			config,
