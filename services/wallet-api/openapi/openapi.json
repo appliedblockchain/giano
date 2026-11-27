@@ -9891,7 +9891,7 @@
     },
     "/v1/platform/drift": {
       "get": {
-        "summary": "Where the registry and ledger disagree with each sponsoring chain's paymaster: unknown tenants, enabled state, ledger balance and withdrawal address",
+        "summary": "Where the registry and ledger disagree with each sponsoring chain's paymaster: unknown tenants, enabled state, ledger balance and withdrawal address; and which tenants wait for their registration",
         "tags": [
           "platform"
         ],
@@ -9943,13 +9943,33 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "unregistered": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "tenantId": {
+                                      "type": "string"
+                                    },
+                                    "slug": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "tenantId",
+                                    "slug"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
                               "chainId",
                               "checkedAt",
                               "entries",
-                              "unchecked"
+                              "unchecked",
+                              "unregistered"
                             ],
                             "additionalProperties": false
                           },

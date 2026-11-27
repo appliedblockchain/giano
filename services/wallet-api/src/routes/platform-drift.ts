@@ -41,6 +41,7 @@ export default async function platformDriftRoutes(
 		checkedAt: drift.checkedAt.toISOString(),
 		entries: drift.entries,
 		unchecked: drift.unchecked,
+		unregistered: drift.unregistered,
 	});
 	const maxAgeMs = 2 * opts.config.PAYMASTER_RECONCILE_INTERVAL_MS;
 
@@ -59,7 +60,7 @@ export default async function platformDriftRoutes(
 				tags: ["platform"],
 				security: [{ platformSession: [] }],
 				summary:
-					"Where the registry and ledger disagree with each sponsoring chain's paymaster: unknown tenants, enabled state, ledger balance and withdrawal address",
+					"Where the registry and ledger disagree with each sponsoring chain's paymaster: unknown tenants, enabled state, ledger balance and withdrawal address; and which tenants wait for their registration",
 				response: {
 					200: z.object({
 						chains: z.array(
@@ -72,6 +73,10 @@ export default async function platformDriftRoutes(
 									),
 									/** Tenants not compared: the chain could not be read at the ledger's block, or the row is not yet synced. */
 									unchecked: z.array(z.string()),
+									/** Active tenants with sponsorship on for this chain, not registered on its paymaster: not yet sponsorable, and not drift. */
+									unregistered: z.array(
+										z.object({ tenantId: z.string(), slug: z.string() }),
+									),
 								}),
 								z.object({
 									chainId: z.number().int(),

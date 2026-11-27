@@ -426,7 +426,6 @@ export function createFakePaymasterReader(state: FakePaymasterState) {
 			guard();
 			return {
 				...tenantState(tenantId),
-				enabled: true,
 				feeWei: state.feeOverrides.get(tenantId) ?? state.defaultFeeWei,
 			};
 		},

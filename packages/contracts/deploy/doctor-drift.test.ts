@@ -70,3 +70,14 @@ test("an old result warns, and a chain wallet-api could not compute fails", () =
 		["fail read the drift"],
 	);
 });
+
+test("a tenant waiting for its registration warns, and is not drift", () => {
+	const lines = driftLines(
+		chain({ unregistered: [{ tenantId: "t1", slug: "acme" }] }),
+		now,
+	);
+	assert.deepEqual(levels(lines), ["warn not yet sponsorable", "ok no drift"]);
+	assert.match(lines[0].detail, /acme/);
+	// a wallet-api older than the field
+	assert.deepEqual(levels(driftLines(chain(), now)), ["ok no drift"]);
+});

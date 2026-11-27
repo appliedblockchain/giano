@@ -10,7 +10,12 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { paymasterState, paymasterTenants, tenants } from "../src/db/schema.js";
+import {
+	paymasterState,
+	paymasterTenants,
+	tenantSponsorship,
+	tenants,
+} from "../src/db/schema.js";
 import {
 	type ChainDrift,
 	computeDrift,
@@ -233,6 +238,7 @@ describe("the drift store", () => {
 		checkedAt: new Date(Date.now() - ageMs),
 		entries: [],
 		unchecked: [],
+		unregistered: [],
 	});
 
 	it("serves a watcher result only while fresh, and forgets it when told", async () => {
@@ -289,7 +295,12 @@ describe("the watcher's passes", () => {
 		const reported = vi.fn();
 		const watcher = createPaymasterWatcher({
 			db: {
-				select: () => ({ from: () => ({ where: async () => [] }) }),
+				select: () => ({
+					from: () => ({
+						where: async () => [],
+						innerJoin: () => ({ where: () => ({ orderBy: async () => [] }) }),
+					}),
+				}),
 			} as never,
 			pool: undefined as never,
 			client: {} as never,
@@ -411,6 +422,7 @@ describe("GET /v1/platform/drift", () => {
 			chainId: 31337,
 			entries: [],
 			unchecked: [],
+			unregistered: [],
 		});
 		expect(Date.parse(chains[0].checkedAt)).toBeGreaterThan(
 			Date.now() - 60_000,
@@ -448,6 +460,77 @@ describe("GET /v1/platform/drift", () => {
 				.update(tenants)
 				.set({ status: "active" })
 				.where(eq(tenants.id, idB));
+		}
+	});
+
+	it("lists an active tenant with sponsorship on and no registration as unregistered, not as drift", async () => {
+		const store = (config: Record<string, unknown>) =>
+			ctx.db
+				.insert(tenantSponsorship)
+				.values({ tenantId: idA, chainId: 31337, config })
+				.onConflictDoUpdate({
+					target: [tenantSponsorship.tenantId, tenantSponsorship.chainId],
+					set: { config },
+				});
+		// A configuration the sponsorship service would act on: enabled, capped, allow-listed.
+		const sponsorship = (enabled: boolean) =>
+			store({
+				enabled,
+				maxCostPerTxWei: "1000000000000000",
+				allowlist: [
+					{ contract: OTHER.toLowerCase(), functions: ["0xa9059cbb"] },
+				],
+			});
+		const unregistered = async () => {
+			ctx.app.drift.clear(31337);
+			const token = await platformSignIn(ctx.app, ADMIN);
+			return (await get(token)).json().chains[0];
+		};
+		ctx.paymasterState.registered.delete(bytes16(idA));
+		try {
+			// no sponsorship configured for the chain: nothing to wait for
+			expect((await unregistered()).unregistered).toEqual([]);
+
+			await sponsorship(true);
+			const chain = await unregistered();
+			expect(chain.unregistered).toEqual([
+				{ tenantId: idA, slug: TENANT_A.slug },
+			]);
+			expect(chain.entries).toEqual([]);
+
+			// suspended: not waiting for anything
+			await ctx.db
+				.update(tenants)
+				.set({ status: "suspended" })
+				.where(eq(tenants.id, idA));
+			expect((await unregistered()).unregistered).toEqual([]);
+			await ctx.db
+				.update(tenants)
+				.set({ status: "active" })
+				.where(eq(tenants.id, idA));
+
+			// switched off
+			await sponsorship(false);
+			expect((await unregistered()).unregistered).toEqual([]);
+
+			// `enabled: true` but not a rule set the service accepts (no cap, no allowlist): it is read
+			// as deny-all, so it sponsors nothing and waits for nothing
+			await store({ enabled: true });
+			expect((await unregistered()).unregistered).toEqual([]);
+
+			// registered: no longer waiting
+			await sponsorship(true);
+			ctx.paymasterState.registered.add(bytes16(idA));
+			expect((await unregistered()).unregistered).toEqual([]);
+		} finally {
+			ctx.paymasterState.registered.add(bytes16(idA));
+			await ctx.db
+				.update(tenants)
+				.set({ status: "active" })
+				.where(eq(tenants.id, idA));
+			await ctx.db
+				.delete(tenantSponsorship)
+				.where(eq(tenantSponsorship.tenantId, idA));
 		}
 	});
 

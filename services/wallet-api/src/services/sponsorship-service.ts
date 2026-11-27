@@ -243,15 +243,20 @@ export function createSponsorshipService(
 			// Anything read from the chain can fail, and a chain read failing is an outage — never a
 			// rule refusal. Conflating the two would have the wallet tell a user their app does not
 			// support this contract when in fact the RPC is down.
+			// The tenant's record carries its fee, and whether the paymaster will sponsor it at all
+			// (openspec tenant-chain-readiness D1): read live, because a disable must hold on the next
+			// decision, not after the watcher catches up.
 			let onChain: { postOpGasAllowance: bigint; penaltyBps: bigint };
 			let feeWei: bigint;
+			let tenantOnChain: { registered: boolean; enabled: boolean };
 			try {
-				const [params, fee] = await Promise.all([
+				const [params, record] = await Promise.all([
 					paymaster.params(),
-					paymaster.feeFor(tenantId),
+					paymaster.tenant(tenantId),
 				]);
 				onChain = params;
-				feeWei = fee;
+				feeWei = record.feeWei;
+				tenantOnChain = record;
 			} catch (error) {
 				options.log?.error(
 					{ err: error, tenantId: session.tenantId, chainId },
@@ -274,6 +279,33 @@ export function createSponsorshipService(
 			}
 
 			const { config, unparseable } = await getConfig(session.tenantId);
+
+			// A tenant that has switched sponsorship on, and that the paymaster would refuse, is told so
+			// here (D2, D3). Signing would only buy an on-chain revert (UnknownTenant or TenantDisabled)
+			// and hold a reservation until it expired; and an unregistered tenant would otherwise read as
+			// out of credit. A tenant whose own switch is off keeps that reason: it is the first to fix.
+			if (
+				!unparseable &&
+				config.enabled &&
+				!(tenantOnChain.registered && tenantOnChain.enabled)
+			) {
+				const detail = tenantOnChain.registered
+					? "disabled on the paymaster"
+					: "not registered on the paymaster";
+				return refuse({
+					session,
+					method,
+					sender: candidate.sender,
+					reason: "sponsorship-disabled",
+					message: `sponsorship is unavailable: this tenant is ${detail}`,
+					ruleResults: [
+						{ rule: "sponsorship-enabled", passed: true },
+						{ rule: "paymaster-tenant", passed: false, detail },
+					],
+					feeWei,
+				});
+			}
+
 			const balance = await ledger.getBalanceView(session.tenantId, chainId);
 
 			const decision = evaluateSponsorship({

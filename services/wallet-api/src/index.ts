@@ -276,11 +276,17 @@ if (config.SPONSORSHIP_ENABLED && config.PAYMASTER_WATCHER_ENABLED) {
 					{ chain: chainLabel },
 					drift.entries.filter((entry) => !isOwnDrift(entry)).length,
 				);
+				// Not drift: a tenant waiting for registerTenant (openspec tenant-chain-readiness).
+				app.metrics.paymasterUnregisteredTenants.set(
+					{ chain: chainLabel },
+					drift.unregistered.length,
+				);
 			},
 			onDriftLost: () => {
 				app.drift.clear(chain.chainId);
 				app.metrics.paymasterDriftedTenants.remove({ chain: chainLabel });
 				app.metrics.paymasterUnknownTenants.remove({ chain: chainLabel });
+				app.metrics.paymasterUnregisteredTenants.remove({ chain: chainLabel });
 			},
 			logger: app.log.child({ chainId: chain.chainId }),
 		});

@@ -36,5 +36,5 @@
 
 ## 7. Follow-ups (not in this change)
 
-- [ ] 7.1 A Datadog monitor on fee-cap rejections, once wallet-api's Prometheus metrics reach Datadog.
-- [ ] 7.2 A per-chain `preVerificationGas` default, after measuring real values on each chain.
+- [x] 7.1 A Datadog monitor on fee-cap rejections, once wallet-api's Prometheus metrics reach Datadog. Moved to G50.
+- [x] 7.2 A per-chain `preVerificationGas` default, after measuring real values on each chain. Moved to G51.

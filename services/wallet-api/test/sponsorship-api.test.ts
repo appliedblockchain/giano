@@ -8,6 +8,7 @@ import type { Address, Hex } from "viem";
 import { encodeFunctionData } from "viem";
 import {
 	afterAll,
+	afterEach,
 	beforeAll,
 	beforeEach,
 	describe,
@@ -609,6 +610,114 @@ describe("deny by default", () => {
 			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER)),
 		);
 		expect(body.error?.data?.reason).toBe("sponsorship-disabled");
+	});
+});
+
+// ── the tenant's paymaster record (openspec tenant-chain-readiness) ───────────
+
+describe("the tenant's paymaster record", () => {
+	const bytes16 = () => `0x${tenantAId.replace(/-/g, "")}`;
+
+	// Later tests must find tenant A on the fake chain as the earlier ones left it.
+	let wasRegistered = false;
+	beforeEach(() => {
+		wasRegistered = ctx.paymasterState.registered.has(bytes16());
+	});
+	afterEach(() => {
+		ctx.paymasterState.disabled.delete(bytes16());
+		if (wasRegistered) ctx.paymasterState.registered.add(bytes16());
+	});
+
+	const decisionRules = async () => {
+		const [decision] = await ctx.db
+			.select()
+			.from(sponsorshipDecisions)
+			.where(eq(sponsorshipDecisions.tenantId, tenantAId));
+		return decision?.ruleResults as Array<{
+			rule: string;
+			passed: boolean;
+			detail?: string;
+		}>;
+	};
+
+	it("refuses a tenant disabled on chain before it reserves or signs, though it has a balance", async () => {
+		const session = await newSession(`disabled-${Math.random()}`);
+		await setConfig(ADMIN_KEY, generousConfig);
+		await fund(tenantAId, 10n ** 18n);
+		ctx.paymasterState.disabled.add(bytes16());
+
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterData",
+			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER)),
+		);
+		expect(body.result).toBeUndefined();
+		expect(body.error?.data?.reason).toBe("sponsorship-disabled");
+		expect(body.error?.data?.ruleResults).toContainEqual({
+			rule: "paymaster-tenant",
+			passed: false,
+			detail: "disabled on the paymaster",
+		});
+		expect(await ctx.db.select().from(sponsorshipReservations)).toEqual([]);
+		expect(await decisionRules()).toContainEqual({
+			rule: "paymaster-tenant",
+			passed: false,
+			detail: "disabled on the paymaster",
+		});
+	});
+
+	it("says an unregistered tenant is not registered, not that it is out of credit", async () => {
+		const session = await newSession(`unregistered-${Math.random()}`);
+		await setConfig(ADMIN_KEY, generousConfig);
+		ctx.paymasterState.registered.delete(bytes16());
+
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterStubData",
+			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER)),
+		);
+		expect(body.error?.data?.reason).toBe("sponsorship-disabled");
+		expect(body.error?.data?.ruleResults).toContainEqual({
+			rule: "paymaster-tenant",
+			passed: false,
+			detail: "not registered on the paymaster",
+		});
+	});
+
+	it("keeps the tenant's own switch as the reason when sponsorship is off", async () => {
+		const session = await newSession(`off-unregistered-${Math.random()}`);
+		await setConfig(ADMIN_KEY, { enabled: false });
+		ctx.paymasterState.registered.delete(bytes16());
+
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterStubData",
+			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER)),
+		);
+		expect(body.error?.data?.reason).toBe("sponsorship-disabled");
+		const rules = body.error?.data?.ruleResults ?? [];
+		expect(rules.find((r) => r.rule === "sponsorship-enabled")?.passed).toBe(
+			false,
+		);
+		expect(rules.some((r) => r.rule === "paymaster-tenant")).toBe(false);
+	});
+
+	it("sponsors again once the tenant is enabled again", async () => {
+		const session = await newSession(`reenabled-${Math.random()}`);
+		await setConfig(ADMIN_KEY, generousConfig);
+		await fund(tenantAId, 10n ** 18n);
+		ctx.paymasterState.disabled.add(bytes16());
+		const op = candidateOp(session.walletAddress, execute(TOKEN, TRANSFER));
+		expect(
+			(await rpc(session.token, "pm_getPaymasterStubData", op)).error?.data
+				?.reason,
+		).toBe("sponsorship-disabled");
+
+		ctx.paymasterState.disabled.delete(bytes16());
+		expect(
+			(await rpc(session.token, "pm_getPaymasterStubData", op)).result
+				?.paymaster,
+		).toBeTruthy();
 	});
 });
 
