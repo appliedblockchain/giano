@@ -199,6 +199,9 @@ const display = (value: bigint | Allowlist) =>
 
 /**
  * Resolves one chain's policy, field by field (design D2): override, else stored, else undecided.
+ * The chain's own Giano paymaster (`ownPaymaster`) is always allowed: a stored list is written
+ * once, at the seed, so without this a move to a new paymaster proxy would refuse every sponsored
+ * operation on the chain until someone edited the list.
  * An undecided field falls back outside production and is a problem in production. A stored policy
  * that does not parse is a problem in every deployment class: none of its values can be trusted, so
  * the chain's operations are refused rather than relayed under the fallbacks.
@@ -210,9 +213,11 @@ export function resolveChainPolicy({
 	stored,
 	overrides,
 	production,
+	ownPaymaster,
 }: {
 	chainId: number;
 	stored: unknown;
+	ownPaymaster?: string;
 	overrides: ChainPolicyOverrides;
 	production: boolean;
 }): ResolvedChainPolicy {
@@ -277,6 +282,10 @@ export function resolveChainPolicy({
 
 	const list = (value: bigint | Allowlist): string[] =>
 		value === "any" ? [] : (value as string[]);
+	const paymasters = list(effective.allowedPaymasters);
+	const own = ownPaymaster?.toLowerCase();
+	if (own && paymasters.length > 0 && !paymasters.includes(own))
+		paymasters.push(own);
 	const cap = (value: bigint | Allowlist): bigint => value as bigint;
 	return {
 		policy: {
@@ -288,7 +297,7 @@ export function resolveChainPolicy({
 			maxFeePerGas: cap(effective.maxFeePerGas),
 			maxPriorityFeePerGas: cap(effective.maxPriorityFeePerGas),
 			allowedTargets: list(effective.allowedTargets),
-			allowedPaymasters: list(effective.allowedPaymasters),
+			allowedPaymasters: paymasters,
 		},
 		fields,
 		problems,
@@ -351,7 +360,7 @@ export function createChainPolicyService({
 	};
 
 	const resolve = (
-		chain: Pick<ResolvedChain, "chainId" | "policy">,
+		chain: Pick<ResolvedChain, "chainId" | "policy" | "sponsorshipPaymaster">,
 		row: StoredChainPolicyRow | undefined,
 	) =>
 		resolveChainPolicy({
@@ -359,6 +368,7 @@ export function createChainPolicyService({
 			stored: row?.policy,
 			overrides: chain.policy,
 			production,
+			ownPaymaster: chain.sponsorshipPaymaster,
 		});
 
 	return {
@@ -407,7 +417,7 @@ export function createChainPolicyService({
 
 		/** The chain's policy as the relay applies it, read for each operation (design D6). */
 		async resolveFor(
-			chain: Pick<ResolvedChain, "chainId" | "policy">,
+			chain: Pick<ResolvedChain, "chainId" | "policy" | "sponsorshipPaymaster">,
 		): Promise<ResolvedChainPolicy> {
 			return resolve(chain, await rowOf(chain.chainId));
 		},
@@ -466,7 +476,23 @@ export function createChainPolicyService({
 					: await tx
 							.insert(chainRelayPolicy)
 							.values({ chainId, policy, updatedBy: actor.actor })
+							// With no row, FOR UPDATE above locked nothing: a concurrent first write (or a
+							// replica's boot seed) may have inserted it since. That writer won.
+							.onConflictDoNothing()
 							.returning();
+				if (!written) {
+					const [winner] = await tx
+						.select({ version: chainRelayPolicy.version })
+						.from(chainRelayPolicy)
+						.where(eq(chainRelayPolicy.chainId, chainId));
+					const version = winner?.version ?? 0;
+					throw new ChainPolicyWriteError(
+						412,
+						"version-mismatch",
+						`chain ${chainId}'s relay policy is at version ${version}, not ${expectedVersion}: someone else changed it. Reload and edit again`,
+						{ version },
+					);
+				}
 				await tx.insert(chainRelayPolicyHistory).values({
 					chainId,
 					action: "update",

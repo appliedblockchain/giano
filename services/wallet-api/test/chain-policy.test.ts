@@ -156,6 +156,32 @@ describe("resolveChainPolicy (design D2, D4)", () => {
 		}
 	});
 
+	it("always allows the chain's own current paymaster, even when the stored list predates it", () => {
+		const moved = "0x00000000000000000000000000000000000000aa";
+		const resolved = resolveChainPolicy({
+			chainId: 8453,
+			stored,
+			overrides: {},
+			production: true,
+			ownPaymaster: moved,
+		});
+		expect(resolved.problems).toEqual([]);
+		expect(resolved.policy.allowedPaymasters).toEqual([
+			PAYMASTER.toLowerCase(),
+			moved,
+		]);
+		// an open list stays open
+		expect(
+			resolveChainPolicy({
+				chainId: 8453,
+				stored: { ...stored, allowedPaymasters: "any" },
+				overrides: {},
+				production: true,
+				ownPaymaster: moved,
+			}).policy.allowedPaymasters,
+		).toEqual([]);
+	});
+
 	it("refuses a chain with no stored row, saying how to get one", () => {
 		const resolved = resolveChainPolicy({
 			chainId: 8453,
@@ -302,6 +328,25 @@ describe("the stored policy and the platform API", () => {
 			effective: "500000000000",
 			source: "fallback",
 		});
+	});
+
+	it("still lists every chain when a stored row is valid JSON but not an object", async () => {
+		await ctx.db
+			.update(chainRelayPolicy)
+			.set({ policy: [] })
+			.where(eq(chainRelayPolicy.chainId, 31337));
+		try {
+			const [chain] = await list();
+			expect(chain.stored).toBeNull();
+			expect(chain.problems).toEqual([
+				expect.stringMatching(/stored relay policy is invalid/),
+			]);
+		} finally {
+			await ctx.db
+				.update(chainRelayPolicy)
+				.set({ policy: seedChainPolicy({ chainId: 31337 }) })
+				.where(eq(chainRelayPolicy.chainId, 31337));
+		}
 	});
 
 	it("replaces the stored policy with the current version, and records who did it", async () => {

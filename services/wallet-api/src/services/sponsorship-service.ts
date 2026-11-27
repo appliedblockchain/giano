@@ -299,7 +299,15 @@ export function createSponsorshipService(
 					reason: "sponsorship-disabled",
 					message: `sponsorship is unavailable: this tenant is ${detail}`,
 					ruleResults: [
-						{ rule: "sponsorship-enabled", passed: true },
+						// The same verdict evaluateSponsorship gives this rule, so the audit row does not
+						// record a config it would refuse (an empty allowlist) as passing.
+						config.allowlist.length > 0
+							? { rule: "sponsorship-enabled", passed: true }
+							: {
+									rule: "sponsorship-enabled",
+									passed: false,
+									detail: "no contracts are allow-listed",
+								},
 						{ rule: "paymaster-tenant", passed: false, detail },
 					],
 					feeWei,

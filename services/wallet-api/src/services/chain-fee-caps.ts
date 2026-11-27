@@ -30,8 +30,9 @@ export const KNOWN_CHAIN_FEE_CAPS: Readonly<Record<number, FeeCaps>> = {
 };
 
 /**
- * The caps for a chain nothing else gives one to: the pre-G6 default. A production deployment
- * refuses to boot rather than use it (config.ts).
+ * The caps for a chain nothing else gives one to: the pre-G6 default. Only a deployment outside
+ * production falls back to it. A production deployment still boots, but refuses every operation
+ * on that chain under the `chain-policy` rule until the cap is set (chain-policy.ts).
  */
 export const FALLBACK_FEE_CAPS: FeeCaps = {
 	maxFeePerGas: 500n * GWEI,

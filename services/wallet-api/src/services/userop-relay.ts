@@ -117,6 +117,34 @@ export type UseropRelayOptions = {
 };
 
 /**
+ * What a caller is told about a failed configuration rule. The full detail names env vars,
+ * GIANO_CHAINS paths, console steps and the tenant's stored-policy validation errors: deployment
+ * internals the wallet's user can do nothing with. It stays in the server log and the audit row.
+ */
+const CALLER_DETAIL: Record<string, string> = {
+	"chain-policy":
+		"this chain's relay policy is not usable, so its operations are refused. The operator has been told",
+	"tenant-policy":
+		"this application's relay policy is not usable, so its operations are refused. Its team needs to fix it",
+};
+
+/** The policy results and reason as the caller sees them: configuration details replaced. */
+export function forCaller(results: PolicyRuleResult[]): {
+	reason: string;
+	policy: PolicyRuleResult[];
+} {
+	const policy = results.map((result) =>
+		!result.passed && result.rule in CALLER_DETAIL
+			? { ...result, detail: CALLER_DETAIL[result.rule] }
+			: result,
+	);
+	const first = policy.find((result) => !result.passed);
+	if (!first)
+		throw new Error("a refused policy decision carries no failed rule");
+	return { reason: `${first.rule}: ${first.detail}`, policy };
+}
+
+/**
  * The relay pipeline — policy, audit log, idempotency, submission — shared by the REST
  * endpoint (`POST /v1/userops`) and the JSON-RPC bundler facade (`POST /v1/bundler`). One
  * implementation, so an operation cannot reach the bundler with fewer checks through one
@@ -296,11 +324,7 @@ export function createUseropRelay({
 				if (rejectReason === undefined) {
 					throw new Error("a refused policy decision carries no reject reason");
 				}
-				return {
-					kind: "rejected",
-					reason: rejectReason,
-					policy: decision.results,
-				};
+				return { kind: "rejected", ...forCaller(decision.results) };
 			}
 
 			// R-06's linkage: one join from "we relayed this" to "why was it sponsored, and what was

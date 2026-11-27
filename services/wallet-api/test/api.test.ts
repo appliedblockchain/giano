@@ -1,10 +1,15 @@
 import assert from "node:assert";
 import { gianoSmartWalletAbi } from "@appliedblockchain/giano-contracts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { encodeFunctionData } from "viem";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
-import { chainRelayPolicy, tenants, users } from "../src/db/schema.js";
+import {
+	chainRelayPolicy,
+	tenants,
+	useropLog,
+	users,
+} from "../src/db/schema.js";
 import { createChallengeService } from "../src/services/challenges.js";
 import {
 	loadTenantFixtures,
@@ -869,13 +874,21 @@ describe("userop relay", () => {
 				message: string;
 				policy: { rule: string; passed: boolean }[];
 			};
-			expect(body.message).toMatch(
-				/^chain-policy: chain 31337's stored relay policy is invalid.*maxCallGas/,
-			);
+			// the caller is told the chain is refused, not how the deployment is configured
+			expect(body.message).toMatch(/^chain-policy: this chain's relay policy/);
+			expect(body.message).not.toMatch(/maxCallGas|GIANO_CHAINS|USEROP_/);
 			expect(body.policy[0]).toMatchObject({
 				rule: "chain-policy",
 				passed: false,
 			});
+			// the audit row keeps the full problem for the operator
+			const audited = await ctx.db
+				.select({ rejectReason: useropLog.rejectReason })
+				.from(useropLog)
+				.where(like(useropLog.rejectReason, "chain-policy:%"));
+			expect(audited.at(-1)?.rejectReason).toMatch(
+				/^chain-policy: chain 31337's stored relay policy is invalid.*maxCallGas/,
+			);
 			expect(
 				ctx.bundlerCalls.filter((c) => c.method === "eth_sendUserOperation")
 					.length,
@@ -913,7 +926,10 @@ describe("userop relay", () => {
 				message: string;
 				policy: { rule: string; passed: boolean }[];
 			};
-			expect(body.message).toMatch(/^tenant-policy: /);
+			expect(body.message).toMatch(
+				/^tenant-policy: this application's relay policy/,
+			);
+			expect(body.message).not.toMatch(/maxCallGas|perChain/);
 			expect(body.policy[0]).toMatchObject({
 				rule: "chain-policy",
 				passed: true,

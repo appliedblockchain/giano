@@ -130,8 +130,9 @@ function unresolvedConfig(message: string): never {
  * Deployment-wide configuration. Everything tenant-specific (RP ID, expected origins,
  * registration mode, admin keys, CORS origins, policy overrides) lives on the tenant
  * rows, written by Giano's platform admins at runtime — see
- * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values are defaults a tenant's policy
- * jsonb may override per field.
+ * src/services/tenants.ts and specs/DEVELOPER-GUIDE.md §1. The USEROP_* values, when set, override
+ * every chain's stored relay policy field by field (services/chain-policy.ts); unset, the stored
+ * policy applies. A tenant's policy jsonb applies on top of the result.
  */
 const envSchema = z
 	.object({

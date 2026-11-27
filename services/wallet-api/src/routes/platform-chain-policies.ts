@@ -64,15 +64,22 @@ const chainPolicySchema = z.object({
 
 type ChainPolicyView = z.infer<typeof chainPolicySchema>;
 
+/**
+ * A stored jsonb value as the API's object schema can carry it: a plain object, or null. A row
+ * repaired by hand into an array or a scalar must not fail the whole response, since the console
+ * is how the row gets fixed; `problems` already says why the chain is refused.
+ */
+const asObject = (value: unknown): Record<string, unknown> | null =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+
 function chainView(
 	chain: { chainId: number; name: string },
 	row: StoredChainPolicyRow | undefined,
 	resolved: ResolvedChainPolicy,
 ): ChainPolicyView {
-	const stored =
-		row && typeof row.policy === "object" && row.policy !== null
-			? (row.policy as Record<string, unknown>)
-			: null;
+	const stored = row ? asObject(row.policy) : null;
 	const storedValue = (field: string) => {
 		const value = stored?.[field];
 		return typeof value === "string" ||
@@ -260,8 +267,8 @@ export default async function platformChainPolicyRoutes(
 					action: entry.action,
 					actor: entry.actor,
 					platformAdminSessionId: entry.platformAdminSessionId,
-					before: entry.before as Record<string, unknown> | null,
-					after: entry.after as Record<string, unknown>,
+					before: asObject(entry.before),
+					after: asObject(entry.after) ?? {},
 					createdAt: entry.createdAt.toISOString(),
 				})),
 			};
