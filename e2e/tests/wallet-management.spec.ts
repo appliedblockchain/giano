@@ -355,3 +355,142 @@ test("an owner change applies on every chain where the wallet is deployed, and i
 		).toBe(true);
 	}
 });
+
+test.describe("refusals and failures the user meets (PS-1 leftovers)", () => {
+	const EOA = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+
+	async function addAddress(popup: Page, address: string) {
+		await popup.getByTestId("manage-add-address").click();
+		await popup.getByTestId("manage-address-input").fill(address);
+		await popup.getByTestId("manage-address-continue").click();
+	}
+
+	test("an address that already controls the wallet is refused before any passkey prompt", async ({
+		page,
+	}) => {
+		const { popup } = await openManagement(page);
+		await addAddress(popup, EOA);
+		await popup.getByTestId("manage-address-understood").check();
+		await popup.getByTestId("manage-address-approve").click();
+		await popup.getByTestId("manage-flow-done").click({ timeout: 90_000 });
+
+		await addAddress(popup, EOA);
+		// Still on the input, with the reason: nothing to sign.
+		await expect(popup.getByTestId("manage-address-input")).toBeVisible();
+		await expect(popup.getByText("already controls this wallet")).toBeVisible();
+	});
+
+	test("a network that cannot be read is a failure, not a skipped chain, and the change is not reported complete", async ({
+		page,
+	}) => {
+		const { popup } = await openManagement(page);
+		// Chain B's reads fail from now on: the wallet does not know whether it exists there.
+		await popup.route("**/v1/rpc/31338", (route) => route.abort());
+		await addAddress(popup, EOA);
+		await popup.getByTestId("manage-address-understood").check();
+		await popup.getByTestId("manage-address-approve").click();
+		await expect(popup.getByTestId("manage-flow-done")).toBeVisible({
+			timeout: 90_000,
+		});
+		await expect(
+			popup.getByTestId("manage-chain-progress-31337"),
+		).toHaveAttribute("data-state", "confirmed");
+		await expect(
+			popup.getByTestId("manage-chain-progress-31338"),
+		).toHaveAttribute("data-state", "failed");
+	});
+
+	test("when sponsorship cannot be checked, nothing is prompted and the user is told to try again", async ({
+		page,
+	}) => {
+		const { popup } = await openManagement(page);
+		await popup.route("**/v1/paymaster", async (route) => {
+			if (route.request().postData()?.includes("pm_getPaymasterStubData")) {
+				await route.fulfill({ status: 503, body: "unavailable" });
+			} else {
+				await route.continue();
+			}
+		});
+		await popup.getByTestId("manage-add-passkey").click();
+		await expect(popup.getByTestId("manage-flow-error")).toContainText(
+			"could not be checked",
+			{ timeout: 30_000 },
+		);
+		// No pending addition was opened and no passkey created.
+		await expect(popup.getByTestId("manage-consent-fingerprint")).toHaveCount(
+			0,
+		);
+	});
+
+	test("when saving the new passkey fails after it is added on-chain, the wallet says so and saves it on retry", async ({
+		page,
+	}) => {
+		const { address, popup } = await openManagement(page);
+		let failOnce = true;
+		await popup.route(
+			"**/v1/wallet/pending-additions/*/complete",
+			async (route) => {
+				if (failOnce) {
+					failOnce = false;
+					await route.fulfill({
+						status: 503,
+						contentType: "application/json",
+						body: JSON.stringify({
+							error: "unavailable",
+							message: "unavailable",
+						}),
+					});
+				} else {
+					await route.continue();
+				}
+			},
+		);
+		await popup.getByTestId("manage-add-passkey").click();
+		await expect(popup.getByTestId("manage-consent-fingerprint")).toBeVisible({
+			timeout: 30_000,
+		});
+		await popup.getByTestId("manage-add-approve").click();
+		await expect(popup.getByTestId("manage-save-failed")).toBeVisible({
+			timeout: 90_000,
+		});
+		// The owner is on-chain already.
+		expect((await readOnChainOwners(address)).owners).toHaveLength(2);
+
+		await popup.getByTestId("manage-retry-save").click();
+		await expect(popup.getByText("Passkey added", { exact: true })).toBeVisible(
+			{
+				timeout: 30_000,
+			},
+		);
+		await popup.getByTestId("manage-flow-done").click();
+		// Saved: the new passkey is a known row, not "added outside this app".
+		await expect(popup.getByTestId("manage-owner-row")).toHaveCount(2, {
+			timeout: 30_000,
+		});
+		await expect(popup.getByText("Added outside this app")).toHaveCount(0);
+	});
+
+	test("a rename that fails keeps the box open with the name typed, and says it was not saved", async ({
+		page,
+	}) => {
+		const { popup } = await openManagement(page);
+		await popup.route("**/v1/me/credentials/*", async (route) => {
+			if (route.request().method() === "PATCH") {
+				await route.fulfill({
+					status: 500,
+					contentType: "application/json",
+					body: JSON.stringify({ error: "boom", message: "boom" }),
+				});
+			} else {
+				await route.continue();
+			}
+		});
+		await popup.getByTestId("manage-rename").click();
+		await popup.getByTestId("manage-rename-input").fill("My laptop");
+		await popup.getByTestId("manage-rename-save").click();
+		await expect(popup.getByTestId("manage-rename-error")).toBeVisible();
+		await expect(popup.getByTestId("manage-rename-input")).toHaveValue(
+			"My laptop",
+		);
+	});
+});

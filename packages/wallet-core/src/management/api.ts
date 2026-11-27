@@ -115,7 +115,14 @@ export type WalletManagementApi = {
 		expiresAt: string;
 	}>;
 	getPendingAddition: (id: string) => Promise<PendingAddition>;
-	declinePendingAddition: (id: string) => Promise<{ ok: true }>;
+	/**
+	 * Declines a pending addition. "fingerprint-mismatch" (the default) is the alertable WM-52 event;
+	 * "cancelled" is the user leaving the flow, recorded apart.
+	 */
+	declinePendingAddition: (
+		id: string,
+		reason?: "fingerprint-mismatch" | "cancelled",
+	) => Promise<{ ok: true }>;
 	completePendingAddition: (
 		id: string,
 		body: { chainIds: number[]; name?: string },
@@ -245,10 +252,14 @@ export function createWalletManagementApi(
 				auth: true,
 			}),
 
-		declinePendingAddition: (id: string) =>
+		declinePendingAddition: (
+			id: string,
+			reason?: "fingerprint-mismatch" | "cancelled",
+		) =>
 			api<{ ok: true }>(`/v1/wallet/pending-additions/${id}/decline`, {
 				method: "POST",
 				auth: true,
+				...(reason ? { body: JSON.stringify({ reason }) } : {}),
 			}),
 
 		completePendingAddition: (

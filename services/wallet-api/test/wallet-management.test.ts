@@ -645,6 +645,87 @@ describe("pending-addition lifecycle (WM-18…WM-23)", () => {
 		expect((await listCredentials(attacker.session.token)).length).toBe(1);
 	});
 
+	it("records a cancel apart from a fingerprint mismatch, so only a mismatch is alertable (WM-52)", async () => {
+		const { session } = await register("cancel-user", createAuthenticator());
+		const slot = await openSlot(session.token);
+		const cancelled = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/wallet/pending-additions/${slot.id}/decline`,
+			headers: authed(session.token),
+			payload: { reason: "cancelled" },
+		});
+		expect(cancelled.statusCode).toBe(200);
+		const rows = await ctx.db
+			.select({ action: walletManagementLog.action })
+			.from(walletManagementLog)
+			.where(
+				sql`${walletManagementLog.detail}->>'pendingAdditionId' = ${slot.id}`,
+			);
+		expect(rows.map((row) => row.action)).toContain("pending-cancelled");
+		expect(rows.map((row) => row.action)).not.toContain("pending-declined");
+	});
+
+	it("binds a passkey whose slot expired while the owner change was confirming", async () => {
+		const deviceB = createAuthenticator();
+		const a = await register("late-bind-user", createAuthenticator());
+		const slot = await openSlot(a.session.token);
+		const filled = await fill(slot.claimCode, deviceB);
+		const { publicKey } = filled.json() as {
+			publicKey: { x: string; y: string };
+		};
+		// Signing on every chain took longer than the slot lives.
+		await ctx.db
+			.update(pendingAdditions)
+			.set({ expiresAt: sql`now() - interval '1 minute'` })
+			.where(eq(pendingAdditions.id, slot.id));
+		ctx.chainState.contracts.add(a.walletAddress.toLowerCase());
+		ctx.chainState.ownerKeys.add(ownerKeyOf(publicKey.x, publicKey.y));
+
+		const completed = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/wallet/pending-additions/${slot.id}/complete`,
+			headers: authed(a.session.token),
+			payload: { chainIds: [31337] },
+		});
+		expect(completed.statusCode).toBe(200);
+		// The new device can sign in to the wallet.
+		const signedIn = await authenticate(deviceB, "late-bind-user");
+		expect(signedIn.statusCode).toBe(200);
+		expect((signedIn.json() as Registered).walletAddress).toBe(a.walletAddress);
+	});
+
+	it("still refuses to bind an expired slot whose key the chain does not list", async () => {
+		const a = await register("late-unsigned-user", createAuthenticator());
+		const slot = await openSlot(a.session.token);
+		await fill(slot.claimCode, createAuthenticator());
+		await ctx.db
+			.update(pendingAdditions)
+			.set({ expiresAt: sql`now() - interval '1 minute'` })
+			.where(eq(pendingAdditions.id, slot.id));
+		const completed = await ctx.app.inject({
+			method: "POST",
+			url: `/v1/wallet/pending-additions/${slot.id}/complete`,
+			headers: authed(a.session.token),
+			payload: { chainIds: [31337] },
+		});
+		expect(completed.statusCode).toBe(409);
+		expect((completed.json() as { error: string }).error).toBe(
+			"not-an-owner-on-chain",
+		);
+	});
+
+	it("refuses to deposit a passkey the tenant already registered, with a reason", async () => {
+		const held = createAuthenticator();
+		const a = await register("duplicate-user", held);
+		const slot = await openSlot(a.session.token);
+		// The same passkey again: binding it would fail on the unique key after device A signed.
+		const filled = await fill(slot.claimCode, held);
+		expect(filled.statusCode).toBe(409);
+		expect((filled.json() as { error: string }).error).toBe(
+			"credential-already-registered",
+		);
+	});
+
 	it("refuses an unknown, expired or declined slot with distinct actionable reasons (WM-22, WM-23, WM-52)", async () => {
 		const { session, walletAddress } = await register(
 			"expiry-user",

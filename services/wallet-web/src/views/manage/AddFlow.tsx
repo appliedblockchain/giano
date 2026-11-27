@@ -243,6 +243,33 @@ export function AddFlow({
 		);
 	}
 
+	if (flow.step === "done" && flow.saveFailed) {
+		// On-chain, but wallet-api has no record of the passkey, so the new device cannot sign in yet.
+		return (
+			<FlowShell title="Added, but not saved yet">
+				<p data-testid="manage-save-failed">
+					The passkey is now an owner of your wallet, but saving it to your
+					account failed, so it cannot sign in yet. Try again; nothing is signed
+					twice.
+				</p>
+				<ChainProgressList progress={flow.chains} />
+				<div className="actions">
+					<button type="button" onClick={() => actions.dismissFlow()}>
+						Later
+					</button>
+					<button
+						type="button"
+						className="primary"
+						onClick={flow.retrySave}
+						data-testid="manage-retry-save"
+					>
+						Try again
+					</button>
+				</div>
+			</FlowShell>
+		);
+	}
+
 	if (flow.step === "done") {
 		return (
 			<FlowShell

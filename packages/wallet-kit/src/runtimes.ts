@@ -85,7 +85,8 @@ export type WalletRuntime = {
 	publicClient: PublicClient;
 	factoryAddress: `0x${string}`;
 	/** True when the smart account has code on THIS chain (deployment is lazy and per chain, MC-29/MC-30). */
-	isAccountDeployed: (address: `0x${string}`) => Promise<boolean>;
+	/** Whether the account has code on this chain; null when the chain could not be read. */
+	isAccountDeployed: (address: `0x${string}`) => Promise<boolean | null>;
 	/**
 	 * Asks the rules engine whether this transaction would be sponsored — *before* the user is
 	 * offered an approve button, and therefore before any passkey prompt (WK-13, WM-68). Evaluated
@@ -422,11 +423,17 @@ function buildRuntime(
 		}
 	};
 
+	// null, not false, when the chain cannot be read: "not deployed" would let an owner change
+	// skip a chain it never reached and report itself complete.
 	const isAccountDeployed = async (
 		address: `0x${string}`,
-	): Promise<boolean> => {
-		const code = await publicClient.getCode({ address }).catch(() => undefined);
-		return !!code && code !== "0x";
+	): Promise<boolean | null> => {
+		try {
+			const code = await publicClient.getCode({ address });
+			return !!code && code !== "0x";
+		} catch {
+			return null;
+		}
 	};
 
 	const describeTransaction = createTransactionDescriber({

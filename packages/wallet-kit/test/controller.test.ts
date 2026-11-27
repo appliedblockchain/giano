@@ -577,7 +577,10 @@ describe("adding a passkey (WM-14, WM-15, WM-20)", () => {
 			>
 		).decline();
 		await settle(flowIs(h, "add", "declined"));
-		expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1");
+		expect(h.api.declinePendingAddition).toHaveBeenCalledWith(
+			"slot-1",
+			"fingerprint-mismatch",
+		);
 		expect(h.events.filter((event) => event.startsWith("send:"))).toHaveLength(
 			0,
 		);
@@ -927,7 +930,10 @@ describe("renaming and lifecycle", () => {
 		expect(h.controller.flow).toBeNull();
 		expect(h.depositPasskey).not.toHaveBeenCalled();
 		await vi.waitFor(() =>
-			expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1"),
+			expect(h.api.declinePendingAddition).toHaveBeenCalledWith(
+				"slot-1",
+				"cancelled",
+			),
 		);
 	});
 
@@ -953,7 +959,10 @@ describe("renaming and lifecycle", () => {
 		await settle(flowIs(h, "add", "claim-code"));
 		h.controller.dismissFlow();
 		await vi.waitFor(() =>
-			expect(h.api.declinePendingAddition).toHaveBeenCalledWith("slot-1"),
+			expect(h.api.declinePendingAddition).toHaveBeenCalledWith(
+				"slot-1",
+				"cancelled",
+			),
 		);
 		expect(h.controller.flow).toBeNull();
 	});
@@ -1082,5 +1091,198 @@ describe("the session ends (G5)", () => {
 		expect(h.watchers()).toBe(1);
 		h.controller.destroy();
 		expect(h.watchers()).toBe(0);
+	});
+});
+
+describe("the leftovers from the first review", () => {
+	const approveSameDeviceAdd = async (h: Harness) => {
+		await h.controller.load();
+		h.controller.startAddThisDevice();
+		await settle(flowIs(h, "add", "confirm-fingerprint"));
+		(
+			h.controller.flow as Extract<
+				ManagementFlow,
+				{ step: "confirm-fingerprint" }
+			>
+		).approve();
+		await settle(flowIs(h, "add", "done"));
+		return h.controller.flow as Extract<
+			ManagementFlow,
+			{ type: "add"; step: "done" }
+		>;
+	};
+
+	it("fails, rather than skips, a chain that could not be read, so the change is not reported complete", async () => {
+		const h = harness({
+			chains: {
+				31337: { deployed: true, owners: [bytesA] },
+				31338: { deployed: true, owners: [bytesA] },
+			},
+		});
+		(h.runtimeFor(31338) as { isAccountDeployed: unknown }).isAccountDeployed =
+			async () => null;
+		const done = await approveSameDeviceAdd(h);
+		expect(done.chains.map((row) => row.state)).toEqual([
+			"confirmed",
+			"failed",
+		]);
+		expect(done.ok).toBe(false);
+	});
+
+	it("says the passkey is not saved when wallet-api fails to record it, and saves it on retry", async () => {
+		const h = harness();
+		(
+			h.api.completePendingAddition as ReturnType<typeof vi.fn>
+		).mockRejectedValueOnce(new Error("pending-expired"));
+		const done = await approveSameDeviceAdd(h);
+		expect(done.appliedChainIds).toEqual([31337]);
+		expect(done.saveFailed).toBe(true);
+		expect(done.ok).toBe(false);
+
+		done.retrySave?.();
+		await settle(
+			() =>
+				(h.controller.flow as { saveFailed?: boolean } | null)?.saveFailed !==
+				true,
+		);
+		const retried = h.controller.flow as Extract<
+			ManagementFlow,
+			{ type: "add"; step: "done" }
+		>;
+		expect(retried.ok).toBe(true);
+		expect(h.api.completePendingAddition).toHaveBeenCalledTimes(2);
+	});
+
+	it("lists a wallet's own passkey as its owner while the wallet is deployed nowhere yet", async () => {
+		const h = harness({
+			chains: {
+				31337: { deployed: false, owners: [] },
+				31338: { deployed: false, owners: [] },
+			},
+		});
+		await h.controller.load();
+		expect(h.controller.state.view).toBe("set");
+		expect(h.controller.state.deployed).toBe(false);
+		expect(h.controller.state.owners.map((row) => row.credentialId)).toEqual([
+			"cred-a",
+		]);
+		expect(h.controller.state.strays).toEqual([]);
+	});
+
+	it("is unreadable, not 'NOT an owner', when the chain that may hold the wallet cannot be read", async () => {
+		const h = harness({
+			chains: {
+				31337: { deployed: true, owners: [bytesA], unreachable: true },
+				31338: { deployed: false, owners: [] },
+			},
+		});
+		await h.controller.load();
+		expect(h.controller.state.view).toBe("unreadable");
+		expect(h.controller.state.strays).toEqual([]);
+	});
+
+	it("ends this device's session when removing the passkey in use, even if wallet-api cannot confirm it", async () => {
+		const h = harness({
+			chains: { 31337: { deployed: true, owners: [bytesA, bytesB] } },
+		});
+		(
+			h.api.markCredentialRemoved as ReturnType<typeof vi.fn>
+		).mockRejectedValueOnce(new Error("wallet-api unavailable"));
+		await h.controller.load();
+		const current = h.controller.state.owners.find((row) => row.isCurrent);
+		if (!current) throw new Error("no current owner");
+		h.controller.startRemove(current);
+		(
+			h.controller.flow as Extract<
+				ManagementFlow,
+				{ type: "remove"; step: "confirm" }
+			>
+		).approve();
+		await settle(flowIs(h, "remove", "done"));
+		expect(
+			(
+				h.controller.flow as Extract<
+					ManagementFlow,
+					{ type: "remove"; step: "done" }
+				>
+			).endedSession,
+		).toBe(true);
+		expect(h.events).toContain("logout");
+	});
+
+	it("stops before any passkey prompt when sponsorship cannot be checked", async () => {
+		const h = harness({
+			preflight: { state: "unavailable", message: "503" } as never,
+		});
+		await h.controller.load();
+		h.controller.startAddThisDevice();
+		await settle(flowIs(h, "add", "error"));
+		expect(
+			(h.controller.flow as Extract<ManagementFlow, { step: "error" }>).message,
+		).toMatch(/could not be checked/);
+		expect(h.depositPasskey).not.toHaveBeenCalled();
+		expect(h.api.openPendingAddition).not.toHaveBeenCalled();
+	});
+
+	it("refuses an address that is already an owner before any passkey prompt", async () => {
+		const owner = getAddress("0x70997970c51812dc3a010c7d01b50e0d17dc79c8");
+		const h = harness({
+			chains: {
+				31337: { deployed: true, owners: [bytesA, pad(owner, { size: 32 })] },
+			},
+		});
+		await h.controller.load();
+		h.controller.startAddAddress();
+		await settle(flowIs(h, "address", "input"));
+		const input = h.controller.flow as Extract<
+			ManagementFlow,
+			{ type: "address"; step: "input" }
+		>;
+		input.setAddress(owner);
+		(h.controller.flow as typeof input).continue();
+		expect(
+			(
+				h.controller.flow as Extract<
+					ManagementFlow,
+					{ type: "address"; step: "input" }
+				>
+			).error,
+		).toBe("already-owner");
+	});
+
+	it("stops polling and says so when the slot was declined elsewhere", async () => {
+		const h = harness();
+		(h.api.getPendingAddition as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "slot-1",
+			status: "declined",
+			expiresAt: "2026-01-01T00:05:00Z",
+			publicKey: null,
+		});
+		await h.controller.load();
+		h.controller.startAddSecondDevice();
+		await settle(flowIs(h, "add", "error"));
+		expect(
+			(h.controller.flow as Extract<ManagementFlow, { step: "error" }>).message,
+		).toMatch(/declined/);
+	});
+
+	it("shows an error mentioning a session without signing the user out", async () => {
+		const h = harness();
+		(h.api.listCredentials as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error("could not reach the session store"),
+		);
+		await h.controller.load();
+		expect(h.controller.state.view).not.toBe("signed-out");
+		expect(h.controller.state.error).toMatch(/session store/);
+	});
+
+	it("reports whether a rename was saved", async () => {
+		const h = harness();
+		await h.controller.load();
+		expect(await h.controller.rename("cred-a", "Laptop")).toBe(true);
+		(h.api.renameCredential as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error("500"),
+		);
+		expect(await h.controller.rename("cred-a", "Phone")).toBe(false);
 	});
 });
