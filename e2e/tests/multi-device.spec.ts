@@ -726,7 +726,10 @@ test.describe("one wallet, two devices", () => {
 		await expect(a.popup.getByTestId("manage-consent-added-from")).toHaveText(
 			"iPhone · Safari",
 		);
-		await expect(a.popup.getByTestId("manage-add-name")).toHaveValue(
+		// No name is stored unless the user types one: the device shows as the placeholder.
+		await expect(a.popup.getByTestId("manage-add-name")).toHaveValue("");
+		await expect(a.popup.getByTestId("manage-add-name")).toHaveAttribute(
+			"placeholder",
 			"iPhone · Safari",
 		);
 		await a.popup.getByTestId("manage-fingerprint-approve").click();
@@ -735,20 +738,26 @@ test.describe("one wallet, two devices", () => {
 		).toBeVisible({ timeout: 120_000 });
 		await a.popup.getByTestId("manage-flow-done").click();
 
-		// Each row says when, on which device and browser, and where it is stored.
+		// Every passkey is named the same way: its device and browser, until the user renames it.
 		const rowB = ownerRow(a.popup, fingerprintOnB);
 		await expect(rowB.getByTestId("manage-owner-name")).toHaveText(
 			"iPhone · Safari",
 			{ timeout: 30_000 },
 		);
-		await expect(rowB).toContainText(/Passkey added .+ on iPhone · Safari/);
 		const rowA = a.popup.locator("[data-testid=manage-owner-row]", {
 			has: a.popup.getByTestId("manage-owner-current"),
 		});
-		await expect(rowA).toContainText(
-			/Passkey added .+ on (Mac|Linux|Windows) · Chrome/,
+		// Device A's passkey made the wallet: it is not named after the picker name (brand · day).
+		await expect(rowA.getByTestId("manage-owner-name")).toHaveText(
+			/^(Mac|Linux|Windows) · Chrome$/,
 		);
-		// The raw transports are gone from the subtitle.
+		await expect(rowA.getByTestId("manage-owner-current")).toHaveText(
+			"Current",
+		);
+		// One details line: where it is stored and when it was added, with no raw transports.
+		await expect(rowB.getByTestId("manage-owner-meta")).toContainText(
+			/^Synced · added /,
+		);
 		await expect(rowA).not.toContainText("internal");
 	});
 
