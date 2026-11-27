@@ -375,8 +375,9 @@ After both records ship in the contracts package's address registry, build/relea
 dependent services and clients from the same tested revision. For the actual deployment update:
 
 - The shared `chains` secret consumed as `GIANO_CHAINS` by wallet-api, bundler and paymaster-admin:
-  each chain's `sponsorshipPaymaster`, `walletApi.policy.allowedPaymasters`, and any explicit
-  `factory` or other address overrides must refer to the new addresses. Keep RPC credentials in
+  each chain's `sponsorshipPaymaster`, and any explicit `factory` or other address overrides, must
+  refer to the new addresses. The relay's paymaster allowlist is stored in wallet-api's database:
+  update it in the console (Relay policy) if it names the old paymaster. Keep RPC credentials in
   that backend document; the frontend document contains public descriptors only.
 - Any single-chain/local overrides: `FACTORY_ADDRESS`, `SPONSORSHIP_PAYMASTER_ADDRESS`,
   `USEROP_ALLOWED_PAYMASTERS`; clear `TEST_PAYMASTER_ADDRESS` and `TEST_ERC20_ADDRESS`.

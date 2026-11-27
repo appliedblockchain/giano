@@ -211,8 +211,7 @@ needed (measured: `eth_getLogs` served up to 10,000 blocks on both chains; the b
   "entryPoint": "0x433709009B8330FDa32311DF1C2AFA402eD8D009",
   "sponsorshipPaymaster": "0xb2C7081be89D88f1da020530Ebd5c14b8871615a",
   "walletApi": {
-    "factory": "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635",
-    "policy": { "allowedPaymasters": ["0xb2C7081be89D88f1da020530Ebd5c14b8871615a"] }
+    "factory": "0xA9d72F088C0Cd0B78db44D4c79E847FddD52F635"
   },
   "paymasterAdmin": {
     "timelockAddress": "0x7Da25D415f9b68422F905C015137Af8D915F8A78",

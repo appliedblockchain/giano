@@ -5,7 +5,8 @@ name: giano-chain-demo
 
 # The backend chain document wallet-api and the bundler both read (packages/contracts/chains.ts),
 # interpolated from the selected operator file and public address fragment. The chain is not in the committed contracts registry, so its
-# addresses are explicit. Only our own paymaster's operations are relayed (allowedPaymasters).
+# addresses are explicit. Only our own paymaster's operations are relayed: wallet-api seeds the
+# chain's stored relay policy with allowedPaymasters = [sponsorshipPaymaster], editable in the console.
 x-giano-chains: &giano-chains |
   [
     {
@@ -14,8 +15,7 @@ x-giano-chains: &giano-chains |
       "entryPoint": "${ENTRYPOINT_ADDRESS:-0x433709009B8330FDa32311DF1C2AFA402eD8D009}",
       "sponsorshipPaymaster": "${SPONSORSHIP_PAYMASTER_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set SPONSORSHIP_PAYMASTER_ADDRESS}",
       "walletApi": {
-        "factory": "${FACTORY_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set FACTORY_ADDRESS}",
-        "policy": { "allowedPaymasters": ["${SPONSORSHIP_PAYMASTER_ADDRESS}"] }
+        "factory": "${FACTORY_ADDRESS:?run pnpm contracts:deploy --chain <profile>, then set FACTORY_ADDRESS}"
       },
       "bundler": { "rpcUrl": "${BUNDLER_NODE_RPC_URL:-${RPC_URL:?set the selected chain serving RPC_URL}}" }
     }

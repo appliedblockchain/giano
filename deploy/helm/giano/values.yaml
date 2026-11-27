@@ -22,7 +22,7 @@ config:
   #       walletApi:
   #         # optional overrides of the chain's relay policy, which lives in wallet-api's database
   #         # and is edited in the console (Relay policy); a field set here wins over it
-  #         policy: { allowedPaymasters: ["0x…"] }
+  #         policy: { maxFeePerGas: "100000000000" }
   #       bundler:
   #         chainType: op-stack
   # With bundler.enabled, each chain submits to the in-chart bundler at /<chainId>; otherwise
