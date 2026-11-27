@@ -240,6 +240,48 @@ async function waitForSettlements(
 	return spend;
 }
 
+/**
+ * Runs `body` with the tenant's rule for `contract` narrowed to `functions`, then puts the rule's
+ * functions back whatever happens. Rules are records (openspec sponsorship-rules-api), so this
+ * changes one rule and nothing else of the tenant's configuration.
+ */
+async function withRuleFunctions<T>(
+	tenant: Tenant,
+	contract: string,
+	functions: "all" | string[],
+	body: () => Promise<T>,
+): Promise<T> {
+	const headers = {
+		"content-type": "application/json",
+		authorization: `Bearer ${tenant.adminKey}`,
+	};
+	const list = await fetch(
+		`${WALLET_API}/v1/admin/sponsorship/rules?chainId=${CHAIN_A}&contract=${contract}`,
+		{ headers },
+	);
+	const { rules } = (await list.json()) as {
+		rules: Array<{ id: string; functions: "all" | string[] }>;
+	};
+	expect(rules, `no rule for ${contract}`).toHaveLength(1);
+	const [rule] = rules;
+	const patch = (next: "all" | string[]) =>
+		fetch(
+			`${WALLET_API}/v1/admin/sponsorship/rules/${rule.id}?chainId=${CHAIN_A}`,
+			{
+				method: "PATCH",
+				headers,
+				body: JSON.stringify({ functions: next }),
+			},
+		);
+	const narrowed = await patch(functions);
+	expect(narrowed.ok, `rule patch failed: ${narrowed.status}`).toBe(true);
+	try {
+		return await body();
+	} finally {
+		await patch(rule.functions);
+	}
+}
+
 // ── console capture ───────────────────────────────────────────────────────────
 
 /**
@@ -417,16 +459,10 @@ for (const slug of ["stock", "byo"] as const) {
 		}) => {
 			const { credentials } = await connectWallet(page, tenant);
 
-			await withConfig(
+			await withRuleFunctions(
 				tenant,
-				{
-					allowlist: [
-						{
-							contract: ADDRESSES.testErc20,
-							functions: ["approve(address,uint256)"],
-						},
-					],
-				},
+				ADDRESSES.testErc20,
+				["approve(address,uint256)"],
 				async () => {
 					await expectRefusedBeforeApproval(
 						page,

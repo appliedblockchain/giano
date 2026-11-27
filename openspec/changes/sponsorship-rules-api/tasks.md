@@ -50,8 +50,8 @@
 ## 4. Callers and end-to-end coverage
 
 - [ ] 4.1 Move `e2e/devnet/provision-sponsorship.mjs`, `deploy/contracts/provision-sponsorship.sh` and `packages/contracts/scripts/rehearse.ts` to the rules API, writing settings with `If-Match`.
-- [ ] 4.2 Move `withConfig` in `e2e/tests/sponsorship.spec.ts` (and `e2e/tests/demo/operations.spec.ts` if it writes the allowlist) to the rules API.
-- [ ] 4.3 Extend `e2e/tests/deployed-contracts.spec.ts` to the escrow pattern:
+- [x] 4.2 Move `withConfig` in `e2e/tests/sponsorship.spec.ts` (and `e2e/tests/demo/operations.spec.ts` if it writes the allowlist) to the rules API.
+- [x] 4.3 Extend `e2e/tests/deployed-contracts.spec.ts` to the escrow pattern:
   - predict the address;
   - create a rule with a `clientReference` and an `expiresAt`;
   - deploy and call under sponsorship;
