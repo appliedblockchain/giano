@@ -108,13 +108,13 @@ Platform tenant writes require the header (`428`). Here, requiring it would brea
 
 ### D8. `allowlist` stays in the stored settings as a mirror
 
-The stored settings keep an `allowlist` array that mirrors the rules with no `clientReference`. Evaluation never reads it. Every write that changes such a rule rewrites the mirror in the same transaction: the deprecated `PUT`/`PATCH` field, and a rules-API change or delete of a rule with no reference.
+The stored settings keep an `allowlist` array that mirrors the legacy rules: those with neither a `clientReference` nor an `expiresAt`, which is what the old field could express. A rule with an expiry is left out because the previous release would sponsor it forever after a rollback. Evaluation never reads it. Every write that changes a legacy rule rewrites the mirror in the same transaction: the deprecated `PUT`/`PATCH` field, and a rules-API create, change or delete that adds or removes a legacy rule.
 
 This does two things:
 - `GET` returns the deprecated field without a join;
 - a rollback to the previous release still sponsors every contract that was allowed before the upgrade.
 
-Rules created with a `clientReference` are not in the mirror. They stop working during a rollback, and they work again when the new release returns. A tenant with only referenced rules and sponsorship enabled fails the old release's "non-empty allowlist" check during a rollback, and the old release reads that as deny-all. That is the safe direction.
+Rules with a `clientReference` or an `expiresAt` are not in the mirror. They stop working during a rollback, and they work again when the new release returns. A tenant with only referenced rules and sponsorship enabled fails the old release's "non-empty allowlist" check during a rollback, and the old release reads that as deny-all. That is the safe direction.
 
 The mirror and the deprecated field are removed together in the next minor.
 
