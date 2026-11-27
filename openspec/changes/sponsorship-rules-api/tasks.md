@@ -30,13 +30,13 @@
 
 ## 3. Rules API and versioned settings (wallet-api)
 
-- [ ] 3.1 Add a rules repository: create (with the per-tenant advisory lock, the cap, lazy removal of expired rules, and the client-reference lookup), list (cursor, filters), get, patch and delete, each recording a rule event and rewriting the allowlist mirror when a rule with no reference changes.
-- [ ] 3.2 Add the routes `POST`, `GET`, `GET /:id`, `PATCH /:id` and `DELETE /:id` under `/v1/admin/sponsorship/rules`, and `GET /v1/admin/sponsorship/rules/events`, with zod schemas and the error codes from the spec (`duplicate-contract`, `client-reference-conflict`, `rule-limit-reached`).
-- [ ] 3.3 Version the settings:
+- [x] 3.1 Add a rules repository: create (with the per-tenant advisory lock, the cap, lazy removal of expired rules, and the client-reference lookup), list (cursor, filters), get, patch and delete, each recording a rule event and rewriting the allowlist mirror when a rule with no reference changes.
+- [x] 3.2 Add the routes `POST`, `GET`, `GET /:id`, `PATCH /:id` and `DELETE /:id` under `/v1/admin/sponsorship/rules`, and `GET /v1/admin/sponsorship/rules/events`, with zod schemas and the error codes from the spec (`duplicate-contract`, `client-reference-conflict`, `rule-limit-reached`).
+- [x] 3.3 Version the settings:
   - `GET` returns `version` and an `ETag`;
   - `PUT` and `PATCH` honour `If-Match` (`412 version-mismatch`);
   - the deprecated `allowlist` input replaces the rules with no reference in the same transaction.
-- [ ] 3.4 Add API tests for:
+- [x] 3.4 Add API tests for:
   - concurrent creates (no lost rule, the cap holds);
   - a retried create returning `200`, and a reference conflict;
   - an expired rule not blocking a create;
@@ -44,8 +44,8 @@
   - `412` on a stale `If-Match`;
   - the deprecated allowlist round trip leaving referenced rules alone;
   - the migration copying an existing allowlist.
-- [ ] 3.5 Regenerate `openapi/openapi.json` and pass the drift check.
-- [ ] 3.6 Document the rules API, the deprecations and the predict-then-allow pattern in the wallet-api README, `specs/PAYMASTER-SPECS.md` and `specs/INTEGRATION.md`.
+- [x] 3.5 Regenerate `openapi/openapi.json` and pass the drift check.
+- [x] 3.6 Document the rules API, the deprecations and the predict-then-allow pattern in the wallet-api README, `specs/PAYMASTER-SPECS.md` and `specs/INTEGRATION.md`.
 
 ## 4. Callers and end-to-end coverage
 

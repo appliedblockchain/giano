@@ -771,11 +771,7 @@ value treated as *no sponsorship* rather than as permissive (R-02, R-10).
 sponsorship: {
   enabled: boolean,                       // default false — a new tenant sponsors nothing
   maxCostPerTxWei: bigintString,          // required when enabled (R-04)
-  allowlist: Array<{
-    contract: Address,
-    // 'all' allows the whole contract; otherwise selectors or human-readable signatures
-    functions: 'all' | Array<`0x${string}` | string>,
-  }>,                                     // non-empty when enabled; no wildcard contract (R-03)
+  allowlist?: Array<{ contract, functions }>, // DEPRECATED: mirrors the legacy rules (below)
   walletManagement?: {                    // opt-*out* only; sponsored by default (R-05, R-65, O6)
     enabled: boolean,                     // default true — absent means sponsored, not denied
     maxCostPerTxWei?: bigintString,       // may only *lower* the platform cap; a higher value is
@@ -784,6 +780,33 @@ sponsorship: {
   lowBalanceThresholdWei?: bigintString,  // per-tenant alert threshold (R-18)
 }
 ```
+
+The contracts a tenant sponsors are **rules**, one record each, in `tenant_sponsorship_rules`
+(openspec `sponsorship-rules-api`), managed through `/v1/admin/sponsorship/rules`:
+
+```ts
+rule: {
+  id: uuid,
+  contract: Address,                      // one active rule per contract; no wildcard (R-03)
+  // 'all' allows the whole contract; otherwise selectors or human-readable signatures
+  functions: 'all' | Array<`0x${string}` | string>,
+  clientReference?: string,               // a repeated create returns the existing rule
+  expiresAt?: timestamp,                  // after it, the rule allows nothing
+}
+```
+
+A rule is active when it has no `expiresAt` or its `expiresAt` is in the future; evaluation reads
+only active rules, and only those for the operation's targets. A tenant with sponsorship enabled and
+no active rule sponsors nothing, wallet management included. A tenant has at most
+`SPONSORSHIP_MAX_RULES_PER_CHAIN` active rules per chain. Every decision records the ids of the
+rules that allowed it (`sponsorship_decisions.rule_ids`), and every rule change is recorded in
+`tenant_sponsorship_rule_events`. The settings carry a `version`; a write with a stale `If-Match`
+is refused with `412`.
+
+The legacy rules are those with neither a `clientReference` nor an `expiresAt`, which is all the
+old `allowlist` field could express. For one minor release that field still reads and writes them,
+and the stored settings keep it as their mirror so a rollback to the previous release still
+sponsors them.
 
 There is deliberately no way to express "any contract". `functions: 'all'` covers the legitimate
 need R-03 describes — allowing a contract without enumerating its ABI — while keeping the target
@@ -820,8 +843,8 @@ Rules, in order — first failure decides, but every rule is still recorded:
 | `decodable-calls` | `callData` decodes as `execute` / `executeBatch`; anything else is refused, not guessed |
 | `self-calls` | Every call whose target is the sender itself must be wallet management (below); any other self-call is refused with `contract-not-allowed` |
 | `wallet-management` | A self-call to `addOwnerAddress`, `addOwnerPublicKey` or `removeOwnerAtIndex` with no value, or a plain value transfer to self (calldata `0x`), is wallet management: sponsored under the platform cap (or the tenant's lower one) unless the tenant has explicitly opted out |
-| `contract-allowlist` | Every inner call's target is listed |
-| `function-allowlist` | Every inner call's selector is permitted for its target |
+| `contract-allowlist` | Every inner call's target has an active rule |
+| `function-allowlist` | Every inner call's selector is permitted by its target's rule |
 | `max-cost` | `maxCost + fee + overheadBound ≤ maxCostPerTxWei` |
 | `sufficient-balance` | `≤ balance − reserved − deficit` (§7) |
 

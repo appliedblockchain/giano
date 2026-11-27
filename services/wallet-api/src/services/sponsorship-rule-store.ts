@@ -1,4 +1,16 @@
-import { and, asc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	inArray,
+	isNull,
+	lt,
+	lte,
+	or,
+	sql,
+} from "drizzle-orm";
 import type { Address, Hex } from "viem";
 import type { Db } from "../db/index.js";
 import {
@@ -6,7 +18,11 @@ import {
 	tenantSponsorshipRuleEvents,
 	tenantSponsorshipRules,
 } from "../db/schema.js";
-import type { SponsorshipRule } from "./sponsorship-config.js";
+import type {
+	RuleCreate,
+	RulePatch,
+	SponsorshipRule,
+} from "./sponsorship-config.js";
 
 /**
  * Reads and writes a tenant's sponsorship rules (openspec sponsorship-rules-api).
@@ -350,4 +366,308 @@ export async function replaceLegacyRules(
 			await recordRuleEvent(tx, updated, "updated", keyHash);
 		}
 	}
+}
+
+// ── the rules API ─────────────────────────────────────────────────────────────
+
+/** How many expired rules one write removes, besides an expired rule for its own contract. */
+const EXPIRED_REMOVAL_BATCH = 500;
+
+type Scope = { tenantId: string; chainId: number };
+
+function inScope({ tenantId, chainId }: Scope) {
+	return and(
+		eq(tenantSponsorshipRules.tenantId, tenantId),
+		eq(tenantSponsorshipRules.chainId, chainId),
+	);
+}
+
+function isActive(row: Pick<RuleRow, "expiresAt">, now: Date): boolean {
+	return row.expiresAt === null || row.expiresAt > now;
+}
+
+/** True when a create repeats the rule it would have made: same contract, functions and expiry. */
+function sameRule(row: RuleRow, input: RuleCreate): boolean {
+	return (
+		row.contract === input.contract.toLowerCase() &&
+		sameFunctions(row.functions, input.functions) &&
+		(row.expiresAt?.getTime() ?? null) === (input.expiresAt?.getTime() ?? null)
+	);
+}
+
+/**
+ * Creates one rule (design D2 to D5). A create that repeats a client reference returns the rule
+ * that reference already names instead of adding one, when it describes the same rule.
+ */
+export async function createRule(
+	db: Db,
+	args: Scope & {
+		input: RuleCreate;
+		keyHash: string | null;
+		now: Date;
+		maxRules: number;
+	},
+): Promise<{ created: boolean; rule: RuleRow }> {
+	const { tenantId, chainId, input, keyHash, now } = args;
+	const contract = input.contract.toLowerCase();
+	return db.transaction(async (tx) => {
+		await lockTenantRules(tx, tenantId, chainId);
+
+		if (input.clientReference !== undefined) {
+			const [named] = await tx
+				.select()
+				.from(tenantSponsorshipRules)
+				.where(
+					and(
+						inScope(args),
+						eq(tenantSponsorshipRules.clientReference, input.clientReference),
+					),
+				);
+			if (named) {
+				if (sameRule(named, input)) return { created: false, rule: named };
+				throw new RuleWriteError(
+					"client-reference-conflict",
+					`the client reference ${input.clientReference} already names a different rule (${named.id})`,
+					named,
+				);
+			}
+		}
+
+		// An expired rule for this contract must not block the new one, whatever the batch size.
+		const [sameContract] = await tx
+			.select()
+			.from(tenantSponsorshipRules)
+			.where(and(inScope(args), eq(tenantSponsorshipRules.contract, contract)));
+		if (sameContract && isActive(sameContract, now))
+			throw new RuleWriteError(
+				"duplicate-contract",
+				`${contract} already has an active rule (${sameContract.id}); change that rule instead`,
+				sameContract,
+			);
+		if (sameContract) {
+			await tx
+				.delete(tenantSponsorshipRules)
+				.where(eq(tenantSponsorshipRules.id, sameContract.id));
+			await recordRuleEvent(tx, sameContract, "expired-removed", null);
+		}
+		await removeExpiredRules(tx, {
+			tenantId,
+			chainId,
+			now,
+			limit: EXPIRED_REMOVAL_BATCH,
+		});
+
+		if ((await countActiveRules(tx, tenantId, chainId, now)) >= args.maxRules)
+			throw new RuleWriteError(
+				"rule-limit-reached",
+				`this tenant already has ${args.maxRules} active rules on this chain, the limit; remove or expire some first`,
+			);
+
+		const [rule] = await tx
+			.insert(tenantSponsorshipRules)
+			.values({
+				tenantId,
+				chainId,
+				contract,
+				functions: input.functions,
+				clientReference: input.clientReference ?? null,
+				expiresAt: input.expiresAt ?? null,
+				createdByKeyHash: keyHash,
+				updatedByKeyHash: keyHash,
+			})
+			.returning();
+		await recordRuleEvent(tx, rule, "created", keyHash);
+		if (isLegacy(rule)) await rewriteAllowlistMirror(tx, tenantId, chainId);
+		return { created: true, rule };
+	});
+}
+
+/** A page cursor: the position of the last rule or event a page returned. */
+function encodeCursor(row: { createdAt: Date; id: string }): string {
+	return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`).toString(
+		"base64url",
+	);
+}
+
+function decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
+	const [at, id] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
+	const createdAt = new Date(at ?? "");
+	if (!id || Number.isNaN(createdAt.getTime())) return null;
+	return { createdAt, id };
+}
+
+export class BadCursorError extends Error {}
+
+/** Lists rules newest first, a page at a time. Expired rules only with `includeExpired`. */
+export async function listRules(
+	db: Db,
+	args: Scope & {
+		now: Date;
+		contract?: string;
+		clientReference?: string;
+		includeExpired: boolean;
+		limit: number;
+		cursor?: string;
+	},
+): Promise<{ rules: RuleRow[]; nextCursor: string | null }> {
+	const conditions = [inScope(args)];
+	if (!args.includeExpired) conditions.push(activeAt(args.now));
+	if (args.contract)
+		conditions.push(
+			eq(tenantSponsorshipRules.contract, args.contract.toLowerCase()),
+		);
+	if (args.clientReference)
+		conditions.push(
+			eq(tenantSponsorshipRules.clientReference, args.clientReference),
+		);
+	if (args.cursor !== undefined) {
+		const after = decodeCursor(args.cursor);
+		if (!after) throw new BadCursorError("not a cursor this API returned");
+		conditions.push(
+			or(
+				lt(tenantSponsorshipRules.createdAt, after.createdAt),
+				and(
+					eq(tenantSponsorshipRules.createdAt, after.createdAt),
+					lt(tenantSponsorshipRules.id, after.id),
+				),
+			),
+		);
+	}
+	const rows = await db
+		.select()
+		.from(tenantSponsorshipRules)
+		.where(and(...conditions))
+		.orderBy(
+			desc(tenantSponsorshipRules.createdAt),
+			desc(tenantSponsorshipRules.id),
+		)
+		.limit(args.limit + 1);
+	const page = rows.slice(0, args.limit);
+	return {
+		rules: page,
+		nextCursor:
+			rows.length > args.limit ? encodeCursor(page[page.length - 1]) : null,
+	};
+}
+
+export async function getRule(
+	db: Db,
+	args: Scope & { id: string },
+): Promise<RuleRow | undefined> {
+	const [row] = await db
+		.select()
+		.from(tenantSponsorshipRules)
+		.where(and(inScope(args), eq(tenantSponsorshipRules.id, args.id)));
+	return row;
+}
+
+/**
+ * Changes a rule's functions or expiry. A patch that makes an expired rule active again counts
+ * toward the cap. Returns undefined when the tenant has no such rule on this chain.
+ */
+export async function patchRule(
+	db: Db,
+	args: Scope & {
+		id: string;
+		patch: RulePatch;
+		keyHash: string | null;
+		now: Date;
+		maxRules: number;
+	},
+): Promise<RuleRow | undefined> {
+	const { tenantId, chainId, patch, keyHash, now } = args;
+	return db.transaction(async (tx) => {
+		await lockTenantRules(tx, tenantId, chainId);
+		const [row] = await tx
+			.select()
+			.from(tenantSponsorshipRules)
+			.where(and(inScope(args), eq(tenantSponsorshipRules.id, args.id)));
+		if (!row) return undefined;
+
+		const expiresAt =
+			patch.expiresAt === undefined ? row.expiresAt : patch.expiresAt;
+		if (
+			!isActive(row, now) &&
+			isActive({ expiresAt }, now) &&
+			(await countActiveRules(tx, tenantId, chainId, now)) >= args.maxRules
+		)
+			throw new RuleWriteError(
+				"rule-limit-reached",
+				`this tenant already has ${args.maxRules} active rules on this chain, the limit`,
+			);
+
+		const [updated] = await tx
+			.update(tenantSponsorshipRules)
+			.set({
+				functions: patch.functions ?? row.functions,
+				expiresAt,
+				updatedAt: now,
+				updatedByKeyHash: keyHash,
+			})
+			.where(eq(tenantSponsorshipRules.id, row.id))
+			.returning();
+		await recordRuleEvent(tx, updated, "updated", keyHash);
+		if (isLegacy(row) || isLegacy(updated))
+			await rewriteAllowlistMirror(tx, tenantId, chainId);
+		return updated;
+	});
+}
+
+/** Removes a rule. Returns false when the tenant has no such rule on this chain. */
+export async function deleteRule(
+	db: Db,
+	args: Scope & { id: string; keyHash: string | null },
+): Promise<boolean> {
+	return db.transaction(async (tx) => {
+		await lockTenantRules(tx, args.tenantId, args.chainId);
+		const [removed] = await tx
+			.delete(tenantSponsorshipRules)
+			.where(and(inScope(args), eq(tenantSponsorshipRules.id, args.id)))
+			.returning();
+		if (!removed) return false;
+		await recordRuleEvent(tx, removed, "deleted", args.keyHash);
+		if (isLegacy(removed))
+			await rewriteAllowlistMirror(tx, args.tenantId, args.chainId);
+		return true;
+	});
+}
+
+export type RuleEventRow = typeof tenantSponsorshipRuleEvents.$inferSelect;
+
+/** Rule events newest first, a page at a time. */
+export async function listRuleEvents(
+	db: Db,
+	args: Scope & { limit: number; cursor?: string },
+): Promise<{ events: RuleEventRow[]; nextCursor: string | null }> {
+	const conditions = [
+		eq(tenantSponsorshipRuleEvents.tenantId, args.tenantId),
+		eq(tenantSponsorshipRuleEvents.chainId, args.chainId),
+	];
+	if (args.cursor !== undefined) {
+		const after = decodeCursor(args.cursor);
+		if (!after) throw new BadCursorError("not a cursor this API returned");
+		const position = or(
+			lt(tenantSponsorshipRuleEvents.createdAt, after.createdAt),
+			and(
+				eq(tenantSponsorshipRuleEvents.createdAt, after.createdAt),
+				lt(tenantSponsorshipRuleEvents.id, after.id),
+			),
+		);
+		if (position) conditions.push(position);
+	}
+	const rows = await db
+		.select()
+		.from(tenantSponsorshipRuleEvents)
+		.where(and(...conditions))
+		.orderBy(
+			desc(tenantSponsorshipRuleEvents.createdAt),
+			desc(tenantSponsorshipRuleEvents.id),
+		)
+		.limit(args.limit + 1);
+	const page = rows.slice(0, args.limit);
+	return {
+		events: page,
+		nextCursor:
+			rows.length > args.limit ? encodeCursor(page[page.length - 1]) : null,
+	};
 }

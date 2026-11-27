@@ -508,6 +508,9 @@
                         "null"
                       ]
                     },
+                    "version": {
+                      "type": "number"
+                    },
                     "valid": {
                       "type": "boolean"
                     },
@@ -535,6 +538,7 @@
                     "configured",
                     "config",
                     "updatedAt",
+                    "version",
                     "valid"
                   ],
                   "additionalProperties": false
@@ -549,7 +553,7 @@
         "tags": [
           "admin"
         ],
-        "description": "Full replace, validated on write. Rejected with per-path messages on any violation, so an invalid rule set is never stored and therefore never interpreted permissively. Rules are per chain and never inherited from another chain (MC-67): enabling a new chain is an explicit act.",
+        "description": "Full replace of the settings, validated on write. Rejected with per-path messages on any violation, so an invalid configuration is never stored and therefore never interpreted permissively. Settings are per chain and never inherited from another chain (MC-67): enabling a new chain is an explicit act. Send the version from GET as If-Match (\"3\"): a stale one is refused with 412. A write without If-Match is accepted and deprecated. The contracts sponsored are rules (/v1/admin/sponsorship/rules); `allowlist` here is deprecated, and replaces only the rules with neither a clientReference nor an expiresAt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -586,11 +590,15 @@
                     "config": {},
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
                     }
                   },
                   "required": [
                     "config",
-                    "updatedAt"
+                    "updatedAt",
+                    "version"
                   ],
                   "additionalProperties": false
                 }
@@ -639,6 +647,32 @@
                 }
               }
             }
+          },
+          "412": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "currentVersion": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       },
@@ -647,7 +681,7 @@
         "tags": [
           "admin"
         ],
-        "description": "Shallow field-level merge over the stored configuration, then validated as a whole — so a partial update cannot leave the rule set in a state a full replace would have rejected.",
+        "description": "Shallow field-level merge over the stored settings, then validated as a whole — so a partial update cannot leave the settings in a state a full replace would have rejected. If-Match and the deprecated `allowlist` behave as on PUT.",
         "requestBody": {
           "required": true,
           "content": {
@@ -690,11 +724,15 @@
                     "config": {},
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
                     }
                   },
                   "required": [
                     "config",
-                    "updatedAt"
+                    "updatedAt",
+                    "version"
                   ],
                   "additionalProperties": false
                 }
@@ -738,6 +776,32 @@
                     "error",
                     "message",
                     "issues"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "currentVersion": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }
@@ -1216,6 +1280,1542 @@
                   },
                   "required": [
                     "decisions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/sponsorship/rules": {
+      "post": {
+        "summary": "Allow one contract for sponsorship (for one chain)",
+        "tags": [
+          "admin"
+        ],
+        "description": "Creates one rule without touching the tenant's other rules. A create that repeats a clientReference returns the existing rule (200) when it describes the same rule, and 409 client-reference-conflict when it does not. A contract can have one active rule (409 duplicate-contract), and a tenant at most SPONSORSHIP_MAX_RULES_PER_CHAIN active rules per chain (409 rule-limit-reached). For a contract the tenant will deploy at a predictable address, create the rule before the deployment.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "contract": {
+                      "type": "string"
+                    },
+                    "functions": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "all"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "clientReference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "contract",
+                    "functions",
+                    "clientReference",
+                    "expiresAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "contract": {
+                      "type": "string"
+                    },
+                    "functions": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "all"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "clientReference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "contract",
+                    "functions",
+                    "clientReference",
+                    "expiresAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List this tenant's sponsorship rules (for one chain)",
+        "tags": [
+          "admin"
+        ],
+        "description": "Newest first, a page at a time: pass nextCursor back as cursor. Only active rules unless includeExpired=true.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "contract",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "clientReference",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "includeExpired",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "contract": {
+                            "type": "string"
+                          },
+                          "functions": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "all"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "clientReference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "contract",
+                          "functions",
+                          "clientReference",
+                          "expiresAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "rules",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/sponsorship/rules/events": {
+      "get": {
+        "summary": "Who created, changed or removed which rule, and when",
+        "tags": [
+          "admin"
+        ],
+        "description": "Newest first, a page at a time. createdByKeyHash is the sha256 of the admin key, or null when wallet-api made the change itself (a migration, or removing an expired rule).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "ruleId": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "rule": {},
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "createdByKeyHash": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "ruleId",
+                          "action",
+                          "rule",
+                          "createdAt",
+                          "createdByKeyHash"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/sponsorship/rules/{id}": {
+      "get": {
+        "summary": "Read one sponsorship rule",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "contract": {
+                      "type": "string"
+                    },
+                    "functions": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "all"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "clientReference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "contract",
+                    "functions",
+                    "clientReference",
+                    "expiresAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Change a rule's functions or expiry",
+        "tags": [
+          "admin"
+        ],
+        "description": "Only functions and expiresAt can change; expiresAt: null removes the expiry. The contract and the clientReference name what the rule is for, so a body that names either is refused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "contract": {
+                      "type": "string"
+                    },
+                    "functions": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "all"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "clientReference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "contract",
+                    "functions",
+                    "clientReference",
+                    "expiresAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a sponsorship rule",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "chainId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "contract": {
+                          "type": "string"
+                        },
+                        "functions": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "all"
+                              ]
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "clientReference": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contract",
+                        "functions",
+                        "clientReference",
+                        "expiresAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }

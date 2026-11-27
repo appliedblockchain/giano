@@ -154,25 +154,73 @@ contract; the operator runbook is in
 2. **Fund the balance.** `GET /v1/admin/sponsorship/balance` with the tenant's admin key returns the
    paymaster address and the exact call (`depositFor(<tenantId>)`). A bare transfer to the paymaster
    is rejected — funds must be attributable to one tenant, and a plain transfer carries no tenant.
-3. **Say what to sponsor.** `PUT /v1/admin/sponsorship`. Until this is written the tenant sponsors
-   nothing; that is the intended default, not a fault.
+3. **Switch sponsorship on.** `PUT /v1/admin/sponsorship` holds the settings. Until they are
+   written the tenant sponsors nothing; that is the intended default, not a fault.
+4. **Say which contracts to sponsor.** `POST /v1/admin/sponsorship/rules`, once per contract.
+   Until a rule is active the tenant sponsors nothing, wallet management included.
 
 ```json
 {
   "enabled": true,
   "maxCostPerTxWei": "500000000000000000",
-  "allowlist": [
-    { "contract": "0xYourToken", "functions": ["transfer(address,uint256)"] },
-    { "contract": "0xYourGame", "functions": "all" }
-  ],
   "lowBalanceThresholdWei": "1000000000000000000"
 }
 ```
 
+```json
+{ "contract": "0xYourToken", "functions": ["transfer(address,uint256)"] }
+```
+
+`GET /v1/admin/sponsorship` returns a `version`, also as an `ETag`. Send it back as
+`If-Match: "3"` on a `PUT` or `PATCH`: a write from a stale version is refused with `412`, with the
+current version, so a concurrent edit is never lost. A write without `If-Match` is still accepted,
+and is deprecated.
+
 There is deliberately no way to express "any contract". `functions: "all"` covers allowing a
 contract without enumerating its ABI. Function signatures are normalised to selectors on write, so
-either form works. An invalid rule set is rejected with per-path messages and **not stored** — it is
-never interpreted permissively.
+either form works. An invalid rule or setting is rejected with per-path messages and **not stored**
+— it is never interpreted permissively.
+
+**Rules, one at a time.** Each rule is a record with an `id`, and a contract has at most one active
+rule:
+
+| Endpoint | Does |
+| --- | --- |
+| `POST /v1/admin/sponsorship/rules` | Creates a rule: `201`. `409 duplicate-contract` when the contract already has an active rule, `409 rule-limit-reached` at the limit (`SPONSORSHIP_MAX_RULES_PER_CHAIN` active rules per chain, 1000 by default) |
+| `GET /v1/admin/sponsorship/rules` | Active rules, newest first, a page at a time (`cursor`, `limit`); filters `contract`, `clientReference`, `includeExpired=true` |
+| `GET` / `PATCH` / `DELETE /v1/admin/sponsorship/rules/:id` | Reads one rule; changes its `functions` or `expiresAt` (`null` removes the expiry); removes it |
+| `GET /v1/admin/sponsorship/rules/events` | Who created, changed or removed which rule, and when |
+
+A rule may carry a `clientReference` (1 to 128 characters from `A-Z a-z 0-9 . _ : -`), such as
+the id of the payment it is for. A create that repeats a reference returns the existing rule with
+`200` when it describes the same rule, and `409 client-reference-conflict` when it does not, so a
+retried request never adds a second rule. A rule may also carry an `expiresAt`: after that time it
+allows nothing, does not count toward the limit, and is removed.
+
+**Contracts you deploy at run time.** When your app deploys a contract per payment or per group,
+at an address you can predict (`CREATE2`, or a factory's `cloneDeterministic`), create the rule
+for the predicted address **before** the deployment, with a `clientReference` and an `expiresAt`.
+The user's first call to the new contract is then sponsored with no delay. Allow the factory too,
+with its own rule, so the deployment itself is sponsored:
+
+```json
+{
+  "contract": "0xPredictedEscrow",
+  "functions": ["confirm()", "release()"],
+  "clientReference": "milestone-42",
+  "expiresAt": "2027-01-31T00:00:00Z"
+}
+```
+
+If the factory lets anyone deploy, bind the salt to the caller (the factory hashes `msg.sender`
+into it), or check what was deployed before relying on the rule: otherwise someone else can deploy
+first at the predicted address, with their own initial state, and your rule sponsors calls to
+it.
+
+**Deprecated: `allowlist` in the settings.** For one minor release, `PUT` and `PATCH
+/v1/admin/sponsorship` still accept an `allowlist` array, and `GET` still returns one. It covers
+the rules with neither a `clientReference` nor an `expiresAt`: a write replaces exactly those
+rules, and refuses a contract that already has another kind of rule. Move to the rules endpoints.
 
 **Wallet management is sponsored, and you do not configure it.** Transactions the wallet makes to
 itself to add or remove an owner (a passkey or an address), for example during recovery, are covered
@@ -292,7 +340,7 @@ carrying the block height they were computed at, so the figures can be reproduce
 | --- | --- |
 | `GET /v1/admin/sponsorship/balance` | Balance, outstanding reservations, available, deficit, the fee in force, and where to fund |
 | `GET /v1/admin/sponsorship/spend` | Every settled transaction with gas, fee and overhead separately, each traceable to a `Sponsored` event |
-| `GET /v1/admin/sponsorship/decisions` | Every decision, refusals included, with the rule-by-rule results — this is what answers "why did my user see a refusal?" |
+| `GET /v1/admin/sponsorship/decisions` | Every decision, refusals included, with the rule-by-rule results and the ids of the rules that allowed it (`ruleIds`) — this is what answers "why did my user see a refusal?" |
 
 ### 7.4 Custody: the honest limits
 

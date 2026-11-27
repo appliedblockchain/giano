@@ -17,6 +17,7 @@ import {
 	tenantCreateSchema,
 	tenantPatchSchema,
 } from "../services/tenants.js";
+import { ifMatchVersion } from "./if-match.js";
 
 /** One head read per sponsoring chain before a delete; a chain that does not answer counts as stale. */
 const HEAD_TIMEOUT_MS = 3000;
@@ -75,14 +76,6 @@ const tenantView = (tenant: Tenant): z.infer<typeof tenantSchema> => ({
 	updatedAt: tenant.updatedAt.toISOString(),
 	statusChangedAt: tenant.statusChangedAt?.toISOString() ?? null,
 });
-
-/** `"3"`, `W/"3"` or a bare `3`; null when absent or not a version. */
-function ifMatchVersion(request: FastifyRequest): number | null | undefined {
-	const header = request.headers["if-match"];
-	if (header === undefined) return undefined;
-	const match = /^(?:W\/)?"?(\d+)"?$/.exec(String(header).trim());
-	return match ? Number(match[1]) : null;
-}
 
 function sendWriteError(reply: FastifyReply, error: unknown) {
 	if (!(error instanceof TenantWriteError)) throw error;
