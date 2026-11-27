@@ -19,6 +19,7 @@ import tenantPlugin from "./plugins/tenant.js";
 import { releaseVersion } from "./release-version.js";
 import adminRoutes from "./routes/admin.js";
 import adminSponsorshipRoutes from "./routes/admin-sponsorship.js";
+import adminSponsorshipRulesRoutes from "./routes/admin-sponsorship-rules.js";
 import adminTxMappingRoutes from "./routes/admin-tx-mappings.js";
 import bundlerRelayRoutes from "./routes/bundler-relay.js";
 import credentialRoutes from "./routes/credentials.js";
@@ -277,6 +278,7 @@ export async function buildApp({
 	await app.register(wellKnownRoutes, { db });
 	await app.register(adminRoutes, { db, sessions });
 	await app.register(adminSponsorshipRoutes, { db, config, ledger, registry });
+	await app.register(adminSponsorshipRulesRoutes, { db, config });
 	await app.register(adminTxMappingRoutes, { db });
 	await app.register(txMappingRoutes, { db });
 	if (sponsoringChains.length > 0) {

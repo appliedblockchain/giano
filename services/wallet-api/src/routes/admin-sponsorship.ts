@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
@@ -26,10 +26,19 @@ import {
 import type { LedgerService } from "../services/sponsorship-ledger.js";
 import {
 	legacyAllowlist,
+	lockTenantRules,
 	RuleWriteError,
 	replaceLegacyRules,
 } from "../services/sponsorship-rule-store.js";
 import { sha256hex } from "../services/tenants.js";
+import { ifMatchVersion } from "./if-match.js";
+
+/** A settings write whose `If-Match` names a version other than the stored one. */
+class VersionMismatch extends Error {
+	constructor(readonly currentVersion: number) {
+		super(`settings are at version ${currentVersion}`);
+	}
+}
 
 /**
  * A tenant's own view of its sponsorship: the rules it controls, and the position it needs to be
@@ -87,12 +96,31 @@ export default async function adminSponsorshipRoutes(
 		chainId: number,
 		nextConfig: SponsorshipConfig,
 		keyHash: string | null,
+		expectedVersion: number | undefined,
 	): Promise<
-		| { ok: true; config: SponsorshipConfig }
+		| { ok: true; config: SponsorshipConfig; version: number }
 		| { ok: false; error: RuleWriteError }
+		| { ok: false; currentVersion: number }
 	> {
 		try {
 			const stored = await db.transaction(async (tx) => {
+				// Checked first, under the tenant's rule lock, so a stale write changes no rule either. The
+				// lock also serialises two first writes, where there is no row to lock yet.
+				if (expectedVersion !== undefined) {
+					await lockTenantRules(tx, tenantId, chainId);
+					const [current] = await tx
+						.select({ version: tenantSponsorship.version })
+						.from(tenantSponsorship)
+						.where(
+							and(
+								eq(tenantSponsorship.tenantId, tenantId),
+								eq(tenantSponsorship.chainId, chainId),
+							),
+						);
+					const currentVersion = current?.version ?? 0;
+					if (currentVersion !== expectedVersion)
+						throw new VersionMismatch(currentVersion);
+				}
 				if (nextConfig.allowlist !== undefined) {
 					await replaceLegacyRules(tx, {
 						tenantId,
@@ -107,13 +135,14 @@ export default async function adminSponsorshipRoutes(
 					...nextConfig,
 					allowlist: await legacyAllowlist(tx, tenantId, chainId),
 				};
+
 				await tx.insert(tenantSponsorshipHistory).values({
 					tenantId,
 					chainId,
 					config: value,
 					createdByKeyHash: keyHash,
 				});
-				await tx
+				const [written] = await tx
 					.insert(tenantSponsorship)
 					.values({
 						tenantId,
@@ -130,14 +159,51 @@ export default async function adminSponsorshipRoutes(
 							updatedByKeyHash: keyHash,
 							version: sql`${tenantSponsorship.version} + 1`,
 						},
-					});
-				return value;
+					})
+					.returning({ version: tenantSponsorship.version });
+				return { value, version: written.version };
 			});
-			return { ok: true, config: stored };
+			return { ok: true, config: stored.value, version: stored.version };
 		} catch (error) {
 			if (error instanceof RuleWriteError) return { ok: false, error };
+			if (error instanceof VersionMismatch)
+				return { ok: false, currentVersion: error.currentVersion };
 			throw error;
 		}
+	}
+
+	/**
+	 * Answers a refused settings write: a stale `If-Match` (412, with the current version) or a
+	 * deprecated allowlist the rules refused (400).
+	 */
+	function sendWriteRefusal(
+		reply: FastifyReply,
+		refusal: { error: RuleWriteError } | { currentVersion: number },
+	) {
+		if ("currentVersion" in refusal)
+			return reply.code(412).send({
+				error: "version-mismatch",
+				message: `the settings are at version ${refusal.currentVersion}; read them again and retry`,
+				currentVersion: refusal.currentVersion,
+			});
+		return reply.code(400).send(allowlistRefusal(refusal.error));
+	}
+
+	/**
+	 * The `If-Match` version of a settings write: a number, undefined when absent (accepted, and
+	 * deprecated), or a 412 already sent for a value that is not a version.
+	 */
+	function expectedVersionOf(
+		request: FastifyRequest,
+		reply: FastifyReply,
+	): number | undefined | "sent" {
+		const version = ifMatchVersion(request);
+		if (version !== null) return version;
+		reply.code(412).send({
+			error: "version-mismatch",
+			message: 'If-Match must carry the settings version, e.g. "3"',
+		});
+		return "sent";
 	}
 
 	/** The 400 a refused deprecated allowlist write answers. */
@@ -162,6 +228,8 @@ export default async function adminSponsorshipRoutes(
 						configured: z.boolean(),
 						config: z.unknown(),
 						updatedAt: z.string().nullable(),
+						/** Send it back as `If-Match` on a write, so a concurrent edit is refused rather than lost. */
+						version: z.number(),
 						/** True when the stored value no longer validates — which means NO sponsorship, not permissive. */
 						valid: z.boolean(),
 						issues: z
@@ -171,13 +239,14 @@ export default async function adminSponsorshipRoutes(
 				},
 			},
 		},
-		async (request) => {
+		async (request, reply) => {
 			const tenant = requireAdminTenantOf(request);
 			const chainId = requireChainOf(request).chainId;
 			const [row] = await db
 				.select({
 					config: tenantSponsorship.config,
 					updatedAt: tenantSponsorship.updatedAt,
+					version: tenantSponsorship.version,
 				})
 				.from(tenantSponsorship)
 				.where(
@@ -187,11 +256,13 @@ export default async function adminSponsorshipRoutes(
 					),
 				);
 
+			reply.header("etag", `"${row?.version ?? 0}"`);
 			if (!row) {
 				return {
 					configured: false,
 					config: { enabled: false, allowlist: [] },
 					updatedAt: null,
+					version: 0,
 					valid: true,
 				};
 			}
@@ -201,6 +272,7 @@ export default async function adminSponsorshipRoutes(
 				configured: true,
 				config: row.config,
 				updatedAt: row.updatedAt.toISOString(),
+				version: row.version,
 				valid: parsed.success,
 				...(parsed.success ? {} : { issues: formatConfigIssues(parsed.error) }),
 			};
@@ -214,14 +286,26 @@ export default async function adminSponsorshipRoutes(
 				tags: ["admin"],
 				summary: "Replace this tenant's sponsorship rules (for one chain)",
 				description:
-					"Full replace, validated on write. Rejected with per-path messages on any violation, so an invalid " +
-					"rule set is never stored and therefore never interpreted permissively. Rules are per chain and never " +
-					"inherited from another chain (MC-67): enabling a new chain is an explicit act.",
+					"Full replace of the settings, validated on write. Rejected with per-path messages on any violation, so an " +
+					"invalid configuration is never stored and therefore never interpreted permissively. Settings are per chain " +
+					"and never inherited from another chain (MC-67): enabling a new chain is an explicit act. Send the version " +
+					'from GET as If-Match ("3"): a stale one is refused with 412. A write without If-Match is accepted and ' +
+					"deprecated. The contracts sponsored are rules (/v1/admin/sponsorship/rules); `allowlist` here is " +
+					"deprecated, and replaces only the rules with neither a clientReference nor an expiresAt.",
 				security: [{ adminKey: [] }],
 				querystring: chainQuery,
 				body: z.unknown(),
 				response: {
-					200: z.object({ config: z.unknown(), updatedAt: z.string() }),
+					200: z.object({
+						config: z.unknown(),
+						updatedAt: z.string(),
+						version: z.number(),
+					}),
+					412: z.object({
+						error: z.string(),
+						message: z.string(),
+						currentVersion: z.number().optional(),
+					}),
 					400: z.object({
 						error: z.string(),
 						message: z.string(),
@@ -258,15 +342,17 @@ export default async function adminSponsorshipRoutes(
 				});
 			}
 
+			const expectedVersion = expectedVersionOf(request, reply);
+			if (expectedVersion === "sent") return reply;
 			const chain = requireChainOf(request);
 			const written = await writeConfig(
 				tenant.id,
 				chain.chainId,
 				parsed.data,
 				keyHashOf(request),
+				expectedVersion,
 			);
-			if (!written.ok)
-				return reply.code(400).send(allowlistRefusal(written.error));
+			if (!written.ok) return sendWriteRefusal(reply, written);
 
 			// The reservation statement joins against this row, so a tenant that has just enabled
 			// sponsorship must have one — otherwise its first operation is refused for a reason that
@@ -287,7 +373,11 @@ export default async function adminSponsorshipRoutes(
 				},
 				"sponsorship configuration updated",
 			);
-			return { config: written.config, updatedAt: new Date().toISOString() };
+			return reply.header("etag", `"${written.version}"`).send({
+				config: written.config,
+				updatedAt: new Date().toISOString(),
+				version: written.version,
+			});
 		},
 	);
 
@@ -299,13 +389,23 @@ export default async function adminSponsorshipRoutes(
 				summary:
 					"Update fields of this tenant's sponsorship rules (for one chain)",
 				description:
-					"Shallow field-level merge over the stored configuration, then validated as a whole — so a partial " +
-					"update cannot leave the rule set in a state a full replace would have rejected.",
+					"Shallow field-level merge over the stored settings, then validated as a whole — so a partial " +
+					"update cannot leave the settings in a state a full replace would have rejected. If-Match and the " +
+					"deprecated `allowlist` behave as on PUT.",
 				security: [{ adminKey: [] }],
 				querystring: chainQuery,
 				body: z.record(z.string(), z.unknown()),
 				response: {
-					200: z.object({ config: z.unknown(), updatedAt: z.string() }),
+					200: z.object({
+						config: z.unknown(),
+						updatedAt: z.string(),
+						version: z.number(),
+					}),
+					412: z.object({
+						error: z.string(),
+						message: z.string(),
+						currentVersion: z.number().optional(),
+					}),
 					400: z.object({
 						error: z.string(),
 						message: z.string(),
@@ -355,14 +455,16 @@ export default async function adminSponsorshipRoutes(
 				});
 			}
 
+			const expectedVersion = expectedVersionOf(request, reply);
+			if (expectedVersion === "sent") return reply;
 			const written = await writeConfig(
 				tenant.id,
 				chainId,
 				parsed.data,
 				keyHashOf(request),
+				expectedVersion,
 			);
-			if (!written.ok)
-				return reply.code(400).send(allowlistRefusal(written.error));
+			if (!written.ok) return sendWriteRefusal(reply, written);
 			if (chain.paymaster) {
 				await ledger.ensureTenantRow({
 					tenantId: tenant.id,
@@ -370,7 +472,11 @@ export default async function adminSponsorshipRoutes(
 					paymasterAddress: chain.paymaster.address,
 				});
 			}
-			return { config: written.config, updatedAt: new Date().toISOString() };
+			return reply.header("etag", `"${written.version}"`).send({
+				config: written.config,
+				updatedAt: new Date().toISOString(),
+				version: written.version,
+			});
 		},
 	);
 
