@@ -2,6 +2,7 @@ import type {
 	ChainProgress,
 	ManagementChainStatus,
 	SponsorshipRefusalReason,
+	SponsorshipRuleResult,
 } from "@appliedblockchain/giano-wallet-kit";
 import type { ReactNode } from "react";
 import { refusalCopy } from "../sponsorship-copy";
@@ -10,11 +11,13 @@ import { refusalCopy } from "../sponsorship-copy";
 export function RefusalNotice({
 	reason,
 	message,
+	ruleResults,
 }: {
 	reason: SponsorshipRefusalReason;
 	message: string;
+	ruleResults?: readonly SponsorshipRuleResult[];
 }) {
-	const copy = refusalCopy(reason);
+	const copy = refusalCopy(reason, ruleResults);
 	return (
 		<div
 			className="card"

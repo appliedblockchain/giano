@@ -212,7 +212,14 @@ function sponsorshipNotice(
 		el(
 			"p",
 			{ dataset: { testid: "byo-sponsorship-refusal-action" } },
-			NEXT_STEP[reason] ?? NEXT_STEP["temporarily-unavailable"],
+			// sponsorship-disabled also covers a tenant this network's paymaster has not registered:
+			// its own switch is on, so "tell the app's team if you expected it to be free" misleads
+			preflight.state === "refused" &&
+				preflight.ruleResults.some(
+					(rule) => rule.rule === "paymaster-tenant" && !rule.passed,
+				)
+				? "The app covers fees, but not yet on this network — its team needs to finish setting that up."
+				: (NEXT_STEP[reason] ?? NEXT_STEP["temporarily-unavailable"]),
 		),
 	);
 }

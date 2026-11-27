@@ -464,7 +464,7 @@ function SponsorshipRefusal({
 }) {
 	const copy =
 		preflight.state === "refused"
-			? refusalCopy(preflight.reason)
+			? refusalCopy(preflight.reason, preflight.ruleResults)
 			: refusalCopy("temporarily-unavailable");
 	const reason =
 		preflight.state === "refused"

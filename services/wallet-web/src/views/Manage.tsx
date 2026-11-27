@@ -48,7 +48,11 @@ export function Manage({ onClose }: { onClose?: () => void }) {
 		// flow.type === 'refused': a sponsorship refusal met before any passkey prompt (WM-68)
 		return (
 			<>
-				<RefusalNotice reason={flow.reason} message={flow.message} />
+				<RefusalNotice
+					reason={flow.reason}
+					message={flow.message}
+					ruleResults={flow.ruleResults}
+				/>
 				<div className="actions">
 					<button type="button" onClick={flow.back}>
 						Back

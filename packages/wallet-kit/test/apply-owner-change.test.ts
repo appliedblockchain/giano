@@ -113,4 +113,26 @@ describe("applyOwnerChange: sponsorship refusals", () => {
 		]);
 		expect(outcome.refusal).toEqual(switchedOff);
 	});
+
+	it("reports a later tenant-wide refusal over an earlier chain-scoped one", async () => {
+		const { set } = runtimes({
+			1: notOnThisChain,
+			2: switchedOff,
+		});
+		const outcome = await apply(set);
+
+		expect(outcome.refusal).toEqual(switchedOff);
+	});
+
+	it("keeps the first chain-scoped refusal when every refusal is chain-scoped", async () => {
+		const disabledHere: SponsorshipPreflight = {
+			...notOnThisChain,
+			message:
+				"sponsorship is unavailable: this tenant is disabled on the paymaster",
+		};
+		const { set } = runtimes({ 1: notOnThisChain, 2: disabledHere });
+		const outcome = await apply(set);
+
+		expect(outcome.refusal).toEqual(notOnThisChain);
+	});
 });

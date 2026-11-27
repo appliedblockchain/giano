@@ -1,4 +1,7 @@
-import type { SponsorshipRefusalReason } from "@appliedblockchain/giano-wallet-kit";
+import type {
+	SponsorshipRefusalReason,
+	SponsorshipRuleResult,
+} from "@appliedblockchain/giano-wallet-kit";
 
 /**
  * What a refusal says to the person in front of the screen.
@@ -93,7 +96,27 @@ const COPY: Record<SponsorshipRefusalReason, Copy> = {
 	},
 };
 
-export function refusalCopy(reason: SponsorshipRefusalReason): Copy {
+/**
+ * The tenant's switch is on, but this network's paymaster has not registered it or has disabled it
+ * (wallet-api's `paymaster-tenant` rule). The wire reason is `sponsorship-disabled`, whose copy says
+ * the app switched sponsorship off — not true here, so the failed rule picks this copy instead.
+ */
+const PAYMASTER_TENANT: Copy = {
+	title: "Fee sponsorship is not set up on this network",
+	body: "This application covers transaction fees, but not yet on this network.",
+	action:
+		"Nothing you can change will affect this — the application’s team needs to finish setting up sponsorship here.",
+	retryable: false,
+};
+
+export function refusalCopy(
+	reason: SponsorshipRefusalReason,
+	ruleResults: readonly SponsorshipRuleResult[] = [],
+): Copy {
+	if (
+		ruleResults.some((rule) => rule.rule === "paymaster-tenant" && !rule.passed)
+	)
+		return PAYMASTER_TENANT;
 	// An unrecognised reason means the service is ahead of this build. Falling back to the outage
 	// copy is the safe choice: it is the one message that does not make a claim about *why*.
 	return COPY[reason] ?? COPY["temporarily-unavailable"];
