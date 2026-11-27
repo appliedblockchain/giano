@@ -459,7 +459,10 @@ export function createWalletApiInjection(
 			};
 		},
 
-		onCredentialCreated: async (name, _challenge, credential) => {
+		onCredentialCreated: async (_name, _challenge, credential) => {
+			// No credentialName: the name given to the authenticator is for its picker (brand and day),
+			// not a label for the user. Until the user names it, a wallet shows a passkey by the device
+			// and browser it was added from, as it does for a passkey added from another device.
 			const result = await api<{
 				walletAddress: Hex;
 				session: { token: string };
@@ -467,7 +470,6 @@ export function createWalletApiInjection(
 				method: "POST",
 				body: JSON.stringify({
 					externalUserId,
-					credentialName: name,
 					response: serializeRegistrationCredential(credential),
 				}),
 			});

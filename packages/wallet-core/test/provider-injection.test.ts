@@ -1109,6 +1109,39 @@ describe("createWalletApiInjection with several credentials per user", () => {
 		);
 	});
 
+	it("registers without a label: the picker name is not the passkey's name", async () => {
+		const created = await mock.authenticator.create({
+			publicKey: {
+				rp: { id: "localhost", name: "g" },
+				user: { id: new Uint8Array([3]), name: "c", displayName: "c" },
+				challenge: new Uint8Array([1]),
+				pubKeyCredParams: [],
+			},
+		} as CredentialCreationOptions);
+		const { fetchImpl, requests } = walletApi({
+			"/v1/webauthn/registration/verify": {
+				body: { walletAddress: WALLET, session: { token: "tok" } },
+			},
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			fetch: fetchImpl as never,
+		});
+
+		await injection.onCredentialCreated(
+			"Giano · 2026-11-27",
+			new Uint8Array([1]),
+			created as never,
+		);
+
+		const body = requests.find(
+			(request) => request.path === "/v1/webauthn/registration/verify",
+		)?.body;
+		expect(body?.externalUserId).toBe("u");
+		expect(body).not.toHaveProperty("credentialName");
+	});
+
 	describe("the connect choice", () => {
 		const optionsBodies = (
 			requests: { path: string; body: Record<string, unknown> }[],
