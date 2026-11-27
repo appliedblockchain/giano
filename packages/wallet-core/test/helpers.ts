@@ -114,6 +114,8 @@ export function createMockTransport(options: MockClientOptions = {}) {
 		switch (method) {
 			case "eth_chainId":
 				return `0x${TEST_CHAIN_ID.toString(16)}`;
+			case "eth_gasPrice":
+				return "0x3b9aca00"; // 1 gwei
 			case "eth_getBlockByNumber":
 				return {
 					number: "0x1",
