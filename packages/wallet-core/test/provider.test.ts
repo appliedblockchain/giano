@@ -618,16 +618,24 @@ describe("a secondary owner on the stock wallet-api injection", () => {
 		};
 	}
 
+	/** A route that answers with this HTTP status and no usable body. */
+	const failsWith = (status: number) => ({ __status: status });
+
 	/** wallet-api as the stock injection calls it: each path answers with a fixed body. */
 	function walletApiFetch(routes: Record<string, unknown>) {
 		return vi.fn(async (url: string) => {
 			const path = url.split("?")[0];
 			const key = Object.keys(routes).find((route) => path.endsWith(route));
+			const route = key === undefined ? undefined : routes[key];
+			const status =
+				route === undefined
+					? 404
+					: ((route as { __status?: number }).__status ?? 200);
 			return {
-				ok: key !== undefined,
-				status: key === undefined ? 404 : 200,
+				ok: status >= 200 && status < 300,
+				status,
 				json: async () =>
-					key === undefined ? { message: "not found" } : routes[key],
+					route === undefined ? { message: "not found" } : route,
 			} as Response;
 		});
 	}
@@ -703,6 +711,58 @@ describe("a secondary owner on the stock wallet-api injection", () => {
 			await provider.request({ method: "giano_restoreAccount", params: [] }),
 		).toEqual([SHARED]);
 		expect(get).not.toHaveBeenCalled();
+	});
+
+	it("still connects when wallet-api cannot answer /v1/me: the sign-in names the account", async () => {
+		const secondary = await registerSecondary();
+		const isOwner = ownsShared(secondary.ownerBytes);
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok-stale",
+			fetch: walletApiFetch({
+				"/v1/me": failsWith(503),
+				"/v1/webauthn/options": options([]),
+				"/v1/webauthn/authentication/verify": {
+					verified: true,
+					walletAddress: SHARED,
+					externalUserId: "u",
+					credentialId: secondary.id,
+					session: { token: "tok-b" },
+				},
+				[`/v1/me/credentials/${encodeURIComponent(secondary.id)}/public-key`]:
+					secondary.xy,
+			}) as never,
+		});
+		const { provider } = buildProvider(mock.authenticator, {
+			injection,
+			transportOptions: { isOwner },
+		});
+
+		expect(await provider.request({ method: "eth_requestAccounts" })).toEqual([
+			SHARED,
+		]);
+		expect(injection.getSessionToken()).toBe("tok-b");
+	});
+
+	it("does not restore silently when wallet-api cannot answer /v1/me: it never guesses a credential", async () => {
+		const secondary = await registerSecondary();
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok",
+			fetch: walletApiFetch({
+				"/v1/me": failsWith(503),
+				"/v1/webauthn/options": options([secondary.id]),
+				[`/v1/me/credentials/${encodeURIComponent(secondary.id)}/public-key`]:
+					secondary.xy,
+			}) as never,
+		});
+		const { provider } = buildProvider(mock.authenticator, { injection });
+
+		expect(
+			await provider.request({ method: "giano_restoreAccount", params: [] }),
+		).toEqual([]);
 	});
 
 	it("refuses to connect when the passkey does not own the account wallet-api named, and never derives one", async () => {

@@ -251,22 +251,39 @@ export function createWalletApiInjection(
 	}
 
 	/**
-	 * The credential and wallet of the current session, or null when there is no session or
-	 * wallet-api has ended it. Any other failure is thrown: picking a credential without the
-	 * session's answer is the guess this replaces.
+	 * The credential and wallet of the current session. Null when there is no usable session: none,
+	 * or wallet-api refuses it (401). "unknown" when wallet-api could not answer (a network error, a
+	 * 5xx, a malformed answer).
+	 *
+	 * Read without ending the session on a 401: this runs inside a connect or a restore, where the
+	 * user is signing in anyway and the new session replaces the old token. Ending it here would
+	 * show "your session ended" in the middle of that sign-in. Any later call that carries the
+	 * refused token still ends the session (G5).
 	 */
-	async function sessionAccount(): Promise<{
-		credentialId: string;
-		walletAddress: Hex;
-	} | null> {
-		if (!sessionToken) return null;
+	async function sessionAccount(): Promise<
+		{ credentialId: string; walletAddress: Hex } | null | "unknown"
+	> {
+		const token = sessionToken;
+		if (!token) return null;
 		try {
-			return await api<{ credentialId: string; walletAddress: Hex }>("/v1/me", {
-				auth: true,
+			const response = await fetchImpl(`${base}/v1/me`, {
+				headers: { authorization: `Bearer ${token}` },
 			});
-		} catch (error) {
-			if (error instanceof SessionEndedError) return null;
-			throw error;
+			if (response.status === 401) return null;
+			if (!response.ok) return "unknown";
+			const me = (await response.json()) as {
+				credentialId?: unknown;
+				walletAddress?: unknown;
+			};
+			return typeof me.credentialId === "string" &&
+				typeof me.walletAddress === "string"
+				? {
+						credentialId: me.credentialId,
+						walletAddress: me.walletAddress as Hex,
+					}
+				: "unknown";
+		} catch {
+			return "unknown";
 		}
 	}
 
@@ -394,7 +411,7 @@ export function createWalletApiInjection(
 			// The challenge is discoverable for the same reason: one bound to the stored user would
 			// refuse the session's credential when the two differ.
 			const session = await sessionAccount();
-			if (session) {
+			if (session !== null && session !== "unknown") {
 				return {
 					credentialId: fromBase64Url(session.credentialId),
 					challenge: await discoverableChallenge(),
@@ -402,7 +419,14 @@ export function createWalletApiInjection(
 				};
 			}
 
-			if (connectChoice === "existing") {
+			// The session could not be read: rather than block every sign-in until the user logs out,
+			// let the authenticator offer the passkeys it holds, and the sign-in name the wallet. A
+			// silent restore cannot use this (it returns no account for "user-pick"), so it never
+			// guesses a credential. A user who chose to create a new wallet goes on to create it.
+			if (
+				connectChoice === "existing" ||
+				(session === "unknown" && connectChoice !== "new")
+			) {
 				// The authenticator offers every passkey it holds for the wallet origin, and the one
 				// the user picks names its own wallet at sign-in (onCredentialSignedIn).
 				return {

@@ -987,7 +987,7 @@ describe("createWalletApiInjection with several credentials per user", () => {
 		expect(paths).not.toContain("/v1/me");
 	});
 
-	it("falls back to offering every credential when wallet-api refuses the session", async () => {
+	it("treats a session wallet-api refuses as no session, without announcing its end mid-sign-in", async () => {
 		const { fetchImpl } = walletApi({
 			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
 			"/v1/me": { status: 401, body: { error: "unauthorized" } },
@@ -998,16 +998,19 @@ describe("createWalletApiInjection with several credentials per user", () => {
 			sessionToken: "tok-ended",
 			fetch: fetchImpl as never,
 		});
+		const ended = vi.fn();
+		injection.onSessionEnded(ended);
 
 		const info = await injection.getCredentialInfo();
 
 		expect(Array.isArray(info.credentialId)).toBe(true);
 		expect(info.address).toBeUndefined();
-		expect(injection.getSessionToken()).toBeNull();
+		// The sign-in this serves replaces the token; no "session ended" notice in the middle of it.
+		expect(ended).not.toHaveBeenCalled();
 	});
 
-	it("does not guess a credential when the session cannot be read", async () => {
-		const { fetchImpl } = walletApi({
+	it("lets the authenticator choose, rather than block sign-in, when the session cannot be read", async () => {
+		const { fetchImpl, requests } = walletApi({
 			"/v1/webauthn/options": options([DEVICE_A, DEVICE_B]),
 			"/v1/me": { status: 503, body: { error: "unavailable" } },
 		});
@@ -1017,10 +1020,41 @@ describe("createWalletApiInjection with several credentials per user", () => {
 			sessionToken: "tok",
 			fetch: fetchImpl as never,
 		});
+		const ended = vi.fn();
+		injection.onSessionEnded(ended);
 
-		await expect(injection.getCredentialInfo()).rejects.toThrow(
-			/\/v1\/me failed/,
-		);
+		const info = await injection.getCredentialInfo();
+
+		// Discoverable: the sign-in names the wallet. A silent restore gets no account from this.
+		expect(info.credentialId).toBe("user-pick");
+		expect(info.address).toBeUndefined();
+		expect(
+			requests.find((request) => request.path === "/v1/webauthn/options")?.body,
+		).toMatchObject({ discoverable: true });
+		expect(ended).not.toHaveBeenCalled();
+		expect(injection.getSessionToken()).toBe("tok");
+	});
+
+	it("still creates a new wallet when the user chose to, even if the session cannot be read", async () => {
+		const { fetchImpl } = walletApi({
+			"/v1/webauthn/options": {
+				body: {
+					kind: "registration",
+					challenge: toBase64Url(new Uint8Array([9])),
+					userExists: false,
+					credentialIds: [],
+				},
+			},
+			"/v1/me": { status: 503, body: { error: "unavailable" } },
+		});
+		const injection = createWalletApiInjection({
+			apiUrl: "https://wallet.test/api",
+			externalUserId: "u",
+			sessionToken: "tok",
+			fetch: fetchImpl as never,
+		});
+		injection.setConnectChoice("new");
+		expect((await injection.getCredentialInfo()).credentialId).toBeNull();
 	});
 
 	it("returns the wallet the sign-in bound the credential to", async () => {
