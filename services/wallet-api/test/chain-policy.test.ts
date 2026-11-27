@@ -182,6 +182,27 @@ describe("resolveChainPolicy (design D2, D4)", () => {
 		).toEqual([]);
 	});
 
+	it("leaves an overridden paymaster list as the deployment set it, and does not change it", () => {
+		const moved = "0x00000000000000000000000000000000000000aa";
+		const overridden = [PAYMASTER.toLowerCase()];
+		const resolved = resolveChainPolicy({
+			chainId: 8453,
+			stored,
+			overrides: {
+				allowedPaymasters: {
+					value: overridden,
+					source: "USEROP_ALLOWED_PAYMASTERS",
+				},
+			},
+			production: true,
+			ownPaymaster: moved,
+		});
+		expect(resolved.policy.allowedPaymasters).toEqual([
+			PAYMASTER.toLowerCase(),
+		]);
+		expect(overridden).toEqual([PAYMASTER.toLowerCase()]);
+	});
+
 	it("refuses a chain with no stored row, saying how to get one", () => {
 		const resolved = resolveChainPolicy({
 			chainId: 8453,
@@ -434,6 +455,34 @@ describe("the stored policy and the platform API", () => {
 			headers: { authorization: `Bearer ${token}` },
 		});
 		expect(history.statusCode).toBe(404);
+	});
+
+	it("pages through history entries that share a timestamp without skipping any", async () => {
+		const chainId = 424242; // a chain of its own, so the served chain's history is untouched
+		const at = new Date("2026-01-01T00:00:00.000Z");
+		await ctx.db.insert(chainRelayPolicyHistory).values(
+			[1, 2, 3].map((n) => ({
+				chainId,
+				action: "update" as const,
+				actor: `test:${n}`,
+				after: { maxCallGas: String(n) },
+				createdAt: at,
+			})),
+		);
+		const service = createChainPolicyService({
+			db: ctx.db,
+			chains: ctx.config.CHAINS,
+			production: false,
+		});
+		const seen: string[] = [];
+		let before: string | undefined;
+		for (let page = 0; page < 5; page++) {
+			const { entries, next } = await service.history(chainId, before, 1);
+			seen.push(...entries.map((entry) => entry.actor));
+			if (!next) break;
+			before = next;
+		}
+		expect(seen.sort()).toEqual(["test:1", "test:2", "test:3"]);
 	});
 
 	it("needs a platform admin session", async () => {

@@ -684,6 +684,26 @@ describe("the tenant's paymaster record", () => {
 		});
 	});
 
+	it("keeps the tenant-wide no-sponsorship-config reason for an empty allowlist", async () => {
+		const session = await newSession(`empty-unregistered-${Math.random()}`);
+		// written directly: whether the admin API accepts this shape is not the point here
+		await ctx.db.insert(tenantSponsorship).values({
+			tenantId: tenantAId,
+			chainId: 31337,
+			config: { enabled: true, allowlist: [] },
+		});
+		ctx.paymasterState.registered.delete(bytes16());
+
+		const body = await rpc(
+			session.token,
+			"pm_getPaymasterStubData",
+			candidateOp(session.walletAddress, execute(TOKEN, TRANSFER)),
+		);
+		expect(body.error?.data?.reason).toBe("no-sponsorship-config");
+		const rules = body.error?.data?.ruleResults ?? [];
+		expect(rules.some((r) => r.rule === "paymaster-tenant")).toBe(false);
+	});
+
 	it("keeps the tenant's own switch as the reason when sponsorship is off", async () => {
 		const session = await newSession(`off-unregistered-${Math.random()}`);
 		await setConfig(ADMIN_KEY, { enabled: false });

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ResolvedChain } from "../config.js";
 import type { Db } from "../db/index.js";
@@ -199,9 +199,10 @@ const display = (value: bigint | Allowlist) =>
 
 /**
  * Resolves one chain's policy, field by field (design D2): override, else stored, else undecided.
- * The chain's own Giano paymaster (`ownPaymaster`) is always allowed: a stored list is written
- * once, at the seed, so without this a move to a new paymaster proxy would refuse every sponsored
- * operation on the chain until someone edited the list.
+ * The chain's own Giano paymaster (`ownPaymaster`) is always allowed by a *stored* list: that list
+ * is written once, at the seed, so without this a move to a new paymaster proxy would refuse every
+ * sponsored operation on the chain until someone edited it. An override (GIANO_CHAINS or
+ * USEROP_ALLOWED_PAYMASTERS) is the deployment's explicit choice and stays authoritative.
  * An undecided field falls back outside production and is a problem in production. A stored policy
  * that does not parse is a problem in every deployment class: none of its values can be trusted, so
  * the chain's operations are refused rather than relayed under the fallbacks.
@@ -282,9 +283,15 @@ export function resolveChainPolicy({
 
 	const list = (value: bigint | Allowlist): string[] =>
 		value === "any" ? [] : (value as string[]);
-	const paymasters = list(effective.allowedPaymasters);
+	// a copy: the effective list may be the override's own array, which is deployment config
+	const paymasters = [...list(effective.allowedPaymasters)];
 	const own = ownPaymaster?.toLowerCase();
-	if (own && paymasters.length > 0 && !paymasters.includes(own))
+	if (
+		own &&
+		fields.allowedPaymasters.from.kind === "stored" &&
+		paymasters.length > 0 &&
+		!paymasters.includes(own)
+	)
 		paymasters.push(own);
 	const cap = (value: bigint | Allowlist): bigint => value as bigint;
 	return {
@@ -508,26 +515,19 @@ export function createChainPolicyService({
 
 		/** The chain's changes, newest first, `limit` per page; `before` is the last entry's id. */
 		async history(chainId: number, before: string | undefined, limit: number) {
+			// A (created_at, id) cursor compared in SQL, as tenant history does: entries that share a
+			// timestamp are not skipped, and no sub-millisecond precision is lost through a JS Date.
 			const cursor = before
-				? (
-						await db
-							.select({ createdAt: chainRelayPolicyHistory.createdAt })
-							.from(chainRelayPolicyHistory)
-							.where(eq(chainRelayPolicyHistory.id, before))
-					)[0]
+				? sql`(${chainRelayPolicyHistory.createdAt}, ${chainRelayPolicyHistory.id}) < (SELECT created_at, id FROM chain_relay_policy_history WHERE id = ${before})`
 				: undefined;
 			const entries = await db
 				.select()
 				.from(chainRelayPolicyHistory)
-				.where(
-					and(
-						eq(chainRelayPolicyHistory.chainId, chainId),
-						cursor
-							? lt(chainRelayPolicyHistory.createdAt, cursor.createdAt)
-							: undefined,
-					),
+				.where(and(eq(chainRelayPolicyHistory.chainId, chainId), cursor))
+				.orderBy(
+					desc(chainRelayPolicyHistory.createdAt),
+					desc(chainRelayPolicyHistory.id),
 				)
-				.orderBy(desc(chainRelayPolicyHistory.createdAt))
 				.limit(limit + 1);
 			return {
 				entries: entries.slice(0, limit),

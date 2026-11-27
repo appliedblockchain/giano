@@ -284,9 +284,12 @@ export function createSponsorshipService(
 			// here (D2, D3). Signing would only buy an on-chain revert (UnknownTenant or TenantDisabled)
 			// and hold a reservation until it expired; and an unregistered tenant would otherwise read as
 			// out of credit. A tenant whose own switch is off keeps that reason: it is the first to fix.
+			// A config the rules refuse anyway (switched off, or no allowlist) keeps that tenant-wide
+			// reason, so the wallet and an owner change are not told it is about this network only.
 			if (
 				!unparseable &&
 				config.enabled &&
+				config.allowlist.length > 0 &&
 				!(tenantOnChain.registered && tenantOnChain.enabled)
 			) {
 				const detail = tenantOnChain.registered
@@ -299,15 +302,7 @@ export function createSponsorshipService(
 					reason: "sponsorship-disabled",
 					message: `sponsorship is unavailable: this tenant is ${detail}`,
 					ruleResults: [
-						// The same verdict evaluateSponsorship gives this rule, so the audit row does not
-						// record a config it would refuse (an empty allowlist) as passing.
-						config.allowlist.length > 0
-							? { rule: "sponsorship-enabled", passed: true }
-							: {
-									rule: "sponsorship-enabled",
-									passed: false,
-									detail: "no contracts are allow-listed",
-								},
+						{ rule: "sponsorship-enabled", passed: true },
 						{ rule: "paymaster-tenant", passed: false, detail },
 					],
 					feeWei,
