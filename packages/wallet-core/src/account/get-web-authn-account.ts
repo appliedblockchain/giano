@@ -1,4 +1,4 @@
-import { type Address, concatHex, toHex } from "viem";
+import { type Address, concatHex, isAddress, toHex } from "viem";
 import {
 	toWebAuthnAccount,
 	type WebAuthnAccount,
@@ -46,7 +46,12 @@ export const signInWithWebAuthn = async (
 		}
 
 		const signedIn = await injection.onCredentialSignedIn(credential);
-		if (signedIn === false) {
+		// Only `true` or a wallet address is a sign-in. A plain-JavaScript injection that returns
+		// anything else (undefined, null, a malformed address) has not signed in.
+		if (
+			signedIn !== true &&
+			!(typeof signedIn === "string" && isAddress(signedIn))
+		) {
 			throw new Error("Failed to sign in with credential");
 		}
 

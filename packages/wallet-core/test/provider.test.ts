@@ -26,7 +26,7 @@ import {
 	type MockInstance,
 	vi,
 } from "vitest";
-import { GianoAccountOwnerError } from "../src/account";
+import { GianoAccountOwnerError, signInWithWebAuthn } from "../src/account";
 import {
 	ChainType,
 	type CreateGianoProviderParams,
@@ -732,6 +732,58 @@ describe("a secondary owner on the stock wallet-api injection", () => {
 			provider.request({ method: "eth_requestAccounts" }),
 		).rejects.toThrow(GianoAccountOwnerError);
 		expect(await provider.request({ method: "eth_accounts" })).toEqual([]);
+	});
+});
+
+describe("signing in with a passkey (signInWithWebAuthn)", () => {
+	async function registered() {
+		const created = await mock.authenticator.create({
+			publicKey: {
+				rp: { id: "localhost", name: "g" },
+				user: { id: new Uint8Array([4]), name: "d", displayName: "d" },
+				challenge: new Uint8Array([1]),
+				pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+			},
+		} as CredentialCreationOptions);
+		return {
+			credentialId: new Uint8Array(created.rawId),
+			challenge: new Uint8Array([9, 9]),
+		};
+	}
+
+	it("accepts true, and a wallet address it passes on", async () => {
+		const info = await registered();
+		const yes = await signInWithWebAuthn(
+			info,
+			createMockInjection(mock.authenticator, {
+				onCredentialSignedIn: async () => true,
+			}),
+		);
+		expect(yes?.address).toBeUndefined();
+		const named = await signInWithWebAuthn(
+			info,
+			createMockInjection(mock.authenticator, {
+				onCredentialSignedIn: async () => WALLET_ADDRESS,
+			}),
+		);
+		expect(named?.address).toBe(WALLET_ADDRESS);
+	});
+
+	it.each([
+		["false", false],
+		["undefined", undefined],
+		["null", null],
+		["a string that is not an address", "yes"],
+	])("refuses %s from a plain-JavaScript injection", async (_label, value) => {
+		const info = await registered();
+		await expect(
+			signInWithWebAuthn(
+				info,
+				createMockInjection(mock.authenticator, {
+					onCredentialSignedIn: async () => value as never,
+				}),
+			),
+		).rejects.toThrow(/Failed to sign in/);
 	});
 });
 

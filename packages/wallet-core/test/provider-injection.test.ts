@@ -838,6 +838,22 @@ describe("createWalletApiInjection", () => {
 			expect(ended).toHaveBeenCalledExactlyOnceWith("logout");
 		});
 
+		it("logout starts the revoke before the session ends here, and keeps it alive past an unload", async () => {
+			const fetchImpl = respond(200);
+			const { injection } = make(fetchImpl);
+			// A listener that navigates away on logout would cancel a request started after it.
+			let revokeStartedFirst = false;
+			injection.onSessionEnded(() => {
+				revokeStartedFirst = fetchImpl.mock.calls.length > 0;
+			});
+			await injection.logout();
+			expect(revokeStartedFirst).toBe(true);
+			expect(fetchImpl).toHaveBeenCalledWith(
+				"https://wallet.test/api/v1/sessions/logout",
+				expect.objectContaining({ keepalive: true }),
+			);
+		});
+
 		it("logoutAll still ends the session here when wallet-api cannot be reached", async () => {
 			const fetchImpl = vi.fn(async () => {
 				throw new TypeError("Failed to fetch");
